@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  RECRUITER
+  CANDIDATE
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+enum CandidateTag {
+  SHORTLISTED
+  REJECTED
+  HOLD
+}
+
+enum PipelineStage {
+  APPLIED
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  SELECTED
+  REJECTED
+}
+
+enum AvailabilityStatus {
+  IMMEDIATE
+  TWO_WEEKS
+  ONE_MONTH
+  NOT_LOOKING
+}
+
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  passwordHash      String
+  role              UserRole
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  recruiterProfile  RecruiterProfile?
+  candidateProfile  CandidateProfile?
+  jobs              Job[]               @relation("PostedJobs")
+  notes             AtsNote[]           @relation("NoteAuthor")
+}
+
+model RecruiterProfile {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  companyEmailDomain   String
+  companyName          String?
+  aboutCompany         String?
+  industryDomain       String?
+  companyType          String?
+  headquartersLocation String?
+  startedYear          Int?
+  employeeCount        Int?
+  branchCount          Int?
+  officeLocations      String[]
+  annualTurnover       String?
+  designation          String?
+  workingSince         Int?
+  companySize          String?
+  website              String?
+  profileCompleted     Boolean  @default(false)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  savedProfiles        SavedCandidate[]
+}
+
+model CandidateProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  fullName           String
+  headline           String?
+  location           String?
+  preferredLocations String[]
+  totalExperience    Int                @default(0)
+  currentCtcLpa      Int?
+  expectedCtcLpa     Int?
+  availability       AvailabilityStatus @default(IMMEDIATE)
+  skills             String[]
+  summary            String?
+  resumeUrl          String?
+  sharedResumeSlug   String?            @unique
+  profileViews       Int                @default(0)
+  lastActiveAt       DateTime?
+  updatedAt          DateTime           @updatedAt
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications       Application[]
+  resumeBuilder      ResumeBuilder?
+  savedByRecruiters  SavedCandidate[]
+}
+
+model Job {
+  id                String            @id @default(cuid())
+  recruiterId       String
+  title             String
+  slug              String            @unique
+  description       String
+  skillsRequired    String[]
+  experienceMin     Int
+  experienceMax     Int
+  salaryMin         Int?
+  salaryMax         Int?
+  location          String
+  employmentType    EmploymentType    @default(FULL_TIME)
+  status            JobStatus         @default(OPEN)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  recruiter         User              @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
+  applications      Application[]
+}
+
+model Application {
+  id                   String         @id @default(cuid())
+  jobId                String
+  candidateId          String
+  currentStage         PipelineStage  @default(APPLIED)
+  statusLabel          String         @default("Applied")
+  coverLetter          String?
+  recruiterTag         CandidateTag?
+  appliedAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  interviewScheduledAt DateTime?
+  interviewerName      String?
+  recruiterNotes       String?
+  matchScore           Int            @default(0)
+  job                  Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate            CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  notes                AtsNote[]
+  activities           ApplicationActivity[]
+
+  @@unique([jobId, candidateId])
+}
+
+model AtsNote {
+  id            String       @id @default(cuid())
+  applicationId String
+  authorId      String
+  content       String
+  createdAt     DateTime     @default(now())
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  author        User         @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model ApplicationActivity {
+  id            String       @id @default(cuid())
+  applicationId String
+  message       String
+  createdAt     DateTime     @default(now())
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model ResumeBuilder {
+  id             String           @id @default(cuid())
+  candidateId    String           @unique
+  template       String           @default("classic")
+  personal       Json
+  education      Json
+  experience     Json
+  skills         Json
+  projects       Json
+  completedScore Int              @default(0)
+  updatedAt      DateTime         @updatedAt
+  candidate      CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+}
+
+model SavedCandidate {
+  id            String             @id @default(cuid())
+  recruiterId   String
+  candidateId   String
+  tag           CandidateTag?
+  createdAt     DateTime           @default(now())
+  recruiter     RecruiterProfile   @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+  candidate     CandidateProfile   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([recruiterId, candidateId])
+}
