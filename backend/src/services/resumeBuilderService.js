@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { serializeResumeBuilder } from '../serializers/index.js';
 
 function calculateCompletion(payload) {
   const sections = [payload.personal, payload.education, payload.experience, payload.skills, payload.projects];
@@ -8,13 +9,15 @@ function calculateCompletion(payload) {
 
 export async function upsertResumeBuilder(candidateId, payload) {
   const completedScore = calculateCompletion(payload);
-  return prisma.resumeBuilder.upsert({
+  const resumeBuilder = await prisma.resumeBuilder.upsert({
     where: { candidateId },
     update: { ...payload, completedScore },
     create: { candidateId, ...payload, completedScore },
   });
+  return serializeResumeBuilder(resumeBuilder);
 }
 
 export async function getResumeBuilder(candidateId) {
-  return prisma.resumeBuilder.findUnique({ where: { candidateId } });
+  const resumeBuilder = await prisma.resumeBuilder.findUnique({ where: { candidateId } });
+  return serializeResumeBuilder(resumeBuilder);
 }

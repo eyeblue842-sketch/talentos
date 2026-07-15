@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import clsx from 'clsx';
 import {
   BarChart3,
@@ -35,6 +37,19 @@ const iconMap = {
 
 export function Sidebar({ brand, items }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.replace('/auth');
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
 
   return (
     <aside className="rounded-[28px] border border-[var(--line)] bg-[#102418] p-5 text-white shadow-[0_20px_60px_rgba(16,36,24,0.18)]">
@@ -61,6 +76,14 @@ export function Sidebar({ brand, items }) {
           );
         })}
       </nav>
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={isLoggingOut}
+        className="mt-8 w-full rounded-2xl border border-white/14 px-4 py-3 text-sm font-semibold text-white/82 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isLoggingOut ? 'Logging out...' : 'Logout'}
+      </button>
     </aside>
   );
 }

@@ -8,17 +8,30 @@ import {
 import { searchCandidates } from '../services/searchService.js';
 import { prisma } from '../config/db.js';
 import { getCandidateRecommendedJobs } from '../services/recommendationService.js';
+import { apiError, sendSuccess } from '../utils/response.js';
 
 export async function searchResumeDatabase(req, res, next) {
   try {
+    const hasMinExperience = typeof req.query.minExperience !== 'undefined';
+    const minExperience = hasMinExperience ? Number(req.query.minExperience) : undefined;
+
+    if (hasMinExperience && Number.isNaN(minExperience)) {
+      return res.status(422).json(apiError('Validation failed.', {
+        formErrors: [],
+        fieldErrors: {
+          minExperience: ['minExperience must be a number.'],
+        },
+      }));
+    }
+
     const filters = {
       keyword: req.query.keyword,
       location: req.query.location,
-      minExperience: req.query.minExperience ? Number(req.query.minExperience) : undefined,
+      minExperience,
       availability: req.query.availability,
     };
     const candidates = await searchCandidates(filters);
-    res.json({ success: true, data: candidates });
+    sendSuccess(res, 200, candidates);
   } catch (error) {
     next(error);
   }
@@ -27,7 +40,7 @@ export async function searchResumeDatabase(req, res, next) {
 export async function updateCandidateProfile(req, res, next) {
   try {
     const candidate = await saveCandidateProfile(req.user.candidateProfile.id, req.body);
-    res.json({ success: true, data: candidate });
+    sendSuccess(res, 200, candidate);
   } catch (error) {
     next(error);
   }
@@ -36,7 +49,7 @@ export async function updateCandidateProfile(req, res, next) {
 export async function uploadResume(req, res, next) {
   try {
     const candidate = await uploadCandidateResume(req.user.candidateProfile.id, req.file);
-    res.json({ success: true, data: candidate });
+    sendSuccess(res, 200, candidate);
   } catch (error) {
     next(error);
   }
@@ -45,7 +58,7 @@ export async function uploadResume(req, res, next) {
 export async function saveCandidate(req, res, next) {
   try {
     const saved = await saveCandidateForRecruiter(req.user.recruiterProfile.id, req.params.candidateId, req.body.tag);
-    res.json({ success: true, data: saved });
+    sendSuccess(res, 200, saved);
   } catch (error) {
     next(error);
   }
@@ -54,7 +67,7 @@ export async function saveCandidate(req, res, next) {
 export async function listSavedCandidates(req, res, next) {
   try {
     const saved = await getSavedCandidates(req.user.recruiterProfile.id);
-    res.json({ success: true, data: saved });
+    sendSuccess(res, 200, saved);
   } catch (error) {
     next(error);
   }
@@ -77,7 +90,7 @@ export async function downloadResumePdf(req, res, next) {
 export async function recommendedJobs(req, res, next) {
   try {
     const result = await getCandidateRecommendedJobs(req.user.candidateProfile.id);
-    res.json({ success: true, data: result });
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

@@ -1,9 +1,12 @@
 import { Sidebar } from '@/components/layout/sidebar';
 import { JobsTable } from '@/components/sections/jobs-table';
 import { Card } from '@/components/ui/card';
-import { recruiterJobs, recruiterNav } from '@/lib/mock-data';
+import { recruiterNav } from '@/lib/mock-data';
+import { getRecruiterJobs } from '@/lib/api';
 
-export default function RecruiterJobsPage() {
+export default async function RecruiterJobsPage() {
+  const jobs = await getRecruiterJobs();
+
   return (
     <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
       <Sidebar brand="Hiring Ops" items={recruiterNav} />
@@ -19,7 +22,7 @@ export default function RecruiterJobsPage() {
             <button className="rounded-2xl bg-[var(--brand)] px-5 py-3 font-semibold text-white">Create job</button>
           </div>
         </Card>
-        <JobsTable jobs={recruiterJobs} />
+        <JobsTable jobs={jobs.map((job) => ({ ...job, applicants: job.applicationsCount || 0 }))} />
       </section>
     </main>
   );

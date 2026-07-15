@@ -2,11 +2,11 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
 import { JobsTable } from '@/components/sections/jobs-table';
-import { recruiterJobs, recruiterNav } from '@/lib/mock-data';
-import { getRecruiterDashboard } from '@/lib/api';
+import { recruiterNav } from '@/lib/mock-data';
+import { getRecruiterDashboard, getRecruiterJobs } from '@/lib/api';
 
 export default async function RecruiterDashboardPage() {
-  const dashboard = await getRecruiterDashboard();
+  const [dashboard, jobs] = await Promise.all([getRecruiterDashboard(), getRecruiterJobs()]);
 
   return (
     <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
@@ -22,7 +22,7 @@ export default async function RecruiterDashboardPage() {
           <StatCard label="Total applicants" value={dashboard.applicantsCount} helper="Across all open jobs" />
           <StatCard label="Interview stage" value={dashboard.pipelineCounts?.find((item) => item.currentStage === 'INTERVIEW_SCHEDULED')?._count.currentStage || 0} helper="Candidates moving through interviews" />
         </div>
-        <JobsTable jobs={recruiterJobs} />
+        <JobsTable jobs={jobs.map((job) => ({ ...job, applicants: job.applicationsCount || 0 }))} />
         <Card>
           <h3 className="font-[var(--font-display)] text-xl font-semibold">Recent applications</h3>
           <div className="mt-4 space-y-3">

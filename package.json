@@ -2,6 +2,7 @@
   "name": "careeriz",
   "private": true,
   "workspaces": [
+    "shared",
     "frontend",
     "backend"
   ],

@@ -2,7 +2,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
 import { getCandidateDashboard } from '@/lib/api';
-import { candidateApplications, candidateJobs, candidateNav } from '@/lib/mock-data';
+import { candidateNav } from '@/lib/mock-data';
 
 export default async function CandidateDashboardPage() {
   const dashboard = await getCandidateDashboard();
@@ -19,16 +19,16 @@ export default async function CandidateDashboardPage() {
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Jobs applied" value={dashboard.applicationsCount} helper="Across all active applications" />
           <StatCard label="Resume views" value={dashboard.resumeViews} helper="Recruiter profile discovery" />
-          <StatCard label="Suggested jobs" value={candidateJobs.length} helper="Based on skill overlap" />
+          <StatCard label="Suggested jobs" value={dashboard.suggestedJobs.length} helper="Based on skill overlap" />
         </div>
         <Card>
           <h3 className="font-[var(--font-display)] text-xl font-semibold">Application pulse</h3>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            {candidateApplications.map((item) => (
+            {dashboard.recentApplications.map((item) => (
               <div key={item.id} className="rounded-2xl border border-[var(--line)] p-4">
-                <p className="font-semibold">{item.role}</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">{item.company}</p>
-                <p className="mt-4 text-sm text-[var(--muted)]">{item.status}</p>
+                <p className="font-semibold">{item.job.title}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">{item.job.recruiter?.recruiterProfile?.companyName || 'Careeriz employer'}</p>
+                <p className="mt-4 text-sm text-[var(--muted)]">{item.statusLabel}</p>
               </div>
             ))}
           </div>

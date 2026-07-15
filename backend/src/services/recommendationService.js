@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { serializeJob } from '../serializers/index.js';
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
@@ -68,7 +69,7 @@ export async function getCandidateRecommendedJobs(candidateId) {
       const totalScore = Math.min(score.skillScore + score.locationScore + score.ctcScore, 100);
 
       return {
-        ...job,
+        ...serializeJob(job),
         recommendationScore: totalScore,
         matchReasons: buildReasons(job, profile, score),
       };

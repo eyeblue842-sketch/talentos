@@ -1,5 +1,6 @@
 import { verifyToken } from '../utils/jwt.js';
 import { prisma } from '../config/db.js';
+import { apiError } from '../utils/response.js';
 
 export function auth(requiredRoles = []) {
   return async (req, res, next) => {
@@ -8,7 +9,7 @@ export function auth(requiredRoles = []) {
       const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
       if (!token) {
-        return res.status(401).json({ success: false, message: 'Authentication required.' });
+        return res.status(401).json(apiError('Authentication required.'));
       }
 
       const decoded = verifyToken(token);
@@ -18,16 +19,23 @@ export function auth(requiredRoles = []) {
       });
 
       if (!user || !user.isActive) {
-        return res.status(401).json({ success: false, message: 'User not found or inactive.' });
+        return res.status(401).json(apiError('User not found or inactive.'));
+      }
+
+      if (decoded.sessionVersion !== user.sessionVersion) {
+        return res.status(401).json(apiError('Invalid or expired authentication token.'));
       }
 
       if (requiredRoles.length && !requiredRoles.includes(user.role)) {
-        return res.status(403).json({ success: false, message: 'Insufficient permissions.' });
+        return res.status(403).json(apiError('Insufficient permissions.'));
       }
 
       req.user = user;
       next();
     } catch (error) {
+      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+        return res.status(401).json(apiError('Invalid or expired authentication token.'));
+      }
       next(error);
     }
   };

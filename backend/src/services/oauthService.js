@@ -1,9 +1,11 @@
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
-import { signToken } from '../utils/jwt.js';
+import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
+import { isPersonalEmail } from '../utils/email.js';
+import { consumeAuthToken, issueAuthToken } from './authTokenService.js';
+import { serializeAuthSession, serializeUser } from '../serializers/index.js';
 
 const providerConfigs = {
   google: {
@@ -28,17 +30,8 @@ const providerConfigs = {
   },
 };
 
-function encodeState(data) {
-  return Buffer.from(JSON.stringify(data)).toString('base64url');
-}
-
-function decodeState(value = '') {
-  try {
-    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
-  } catch {
-    return {};
-  }
-}
+const supportedRoles = new Set(['CANDIDATE', 'RECRUITER']);
+const supportedModes = new Set(['login', 'signup']);
 
 function getProviderConfig(provider) {
   const config = providerConfigs[provider];
@@ -57,12 +50,24 @@ function getProviderConfig(provider) {
   return config;
 }
 
-function buildAuthorizationUrl(provider, options = {}) {
+function normalizeRole(role = 'CANDIDATE') {
+  return supportedRoles.has(role) ? role : 'CANDIDATE';
+}
+
+function normalizeMode(mode = 'login') {
+  return supportedModes.has(mode) ? mode : 'login';
+}
+
+async function buildAuthorizationUrl(provider, options = {}) {
   const config = getProviderConfig(provider);
-  const state = encodeState({
-    role: options.role || 'CANDIDATE',
-    mode: options.mode || 'login',
+  const stateContext = {
     provider,
+    role: normalizeRole(options.role),
+    mode: normalizeMode(options.mode),
+  };
+  const { token: state } = await issueAuthToken(null, 'OAUTH_STATE', {
+    context: stateContext,
+    invalidateExisting: false,
   });
 
   const params = new URLSearchParams({
@@ -133,16 +138,17 @@ function buildFrontendRedirect(pathname, params = {}) {
 }
 
 async function createPasswordHash() {
-  return bcrypt.hash(crypto.randomUUID(), 10);
-}
-
-function sanitizeUser(user) {
-  const { passwordHash, ...safeUser } = user;
-  return safeUser;
+  return bcrypt.hash(crypto.randomUUID(), 12);
 }
 
 async function findOrCreateOAuthUser({ email, name, role }) {
   const normalizedEmail = email.toLowerCase().trim();
+  if (role === 'RECRUITER' && isPersonalEmail(normalizedEmail)) {
+    const error = new Error('Recruiters must register with a company email address.');
+    error.statusCode = 422;
+    throw error;
+  }
+
   let user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     include: { recruiterProfile: true, candidateProfile: true },
@@ -155,6 +161,14 @@ async function findOrCreateOAuthUser({ email, name, role }) {
       throw error;
     }
 
+    if (!user.emailVerifiedAt) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: new Date() },
+        include: { recruiterProfile: true, candidateProfile: true },
+      });
+    }
+
     return user;
   }
 
@@ -165,6 +179,16 @@ async function findOrCreateOAuthUser({ email, name, role }) {
       email: normalizedEmail,
       passwordHash,
       role,
+      emailVerifiedAt: new Date(),
+      recruiterProfile: role === 'RECRUITER'
+        ? {
+            create: {
+              companyEmailDomain: normalizedEmail.split('@')[1],
+              officeLocations: [],
+              profileCompleted: false,
+            },
+          }
+        : undefined,
       candidateProfile: role === 'CANDIDATE'
         ? {
             create: {
@@ -191,14 +215,21 @@ function resolvePostAuthPath(user) {
   return '/candidate/onboarding';
 }
 
-export function getOAuthAuthorizationUrl(provider, options) {
+export async function getOAuthAuthorizationUrl(provider, options) {
   return buildAuthorizationUrl(provider, options);
 }
 
 export async function handleOAuthCallback(provider, code, stateValue) {
-  const state = decodeState(stateValue);
-  const role = state.role || 'CANDIDATE';
-  const mode = state.mode || 'login';
+  const stateToken = await consumeAuthToken(stateValue, 'OAUTH_STATE');
+  const state = stateToken.context || {};
+
+  if (state.provider !== provider) {
+    const error = new Error('Invalid OAuth state.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const role = normalizeRole(state.role);
   const tokens = await exchangeCodeForToken(provider, code);
   const profile = await fetchUserProfile(provider, tokens.access_token);
 
@@ -214,16 +245,29 @@ export async function handleOAuthCallback(provider, code, stateValue) {
     role,
   });
 
-  const token = signToken({ userId: user.id, role: user.role });
+  const { token } = await issueAuthToken(user.id, 'OAUTH_HANDOFF');
   const redirectPath = resolvePostAuthPath(user);
 
   return {
-    redirectUrl: buildFrontendRedirect(redirectPath, {
-      token,
-      authProvider: provider,
-      authMode: mode,
+    redirectUrl: buildFrontendRedirect('/api/auth/oauth/callback', {
+      code: token,
+      next: redirectPath,
     }),
-    user: sanitizeUser(user),
+    user: serializeUser(user, { includePrivate: true }),
+  };
+}
+
+export async function exchangeOAuthSessionToken(token) {
+  const authToken = await consumeAuthToken(token, 'OAUTH_HANDOFF', { includeUser: true });
+  const jwt = signToken({
+    userId: authToken.user.id,
+    role: authToken.user.role,
+    sessionVersion: authToken.user.sessionVersion,
+  });
+
+  return {
+    token: jwt,
+    session: serializeAuthSession(authToken.user, getTokenExpiryIso()),
   };
 }
 

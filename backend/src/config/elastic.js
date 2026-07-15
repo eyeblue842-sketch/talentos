@@ -1,8 +1,20 @@
 import { Client } from '@elastic/elasticsearch';
 import { env } from './env.js';
 
-export const elastic = env.elasticsearchUrl
-  ? new Client({ node: env.elasticsearchUrl })
+export function __resolveElasticConfig(config = {}) {
+  const isTest = config.isTest ?? env.isTest;
+  const elasticsearchUrl = config.elasticsearchUrl ?? env.elasticsearchUrl;
+
+  return {
+    enabled: !isTest && Boolean(elasticsearchUrl),
+    node: !isTest && elasticsearchUrl ? elasticsearchUrl : null,
+  };
+}
+
+const elasticConfig = __resolveElasticConfig();
+
+export const elastic = elasticConfig.enabled
+  ? new Client({ node: elasticConfig.node })
   : null;
 
 export async function ensureResumeIndex() {

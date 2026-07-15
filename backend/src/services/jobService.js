@@ -1,8 +1,30 @@
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
+import { serializeJob } from '../serializers/index.js';
+
+async function getJobById(jobId) {
+  return prisma.job.findUnique({ where: { id: jobId } });
+}
+
+async function assertRecruiterOwnsJob(jobId, recruiterId) {
+  const job = await getJobById(jobId);
+  if (!job) {
+    const error = new Error('Job not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (job.recruiterId !== recruiterId) {
+    const error = new Error('You are not allowed to access this job.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return job;
+}
 
 export async function createJob(recruiterId, payload) {
-  return prisma.job.create({
+  const job = await prisma.job.create({
     data: {
       recruiterId,
       title: payload.title,
@@ -18,49 +40,38 @@ export async function createJob(recruiterId, payload) {
       status: payload.status || 'OPEN',
     },
   });
+
+  return serializeJob(job);
 }
 
 export async function listRecruiterJobs(recruiterId) {
-  return prisma.job.findMany({
+  const jobs = await prisma.job.findMany({
     where: { recruiterId },
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { applications: true } } },
   });
+
+  return jobs.map((job) => serializeJob(job));
 }
 
 export async function updateJob(jobId, recruiterId, payload) {
-  const existingJob = await prisma.job.findFirst({
-    where: { id: jobId, recruiterId },
-  });
+  await assertRecruiterOwnsJob(jobId, recruiterId);
 
-  if (!existingJob) {
-    const error = new Error('Job not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  return prisma.job.update({
+  const job = await prisma.job.update({
     where: { id: jobId },
     data: payload,
   });
+
+  return serializeJob(job);
 }
 
 export async function deleteJob(jobId, recruiterId) {
-  const existingJob = await prisma.job.findFirst({
-    where: { id: jobId, recruiterId },
-  });
-
-  if (!existingJob) {
-    const error = new Error('Job not found.');
-    error.statusCode = 404;
-    throw error;
-  }
-
+  await assertRecruiterOwnsJob(jobId, recruiterId);
   return prisma.job.delete({ where: { id: jobId } });
 }
 
 export async function browseJobs(filters = {}) {
-  return prisma.job.findMany({
+  const jobs = await prisma.job.findMany({
     where: {
       status: 'OPEN',
       title: filters.keyword ? { contains: filters.keyword, mode: 'insensitive' } : undefined,
@@ -70,4 +81,6 @@ export async function browseJobs(filters = {}) {
     orderBy: { createdAt: 'desc' },
     include: { recruiter: { include: { recruiterProfile: true } } },
   });
+
+  return jobs.map((job) => serializeJob(job, { publicRecruiter: true }));
 }

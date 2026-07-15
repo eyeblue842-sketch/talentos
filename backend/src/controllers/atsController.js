@@ -6,11 +6,12 @@ import {
   addAtsNote,
   getCandidateApplications,
 } from '../services/atsService.js';
+import { sendSuccess } from '../utils/response.js';
 
 export async function applyForJob(req, res, next) {
   try {
     const application = await applyToJob(req.user.candidateProfile.id, req.body);
-    res.status(201).json({ success: true, data: application });
+    sendSuccess(res, 201, application);
   } catch (error) {
     next(error);
   }
@@ -19,7 +20,7 @@ export async function applyForJob(req, res, next) {
 export async function getPipeline(req, res, next) {
   try {
     const pipeline = await getRecruiterPipeline(req.user.id);
-    res.json({ success: true, data: pipeline });
+    sendSuccess(res, 200, pipeline);
   } catch (error) {
     next(error);
   }
@@ -28,7 +29,7 @@ export async function getPipeline(req, res, next) {
 export async function movePipelineStage(req, res, next) {
   try {
     const updated = await updatePipelineStage(req.params.applicationId, req.user.id, req.body.stage);
-    res.json({ success: true, data: updated });
+    sendSuccess(res, 200, updated);
   } catch (error) {
     next(error);
   }
@@ -37,7 +38,7 @@ export async function movePipelineStage(req, res, next) {
 export async function planInterview(req, res, next) {
   try {
     const updated = await scheduleInterview(req.params.applicationId, req.user.id, req.body);
-    res.json({ success: true, data: updated });
+    sendSuccess(res, 200, updated);
   } catch (error) {
     next(error);
   }
@@ -46,7 +47,7 @@ export async function planInterview(req, res, next) {
 export async function createAtsNote(req, res, next) {
   try {
     const note = await addAtsNote(req.params.applicationId, req.user.id, req.body.content);
-    res.status(201).json({ success: true, data: note });
+    sendSuccess(res, 201, note);
   } catch (error) {
     next(error);
   }
@@ -55,7 +56,7 @@ export async function createAtsNote(req, res, next) {
 export async function getCandidateApplicationList(req, res, next) {
   try {
     const applications = await getCandidateApplications(req.user.candidateProfile.id);
-    res.json({ success: true, data: applications });
+    sendSuccess(res, 200, applications);
   } catch (error) {
     next(error);
   }

@@ -2,13 +2,64 @@ import nodemailer from 'nodemailer';
 import dayjs from 'dayjs';
 import { env } from '../config/env.js';
 
-const transporter = env.smtpHost
-  ? nodemailer.createTransport({
-      host: env.smtpHost,
-      port: env.smtpPort,
-      auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
-    })
-  : null;
+const sentEmails = [];
+
+function createSmtpTransport() {
+  return nodemailer.createTransport({
+    host: env.smtpHost,
+    port: env.smtpPort,
+    auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
+  });
+}
+
+function createTestTransport() {
+  return {
+    async sendMail(message) {
+      sentEmails.push({
+        from: message.from,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+      });
+
+      return {
+        accepted: [message.to],
+        rejected: [],
+        envelope: { from: message.from, to: [message.to] },
+        messageId: `test-${sentEmails.length}`,
+      };
+    },
+  };
+}
+
+export function __resolveEmailTransportInfo(config = {}) {
+  const isTest = config.isTest ?? env.isTest;
+  const smtpHost = config.smtpHost ?? env.smtpHost;
+  const smtpPort = config.smtpPort ?? env.smtpPort;
+
+  return {
+    kind: isTest ? 'test' : smtpHost ? 'smtp' : 'stub',
+    usesSmtp: !isTest && Boolean(smtpHost),
+    host: !isTest && smtpHost ? smtpHost : null,
+    port: !isTest && smtpHost ? smtpPort : null,
+  };
+}
+
+function createTransport() {
+  const transportInfo = __resolveEmailTransportInfo();
+
+  if (transportInfo.kind === 'test') {
+    return createTestTransport();
+  }
+
+  if (transportInfo.kind === 'smtp') {
+    return createSmtpTransport();
+  }
+
+  return null;
+}
+
+const transporter = createTransport();
 
 function emailTemplate(stage, jobTitle, metadata = {}) {
   const templates = {
@@ -49,5 +100,59 @@ export async function sendPipelineEmail(to, stage, jobTitle, metadata = {}) {
     to,
     subject: template.subject,
     text: template.text,
+  });
+}
+
+async function sendTransactionalEmail({ to, subject, text }) {
+  if (!transporter) {
+    if (env.isProduction) {
+      const error = new Error('Email delivery is not configured.');
+      error.statusCode = 503;
+      throw error;
+    }
+
+    console.log(`Email stub -> ${to}: ${subject}`);
+    return;
+  }
+
+  await transporter.sendMail({
+    from: env.emailFrom,
+    to,
+    subject,
+    text,
+  });
+}
+
+export function __getSentEmails() {
+  return sentEmails.slice();
+}
+
+export function __resetSentEmails() {
+  sentEmails.length = 0;
+}
+
+export function __getEmailTransportInfo() {
+  return __resolveEmailTransportInfo();
+}
+
+export async function sendPasswordResetEmail(to, token) {
+  const resetUrl = new URL('/api/auth/password-reset/start', env.frontendUrl);
+  resetUrl.searchParams.set('token', token);
+
+  await sendTransactionalEmail({
+    to,
+    subject: 'Reset your Careeriz password',
+    text: `Use this link to reset your password: ${resetUrl.toString()}`,
+  });
+}
+
+export async function sendEmailVerificationEmail(to, token) {
+  const verifyUrl = new URL('/api/auth/email-verification/confirm', env.frontendUrl);
+  verifyUrl.searchParams.set('token', token);
+
+  await sendTransactionalEmail({
+    to,
+    subject: 'Verify your Careeriz email',
+    text: `Verify your email by visiting: ${verifyUrl.toString()}`,
   });
 }

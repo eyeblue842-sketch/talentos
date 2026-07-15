@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import { prisma } from '../config/db.js';
 import { storeResume } from '../config/storage.js';
 import { indexCandidateResume } from './searchService.js';
+import { serializeCandidateProfile, serializeSavedCandidate } from '../serializers/index.js';
 
 function normalizeStringArray(value) {
   if (Array.isArray(value)) {
@@ -23,7 +24,7 @@ export async function uploadCandidateResume(candidateId, file) {
   });
 
   await indexCandidateResume(candidate);
-  return candidate;
+  return serializeCandidateProfile(candidate, { includePrivate: true });
 }
 
 export async function saveCandidateProfile(candidateId, payload) {
@@ -40,23 +41,35 @@ export async function saveCandidateProfile(candidateId, payload) {
   });
 
   await indexCandidateResume(candidate);
-  return candidate;
+  return serializeCandidateProfile(candidate, { includePrivate: true });
 }
 
 export async function saveCandidateForRecruiter(recruiterProfileId, candidateId, tag) {
-  return prisma.savedCandidate.upsert({
+  const candidate = await prisma.candidateProfile.findUnique({ where: { id: candidateId } });
+  if (!candidate) {
+    const error = new Error('Candidate not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const savedCandidate = await prisma.savedCandidate.upsert({
     where: { recruiterId_candidateId: { recruiterId: recruiterProfileId, candidateId } },
     update: { tag },
     create: { recruiterId: recruiterProfileId, candidateId, tag },
+    include: { candidate: true },
   });
+
+  return serializeSavedCandidate(savedCandidate);
 }
 
 export async function getSavedCandidates(recruiterProfileId) {
-  return prisma.savedCandidate.findMany({
+  const savedCandidates = await prisma.savedCandidate.findMany({
     where: { recruiterId: recruiterProfileId },
     include: { candidate: true },
     orderBy: { createdAt: 'desc' },
   });
+
+  return savedCandidates.map(serializeSavedCandidate);
 }
 
 export async function generateResumePdf(candidate, resumeBuilder) {
@@ -72,7 +85,7 @@ export async function generateResumePdf(candidate, resumeBuilder) {
   doc.fontSize(11).text(candidate.skills.join(', '));
   doc.moveDown();
   doc.fontSize(16).text('Experience');
-  JSON.parse(JSON.stringify(resumeBuilder.experience || [])).forEach((item) => {
+  JSON.parse(JSON.stringify(resumeBuilder?.experience || [])).forEach((item) => {
     doc.fontSize(12).text(`${item.role || ''} - ${item.company || ''}`);
     doc.fontSize(10).text(item.summary || '');
     doc.moveDown(0.5);

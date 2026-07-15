@@ -1,12 +1,36 @@
 import bcrypt from 'bcryptjs';
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
-import { signToken } from '../utils/jwt.js';
+import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
 import { getEmailDomain, isPersonalEmail, normalizeOfficeLocations } from '../utils/email.js';
+import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '../serializers/index.js';
+import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
 
-function sanitizeUser(user) {
-  const { passwordHash, ...safeUser } = user;
-  return safeUser;
+function buildCandidateProfileData(payload) {
+  const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
+  return {
+    fullName: fallbackName,
+    location: payload.location || '',
+    totalExperience: payload.totalExperience || 0,
+    skills: payload.skills || [],
+    sharedResumeSlug: slugify(`${fallbackName}-${Date.now()}`, { lower: true, strict: true }),
+  };
+}
+
+async function getUserByEmail(email) {
+  return prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
+    include: { recruiterProfile: true, candidateProfile: true },
+  });
+}
+
+function ensureVerifiedUser(user) {
+  if (!user.emailVerifiedAt) {
+    const error = new Error('Please verify your email before logging in.');
+    error.statusCode = 403;
+    throw error;
+  }
 }
 
 export async function registerUser(payload) {
@@ -17,9 +41,7 @@ export async function registerUser(payload) {
   }
 
   const normalizedEmail = payload.email.toLowerCase().trim();
-  const existingUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
+  const existingUser = await getUserByEmail(normalizedEmail);
 
   if (existingUser) {
     const error = new Error('This company email is already registered with us. Please login instead.');
@@ -27,7 +49,7 @@ export async function registerUser(payload) {
     throw error;
   }
 
-  const hashedPassword = await bcrypt.hash(payload.password, 10);
+  const hashedPassword = await bcrypt.hash(payload.password, 12);
 
   const user = await prisma.user.create({
     data: {
@@ -44,15 +66,7 @@ export async function registerUser(payload) {
           }
         : undefined,
       candidateProfile: payload.role === 'CANDIDATE'
-        ? {
-            create: {
-              fullName: payload.fullName,
-              location: payload.location || '',
-              totalExperience: payload.totalExperience || 0,
-              skills: payload.skills || [],
-              sharedResumeSlug: slugify(`${payload.fullName}-${Date.now()}`, { lower: true, strict: true }),
-            },
-          }
+        ? { create: buildCandidateProfileData(payload) }
         : undefined,
     },
     include: {
@@ -61,8 +75,13 @@ export async function registerUser(payload) {
     },
   });
 
-  const token = signToken({ userId: user.id, role: user.role });
-  return { user: sanitizeUser(user), token };
+  const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION');
+  await sendEmailVerificationEmail(user.email, token);
+
+  return {
+    user: serializeUser(user, { includePrivate: true }),
+    emailVerificationRequired: true,
+  };
 }
 
 export async function updateRecruiterProfile(userId, payload) {
@@ -77,7 +96,7 @@ export async function updateRecruiterProfile(userId, payload) {
     throw error;
   }
 
-  return prisma.recruiterProfile.update({
+  const profile = await prisma.recruiterProfile.update({
     where: { userId },
     data: {
       companyName: payload.companyName,
@@ -99,17 +118,16 @@ export async function updateRecruiterProfile(userId, payload) {
         payload.industryDomain &&
         payload.companyType &&
         payload.headquartersLocation &&
-        payload.designation,
+        payload.designation
       ),
     },
   });
+
+  return serializeRecruiterProfile(profile);
 }
 
 export async function loginUser(email, password) {
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: { recruiterProfile: true, candidateProfile: true },
-  });
+  const user = await getUserByEmail(email);
 
   if (!user) {
     const error = new Error('Invalid credentials.');
@@ -124,6 +142,73 @@ export async function loginUser(email, password) {
     throw error;
   }
 
-  const token = signToken({ userId: user.id, role: user.role });
-  return { user: sanitizeUser(user), token };
+  ensureVerifiedUser(user);
+
+  const token = signToken({ userId: user.id, role: user.role, sessionVersion: user.sessionVersion });
+  return {
+    token,
+    session: serializeAuthSession(user, getTokenExpiryIso()),
+  };
+}
+
+export async function requestPasswordReset(email) {
+  const user = await getUserByEmail(email);
+  if (!user) {
+    return { requested: true };
+  }
+
+  const { token } = await issueAuthToken(user.id, 'PASSWORD_RESET');
+  await sendPasswordResetEmail(user.email, token);
+  return { requested: true };
+}
+
+export async function createPasswordResetSession(token) {
+  const consumedToken = await consumeAuthToken(token, 'PASSWORD_RESET', { includeUser: true });
+  const { token: sessionToken } = await issueAuthToken(consumedToken.user.id, 'PASSWORD_RESET_SESSION');
+  return { token: sessionToken };
+}
+
+export async function confirmPasswordReset(token, password) {
+  const consumedToken = await consumeAuthToken(token, 'PASSWORD_RESET_SESSION', { includeUser: true });
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  await prisma.user.update({
+    where: { id: consumedToken.user.id },
+    data: {
+      passwordHash,
+      sessionVersion: { increment: 1 },
+    },
+  });
+
+  return { reset: true };
+}
+
+export async function requestEmailVerification(email) {
+  const user = await getUserByEmail(email);
+  if (!user || user.emailVerifiedAt) {
+    return { requested: true };
+  }
+
+  const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION');
+  await sendEmailVerificationEmail(user.email, token);
+  return { requested: true };
+}
+
+export async function confirmEmailVerification(token) {
+  const consumedToken = await consumeAuthToken(token, 'EMAIL_VERIFICATION', { includeUser: true });
+  await prisma.user.update({
+    where: { id: consumedToken.user.id },
+    data: { emailVerifiedAt: new Date() },
+  });
+
+  return { verified: true };
+}
+
+export async function logoutUser(userId) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { sessionVersion: { increment: 1 } },
+  });
+
+  return { loggedOut: true };
 }
