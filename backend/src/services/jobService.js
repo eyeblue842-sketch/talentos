@@ -1,32 +1,35 @@
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
 import { serializeJob } from '../serializers/index.js';
+import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
+import { recordAuditLog } from './auditLogService.js';
 
-async function getJobById(jobId) {
-  return prisma.job.findUnique({ where: { id: jobId } });
+async function getJobById(organisationId, jobId) {
+  return prisma.job.findFirst({
+    where: { id: jobId, organisationId },
+    include: { requisition: true },
+  });
 }
 
-async function assertRecruiterOwnsJob(jobId, recruiterId) {
-  const job = await getJobById(jobId);
+async function assertOrganisationCanAccessJob(actorUser, jobId, organisationId = null) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'], organisationId);
+  const job = await getJobById(context.organisationId, jobId);
   if (!job) {
     const error = new Error('Job not found.');
     error.statusCode = 404;
     throw error;
   }
 
-  if (job.recruiterId !== recruiterId) {
-    const error = new Error('You are not allowed to access this job.');
-    error.statusCode = 403;
-    throw error;
-  }
-
-  return job;
+  return { context, job };
 }
 
-export async function createJob(recruiterId, payload) {
+export async function createJob(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'], organisationId);
   const job = await prisma.job.create({
     data: {
-      recruiterId,
+      organisationId: context.organisationId,
+      recruiterId: actorUser.id,
+      requisitionId: payload.requisitionId || null,
       title: payload.title,
       slug: slugify(`${payload.title}-${Date.now()}`, { lower: true, strict: true }),
       description: payload.description,
@@ -39,35 +42,84 @@ export async function createJob(recruiterId, payload) {
       employmentType: payload.employmentType || 'FULL_TIME',
       status: payload.status || 'OPEN',
     },
+    include: { requisition: true },
   });
 
-  return serializeJob(job);
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'job.create',
+    entityType: 'Job',
+    entityId: job.id,
+    afterData: job,
+    ...requestMeta,
+  });
+
+  return serializeJob(job, { includeRequisition: true });
 }
 
-export async function listRecruiterJobs(recruiterId) {
+export async function listRecruiterJobs(actorUser, organisationId = null) {
+  const context = await requireOrganisationContext(actorUser, organisationId);
   const jobs = await prisma.job.findMany({
-    where: { recruiterId },
+    where: { organisationId: context.organisationId },
     orderBy: { createdAt: 'desc' },
-    include: { _count: { select: { applications: true } } },
+    include: {
+      requisition: true,
+      _count: { select: { applications: true } },
+    },
   });
 
-  return jobs.map((job) => serializeJob(job));
+  return jobs.map((job) => serializeJob(job, { includeRequisition: true }));
 }
 
-export async function updateJob(jobId, recruiterId, payload) {
-  await assertRecruiterOwnsJob(jobId, recruiterId);
+export async function updateJob(jobId, actorUser, payload, organisationId = null, requestMeta = {}) {
+  const { context, job: existing } = await assertOrganisationCanAccessJob(actorUser, jobId, organisationId);
+  if (!['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(context.activeMembership.role)) {
+    const error = new Error('You are not allowed to update this job.');
+    error.statusCode = 403;
+    throw error;
+  }
 
   const job = await prisma.job.update({
     where: { id: jobId },
     data: payload,
+    include: { requisition: true },
   });
 
-  return serializeJob(job);
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'job.update',
+    entityType: 'Job',
+    entityId: jobId,
+    beforeData: existing,
+    afterData: job,
+    ...requestMeta,
+  });
+
+  return serializeJob(job, { includeRequisition: true });
 }
 
-export async function deleteJob(jobId, recruiterId) {
-  await assertRecruiterOwnsJob(jobId, recruiterId);
-  return prisma.job.delete({ where: { id: jobId } });
+export async function deleteJob(jobId, actorUser, organisationId = null, requestMeta = {}) {
+  const { context, job } = await assertOrganisationCanAccessJob(actorUser, jobId, organisationId);
+  if (!['OWNER', 'ADMIN', 'RECRUITER'].includes(context.activeMembership.role)) {
+    const error = new Error('You are not allowed to delete this job.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await prisma.job.delete({ where: { id: jobId } });
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'job.delete',
+    entityType: 'Job',
+    entityId: jobId,
+    beforeData: job,
+    ...requestMeta,
+  });
+
+  return { deleted: true };
 }
 
 export async function browseJobs(filters = {}) {
@@ -79,8 +131,11 @@ export async function browseJobs(filters = {}) {
       skillsRequired: filters.skill ? { has: filters.skill } : undefined,
     },
     orderBy: { createdAt: 'desc' },
-    include: { recruiter: { include: { recruiterProfile: true } } },
+    include: {
+      recruiter: { include: { recruiterProfile: { include: { organisation: true } } } },
+      requisition: true,
+    },
   });
 
-  return jobs.map((job) => serializeJob(job, { publicRecruiter: true }));
+  return jobs.map((job) => serializeJob(job, { publicRecruiter: true, includeRequisition: true }));
 }

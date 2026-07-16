@@ -1,13 +1,10 @@
 import { elastic } from '../config/elastic.js';
 import { env } from '../config/env.js';
 import { prisma } from '../config/db.js';
-import { serializeCandidateProfile, serializeResumeBuilder } from '../serializers/index.js';
+import { serializeCandidatePrivateDetail, serializeCandidateSearchCard, serializeResumeBuilder } from '../serializers/index.js';
 
 function serializeSearchCandidate(candidate) {
-  return {
-    ...serializeCandidateProfile(candidate, { includePrivate: true }),
-    resumeBuilder: candidate.resumeBuilder ? serializeResumeBuilder(candidate.resumeBuilder) : null,
-  };
+  return serializeCandidateSearchCard(candidate);
 }
 
 export async function __searchCandidatesWithAdapters(
@@ -81,4 +78,41 @@ export async function indexCandidateResume(candidate) {
 
 export async function searchCandidates(filters = {}) {
   return __searchCandidatesWithAdapters(filters);
+}
+
+export async function getAuthorizedCandidateDetail(candidateId, organisationId) {
+  const candidate = await prisma.candidateProfile.findUnique({
+    where: { id: candidateId },
+    include: {
+      user: true,
+      resumeBuilder: true,
+      applications: {
+        where: { organisationId },
+        select: { id: true },
+      },
+      savedByRecruiters: {
+        where: { organisationId },
+        select: { id: true },
+      },
+    },
+  });
+
+  if (!candidate) {
+    const error = new Error('Candidate not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const hasAccess = candidate.applications.length > 0 || candidate.savedByRecruiters.length > 0;
+  if (!hasAccess) {
+    const error = new Error('Candidate not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    ...serializeCandidatePrivateDetail(candidate),
+    resumeBuilder: candidate.resumeBuilder ? serializeResumeBuilder(candidate.resumeBuilder) : null,
+    accessReason: candidate.applications.length > 0 ? 'applied_to_organisation_job' : 'saved_by_organisation_recruiter',
+  };
 }

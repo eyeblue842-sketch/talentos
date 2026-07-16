@@ -3,7 +3,7 @@ import { sendSuccess } from '../utils/response.js';
 
 export async function recruiterDashboard(req, res, next) {
   try {
-    const data = await getRecruiterDashboard(req.user.id);
+    const data = await getRecruiterDashboard(req.user, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, data);
   } catch (error) {
     next(error);

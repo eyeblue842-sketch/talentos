@@ -37,7 +37,12 @@ function withRelationsUser(user, include = {}) {
   if (!user) return null;
   return {
     ...clone(user),
-    recruiterProfile: include.recruiterProfile ? clone(state.recruiterProfiles.find((item) => item.userId === user.id) || null) : undefined,
+    recruiterProfile: include.recruiterProfile ? {
+      ...clone(state.recruiterProfiles.find((item) => item.userId === user.id) || null),
+      organisation: include.recruiterProfile.include?.organisation
+        ? clone(state.organisations.find((item) => item.id === state.recruiterProfiles.find((entry) => entry.userId === user.id)?.organisationId) || null)
+        : undefined,
+    } : undefined,
     candidateProfile: include.candidateProfile ? clone(state.candidateProfiles.find((item) => item.userId === user.id) || null) : undefined,
   };
 }
@@ -133,6 +138,7 @@ async function seedState() {
       {
         id: 'recruiter-profile-1',
         userId: 'recruiter-1',
+        organisationId: 'organisation-1',
         companyEmailDomain: 'company.com',
         officeLocations: [],
         profileCompleted: true,
@@ -141,6 +147,7 @@ async function seedState() {
       {
         id: 'recruiter-profile-2',
         userId: 'recruiter-2',
+        organisationId: 'organisation-2',
         companyEmailDomain: 'company.com',
         officeLocations: [],
         profileCompleted: true,
@@ -188,6 +195,7 @@ async function seedState() {
     jobs: [
       {
         id: 'job-1',
+        organisationId: 'organisation-1',
         recruiterId: 'recruiter-1',
         title: 'Frontend Engineer',
         slug: 'frontend-engineer',
@@ -207,6 +215,7 @@ async function seedState() {
     applications: [
       {
         id: 'application-1',
+        organisationId: 'organisation-1',
         jobId: 'job-1',
         candidateId: 'candidate-1',
         currentStage: 'APPLIED',
@@ -225,11 +234,55 @@ async function seedState() {
     activities: [],
     authTokens: [],
     resumeBuilders: [],
+    organisations: [
+      {
+        id: 'organisation-1',
+        name: 'Owner Corp',
+        slug: 'owner-corp',
+        status: 'ACTIVE',
+        website: null,
+        logoUrl: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+      {
+        id: 'organisation-2',
+        name: 'Other Corp',
+        slug: 'other-corp',
+        status: 'ACTIVE',
+        website: null,
+        logoUrl: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+    ],
+    organisationMemberships: [
+      {
+        id: 'membership-1',
+        organisationId: 'organisation-1',
+        userId: 'recruiter-1',
+        role: 'OWNER',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+      {
+        id: 'membership-2',
+        organisationId: 'organisation-2',
+        userId: 'recruiter-2',
+        role: 'OWNER',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      },
+    ],
   };
 }
 
 function installPrismaMocks() {
   prisma.user ||= {};
+  prisma.organisation ||= {};
+  prisma.organisationMembership ||= {};
   prisma.job ||= {};
   prisma.application ||= {};
   prisma.candidateProfile ||= {};
@@ -296,6 +349,47 @@ function installPrismaMocks() {
     return withRelationsUser(user, include);
   };
 
+  prisma.organisation.findUnique = async ({ where }) => clone(state.organisations.find((item) => item.id === where.id || item.slug === where.slug) || null);
+  prisma.organisation.create = async ({ data }) => {
+    const organisation = {
+      id: `organisation-${state.organisations.length + 1}`,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...data,
+    };
+    state.organisations.push(organisation);
+    return clone(organisation);
+  };
+
+  prisma.organisationMembership.findMany = async ({ where = {}, include = {} }) => {
+    let memberships = [...state.organisationMemberships];
+    if (where.userId) {
+      memberships = memberships.filter((item) => item.userId === where.userId);
+    }
+    if (where.organisationId) {
+      memberships = memberships.filter((item) => item.organisationId === where.organisationId);
+    }
+    if (where.status) {
+      memberships = memberships.filter((item) => item.status === where.status);
+    }
+    return memberships.map((membership) => ({
+      ...clone(membership),
+      organisation: include.organisation ? clone(state.organisations.find((item) => item.id === membership.organisationId) || null) : undefined,
+      user: include.user ? clone(state.users.find((item) => item.id === membership.userId) || null) : undefined,
+    }));
+  };
+  prisma.organisationMembership.create = async ({ data }) => {
+    const membership = {
+      id: `membership-${state.organisationMemberships.length + 1}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...data,
+    };
+    state.organisationMemberships.push(membership);
+    return clone(membership);
+  };
+
   prisma.candidateProfile.findUnique = async ({ where, include = {} }) => {
     const candidate = state.candidateProfiles.find((item) => item.id === where.id);
     return withRelationsCandidate(candidate, include);
@@ -310,6 +404,13 @@ function installPrismaMocks() {
   };
 
   prisma.job.findUnique = async ({ where }) => clone(state.jobs.find((item) => item.id === where.id) || null);
+  prisma.job.findFirst = async ({ where = {}, include = {} }) => {
+    const job = state.jobs.find((item) => (
+      (!where.id || item.id === where.id)
+      && (!where.organisationId || item.organisationId === where.organisationId)
+    ));
+    return withRelationsJob(job, include);
+  };
   prisma.job.findMany = async ({ where = {}, include = {} }) => {
     let jobs = [...state.jobs];
     if (where.recruiterId) {
@@ -328,6 +429,13 @@ function installPrismaMocks() {
 
   prisma.application.findUnique = async ({ where, include = {} }) => {
     const application = state.applications.find((item) => item.id === where.id);
+    return withRelationsApplication(application, include);
+  };
+  prisma.application.findFirst = async ({ where = {}, include = {} }) => {
+    const application = state.applications.find((item) => (
+      (!where.id || item.id === where.id)
+      && (!where.organisationId || item.organisationId === where.organisationId)
+    ));
     return withRelationsApplication(application, include);
   };
   prisma.application.update = async ({ where, data, include = {} }) => {
@@ -498,14 +606,14 @@ test('protected endpoints require authentication', async () => {
   assert.equal(response.statusCode, 401);
 });
 
-test('job ownership is enforced with 403 for cross-user access', async () => {
+test('job ownership is hidden with 404 for cross-organisation access', async () => {
   const token = await loginAs('other@company.com');
   const response = await request(app)
     .patch('/api/jobs/job-1')
     .set('Authorization', `Bearer ${token}`)
     .send({ title: 'Tampered title' });
 
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 404);
 });
 
 test('resume search denies candidates and recruiter responses do not expose user emails', async () => {
@@ -580,14 +688,14 @@ test('resume search backend failures are surfaced instead of silently falling ba
   assert.equal(fallbackQueried, false);
 });
 
-test('ATS stage transition denies other recruiters', async () => {
+test('ATS stage transition hides cross-organisation applications', async () => {
   const token = await loginAs('other@company.com');
   const response = await request(app)
     .patch('/api/ats/pipeline/application-1/stage')
     .set('Authorization', `Bearer ${token}`)
     .send({ stage: 'SHORTLISTED' });
 
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 404);
 });
 
 test('logout invalidates an issued JWT immediately', async () => {

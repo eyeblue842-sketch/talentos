@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/jwt.js';
 import { prisma } from '../config/db.js';
 import { apiError } from '../utils/response.js';
+import { getRequestOrganisationId, resolveMembershipForRequest } from '../services/organisationAccessService.js';
 
 export function auth(requiredRoles = []) {
   return async (req, res, next) => {
@@ -15,7 +16,10 @@ export function auth(requiredRoles = []) {
       const decoded = verifyToken(token);
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
-        include: { recruiterProfile: true, candidateProfile: true },
+        include: {
+          recruiterProfile: { include: { organisation: true } },
+          candidateProfile: true,
+        },
       });
 
       if (!user || !user.isActive) {
@@ -30,7 +34,14 @@ export function auth(requiredRoles = []) {
         return res.status(403).json(apiError('Insufficient permissions.'));
       }
 
-      req.user = user;
+      const requestedOrganisationId = getRequestOrganisationId(req);
+      const { memberships, activeMembership } = await resolveMembershipForRequest(user, requestedOrganisationId);
+
+      req.user = {
+        ...user,
+        memberships,
+        activeMembership,
+      };
       next();
     } catch (error) {
       if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {

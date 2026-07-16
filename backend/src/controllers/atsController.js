@@ -19,7 +19,7 @@ export async function applyForJob(req, res, next) {
 
 export async function getPipeline(req, res, next) {
   try {
-    const pipeline = await getRecruiterPipeline(req.user.id);
+    const pipeline = await getRecruiterPipeline(req.user, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, pipeline);
   } catch (error) {
     next(error);
@@ -28,7 +28,13 @@ export async function getPipeline(req, res, next) {
 
 export async function movePipelineStage(req, res, next) {
   try {
-    const updated = await updatePipelineStage(req.params.applicationId, req.user.id, req.body.stage);
+    const updated = await updatePipelineStage(
+      req.params.applicationId,
+      req.user,
+      req.body.stage,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
     sendSuccess(res, 200, updated);
   } catch (error) {
     next(error);
@@ -37,7 +43,13 @@ export async function movePipelineStage(req, res, next) {
 
 export async function planInterview(req, res, next) {
   try {
-    const updated = await scheduleInterview(req.params.applicationId, req.user.id, req.body);
+    const updated = await scheduleInterview(
+      req.params.applicationId,
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
     sendSuccess(res, 200, updated);
   } catch (error) {
     next(error);
@@ -46,7 +58,13 @@ export async function planInterview(req, res, next) {
 
 export async function createAtsNote(req, res, next) {
   try {
-    const note = await addAtsNote(req.params.applicationId, req.user.id, req.body.content);
+    const note = await addAtsNote(
+      req.params.applicationId,
+      req.user,
+      req.body.content,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
     sendSuccess(res, 201, note);
   } catch (error) {
     next(error);

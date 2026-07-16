@@ -5,7 +5,7 @@ import {
   getSavedCandidates,
   generateResumePdf,
 } from '../services/resumeService.js';
-import { searchCandidates } from '../services/searchService.js';
+import { getAuthorizedCandidateDetail, searchCandidates } from '../services/searchService.js';
 import { prisma } from '../config/db.js';
 import { getCandidateRecommendedJobs } from '../services/recommendationService.js';
 import { apiError, sendSuccess } from '../utils/response.js';
@@ -37,6 +37,18 @@ export async function searchResumeDatabase(req, res, next) {
   }
 }
 
+export async function getCandidateDetail(req, res, next) {
+  try {
+    const candidate = await getAuthorizedCandidateDetail(
+      req.params.candidateId,
+      req.user.activeMembership?.organisationId
+    );
+    sendSuccess(res, 200, candidate);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function updateCandidateProfile(req, res, next) {
   try {
     const candidate = await saveCandidateProfile(req.user.candidateProfile.id, req.body);
@@ -57,7 +69,13 @@ export async function uploadResume(req, res, next) {
 
 export async function saveCandidate(req, res, next) {
   try {
-    const saved = await saveCandidateForRecruiter(req.user.recruiterProfile.id, req.params.candidateId, req.body.tag);
+    const saved = await saveCandidateForRecruiter(
+      req.user,
+      req.params.candidateId,
+      req.user.activeMembership?.organisationId,
+      req.body.tag,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
     sendSuccess(res, 200, saved);
   } catch (error) {
     next(error);
@@ -66,7 +84,7 @@ export async function saveCandidate(req, res, next) {
 
 export async function listSavedCandidates(req, res, next) {
   try {
-    const saved = await getSavedCandidates(req.user.recruiterProfile.id);
+    const saved = await getSavedCandidates(req.user, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, saved);
   } catch (error) {
     next(error);

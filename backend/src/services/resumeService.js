@@ -2,7 +2,12 @@ import PDFDocument from 'pdfkit';
 import { prisma } from '../config/db.js';
 import { storeResume } from '../config/storage.js';
 import { indexCandidateResume } from './searchService.js';
-import { serializeCandidateProfile, serializeSavedCandidate } from '../serializers/index.js';
+import {
+  serializeCandidateProfile,
+  serializeSavedCandidate,
+} from '../serializers/index.js';
+import { requireOrganisationContext } from './organisationAccessService.js';
+import { recordAuditLog } from './auditLogService.js';
 
 function normalizeStringArray(value) {
   if (Array.isArray(value)) {
@@ -44,7 +49,8 @@ export async function saveCandidateProfile(candidateId, payload) {
   return serializeCandidateProfile(candidate, { includePrivate: true });
 }
 
-export async function saveCandidateForRecruiter(recruiterProfileId, candidateId, tag) {
+export async function saveCandidateForRecruiter(actorUser, candidateId, organisationId = null, tag = null, requestMeta = {}) {
+  const context = await requireOrganisationContext(actorUser, organisationId);
   const candidate = await prisma.candidateProfile.findUnique({ where: { id: candidateId } });
   if (!candidate) {
     const error = new Error('Candidate not found.');
@@ -53,23 +59,45 @@ export async function saveCandidateForRecruiter(recruiterProfileId, candidateId,
   }
 
   const savedCandidate = await prisma.savedCandidate.upsert({
-    where: { recruiterId_candidateId: { recruiterId: recruiterProfileId, candidateId } },
-    update: { tag },
-    create: { recruiterId: recruiterProfileId, candidateId, tag },
+    where: { recruiterId_candidateId: { recruiterId: actorUser.recruiterProfile.id, candidateId } },
+    update: {
+      organisationId: context.organisationId,
+      tag,
+    },
+    create: {
+      organisationId: context.organisationId,
+      recruiterId: actorUser.recruiterProfile.id,
+      candidateId,
+      tag,
+    },
     include: { candidate: true },
   });
 
-  return serializeSavedCandidate(savedCandidate);
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'candidate.save',
+    entityType: 'SavedCandidate',
+    entityId: savedCandidate.id,
+    afterData: savedCandidate,
+    ...requestMeta,
+  });
+
+  return serializeSavedCandidate(savedCandidate, { minimalCandidate: true });
 }
 
-export async function getSavedCandidates(recruiterProfileId) {
+export async function getSavedCandidates(actorUser, organisationId = null) {
+  const context = await requireOrganisationContext(actorUser, organisationId);
   const savedCandidates = await prisma.savedCandidate.findMany({
-    where: { recruiterId: recruiterProfileId },
+    where: {
+      organisationId: context.organisationId,
+      recruiterId: actorUser.recruiterProfile.id,
+    },
     include: { candidate: true },
     orderBy: { createdAt: 'desc' },
   });
 
-  return savedCandidates.map(serializeSavedCandidate);
+  return savedCandidates.map((item) => serializeSavedCandidate(item, { minimalCandidate: true }));
 }
 
 export async function generateResumePdf(candidate, resumeBuilder) {

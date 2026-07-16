@@ -6,6 +6,7 @@ import { getEmailDomain, isPersonalEmail, normalizeOfficeLocations } from '../ut
 import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '../serializers/index.js';
 import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
+import { resolveMembershipForRequest } from './organisationAccessService.js';
 
 function buildCandidateProfileData(payload) {
   const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
@@ -21,8 +22,34 @@ function buildCandidateProfileData(payload) {
 async function getUserByEmail(email) {
   return prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
-    include: { recruiterProfile: true, candidateProfile: true },
+    include: {
+      recruiterProfile: { include: { organisation: true } },
+      candidateProfile: true,
+    },
   });
+}
+
+async function buildUniqueOrganisationSlug(baseValue) {
+  const base = slugify(baseValue, { lower: true, strict: true }) || `org-${Date.now()}`;
+  let slug = base;
+  let counter = 1;
+
+  while (await prisma.organisation.findUnique({ where: { slug } })) {
+    counter += 1;
+    slug = `${base}-${counter}`;
+  }
+
+  return slug;
+}
+
+async function buildRecruiterOrganisationData(payload) {
+  const emailDomain = getEmailDomain(payload.email);
+  const inferredName = payload.companyName?.trim() || emailDomain.split('.')[0];
+  return {
+    name: inferredName,
+    slug: await buildUniqueOrganisationSlug(inferredName),
+    website: payload.website || null,
+  };
 }
 
 function ensureVerifiedUser(user) {
@@ -51,28 +78,50 @@ export async function registerUser(payload) {
 
   const hashedPassword = await bcrypt.hash(payload.password, 12);
 
-  const user = await prisma.user.create({
-    data: {
-      email: normalizedEmail,
-      passwordHash: hashedPassword,
-      role: payload.role,
-      recruiterProfile: payload.role === 'RECRUITER'
-        ? {
-            create: {
-              companyEmailDomain: getEmailDomain(payload.email),
-              officeLocations: [],
-              profileCompleted: false,
-            },
-          }
-        : undefined,
-      candidateProfile: payload.role === 'CANDIDATE'
-        ? { create: buildCandidateProfileData(payload) }
-        : undefined,
-    },
-    include: {
-      recruiterProfile: true,
-      candidateProfile: true,
-    },
+  const user = await prisma.$transaction(async (tx) => {
+    const organisation = payload.role === 'RECRUITER'
+      ? await tx.organisation.create({ data: await buildRecruiterOrganisationData(payload) })
+      : null;
+
+    const createdUser = await tx.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash: hashedPassword,
+        role: payload.role,
+        recruiterProfile: payload.role === 'RECRUITER'
+          ? {
+              create: {
+                organisationId: organisation.id,
+                companyEmailDomain: getEmailDomain(payload.email),
+                officeLocations: [],
+                profileCompleted: false,
+              },
+            }
+          : undefined,
+        candidateProfile: payload.role === 'CANDIDATE'
+          ? { create: buildCandidateProfileData(payload) }
+          : undefined,
+      },
+    });
+
+    if (organisation) {
+      await tx.organisationMembership.create({
+        data: {
+          organisationId: organisation.id,
+          userId: createdUser.id,
+          role: 'OWNER',
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    return tx.user.findUnique({
+      where: { id: createdUser.id },
+      include: {
+        recruiterProfile: { include: { organisation: true } },
+        candidateProfile: true,
+      },
+    });
   });
 
   const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION');
@@ -145,9 +194,10 @@ export async function loginUser(email, password) {
   ensureVerifiedUser(user);
 
   const token = signToken({ userId: user.id, role: user.role, sessionVersion: user.sessionVersion });
+  const { activeMembership } = await resolveMembershipForRequest(user);
   return {
     token,
-    session: serializeAuthSession(user, getTokenExpiryIso()),
+    session: serializeAuthSession(user, getTokenExpiryIso(), activeMembership),
   };
 }
 

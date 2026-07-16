@@ -37,7 +37,7 @@ export async function login(req, res, next) {
 }
 
 export async function me(req, res) {
-  sendSuccess(res, 200, serializeUser(req.user, { includePrivate: true }));
+  sendSuccess(res, 200, serializeUser(req.user, { includePrivate: true, activeMembership: req.user.activeMembership }));
 }
 
 export async function passwordResetRequest(req, res, next) {
