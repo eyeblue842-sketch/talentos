@@ -2,9 +2,49 @@ import { elastic } from '../config/elastic.js';
 import { env } from '../config/env.js';
 import { prisma } from '../config/db.js';
 import { serializeCandidatePrivateDetail, serializeCandidateSearchCard, serializeResumeBuilder } from '../serializers/index.js';
+import { recordAuditLog } from './auditLogService.js';
 
-function serializeSearchCandidate(candidate) {
-  return serializeCandidateSearchCard(candidate);
+function buildDbWhere(filters = {}) {
+  const or = [];
+  if (filters.keyword) {
+    or.push(
+      { fullName: { contains: filters.keyword, mode: 'insensitive' } },
+      { headline: { contains: filters.keyword, mode: 'insensitive' } },
+      { skills: { has: filters.keyword } },
+    );
+  }
+  if (filters.skill) {
+    or.push({ skills: { has: filters.skill } });
+  }
+
+  return {
+    OR: or.length ? or : undefined,
+    location: filters.location ? { contains: filters.location, mode: 'insensitive' } : undefined,
+    totalExperience: typeof filters.minExperience === 'number' || typeof filters.maxExperience === 'number'
+      ? {
+          gte: typeof filters.minExperience === 'number' ? filters.minExperience : undefined,
+          lte: typeof filters.maxExperience === 'number' ? filters.maxExperience : undefined,
+        }
+      : undefined,
+    availability: filters.availability || undefined,
+  };
+}
+
+function buildCandidateCard(candidate, organisationSavedCandidates = []) {
+  const matchingSaved = organisationSavedCandidates.filter((item) => item.candidateId === candidate.id);
+  const educationEntries = Array.isArray(candidate.resumeBuilder?.education)
+    ? candidate.resumeBuilder.education
+    : [];
+  const latestEducation = educationEntries[0];
+
+  return serializeCandidateSearchCard({
+    ...candidate,
+    educationSummary: latestEducation?.degree
+      ? `${latestEducation.degree}${latestEducation.school ? `, ${latestEducation.school}` : ''}`
+      : undefined,
+    savedByOrganisation: matchingSaved.length > 0,
+    organisationTags: [...new Set(matchingSaved.map((item) => item.tag).filter(Boolean))],
+  });
 }
 
 export async function __searchCandidatesWithAdapters(
@@ -21,6 +61,9 @@ export async function __searchCandidatesWithAdapters(
         },
       });
     }
+    if (filters.skill) {
+      must.push({ term: { skills: filters.skill } });
+    }
     if (filters.location) {
       must.push({ term: { location: filters.location } });
     }
@@ -28,7 +71,7 @@ export async function __searchCandidatesWithAdapters(
     const response = await elasticClient.search({
       index: env.elasticsearchIndex,
       query: must.length ? { bool: { must } } : { match_all: {} },
-      size: 50,
+      size: 200,
     });
 
     const candidateIds = response.hits.hits.map((item) => item._id);
@@ -36,27 +79,14 @@ export async function __searchCandidatesWithAdapters(
       where: { id: { in: candidateIds } },
       include: { resumeBuilder: true },
     });
-    return candidates.map(serializeSearchCandidate);
+    return candidates;
   }
 
-  const candidates = await candidateProfileDelegate.findMany({
-    where: {
-      OR: filters.keyword
-        ? [
-            { fullName: { contains: filters.keyword, mode: 'insensitive' } },
-            { headline: { contains: filters.keyword, mode: 'insensitive' } },
-            { skills: { has: filters.keyword } },
-          ]
-        : undefined,
-      location: filters.location ? { contains: filters.location, mode: 'insensitive' } : undefined,
-      totalExperience: typeof filters.minExperience === 'number' ? { gte: filters.minExperience } : undefined,
-      availability: filters.availability || undefined,
-    },
+  return candidateProfileDelegate.findMany({
+    where: buildDbWhere(filters),
     include: { resumeBuilder: true },
     orderBy: { updatedAt: 'desc' },
   });
-
-  return candidates.map(serializeSearchCandidate);
 }
 
 export async function indexCandidateResume(candidate) {
@@ -76,11 +106,49 @@ export async function indexCandidateResume(candidate) {
   });
 }
 
-export async function searchCandidates(filters = {}) {
-  return __searchCandidatesWithAdapters(filters);
+export async function searchCandidates(filters = {}, organisationId) {
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
+  const sourceRows = await __searchCandidatesWithAdapters(filters);
+  let filteredRows = sourceRows;
+
+  if (filters.fresher === 'true') {
+    filteredRows = filteredRows.filter((candidate) => candidate.totalExperience === 0);
+  } else if (filters.fresher === 'false') {
+    filteredRows = filteredRows.filter((candidate) => candidate.totalExperience > 0);
+  }
+
+  if (filters.tag && organisationId) {
+    const taggedIds = new Set((await prisma.savedCandidate.findMany({
+      where: { organisationId, tag: filters.tag },
+      select: { candidateId: true },
+    })).map((item) => item.candidateId));
+    filteredRows = filteredRows.filter((candidate) => taggedIds.has(candidate.id));
+  }
+
+  const savedCandidates = organisationId
+    ? await prisma.savedCandidate.findMany({
+        where: { organisationId, candidateId: { in: filteredRows.map((candidate) => candidate.id) } },
+      })
+    : [];
+
+  const total = filteredRows.length;
+  const items = filteredRows
+    .slice((page - 1) * pageSize, page * pageSize)
+    .map((candidate) => buildCandidateCard(candidate, savedCandidates));
+
+  return {
+    items,
+    meta: {
+      total,
+      page,
+      pageSize,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    },
+  };
 }
 
-export async function getAuthorizedCandidateDetail(candidateId, organisationId) {
+export async function getAuthorizedCandidateDetail(candidateId, organisationId, requestMeta = {}) {
   const candidate = await prisma.candidateProfile.findUnique({
     where: { id: candidateId },
     include: {
@@ -88,11 +156,33 @@ export async function getAuthorizedCandidateDetail(candidateId, organisationId) 
       resumeBuilder: true,
       applications: {
         where: { organisationId },
-        select: { id: true },
+        include: {
+          job: { include: { requisition: true } },
+          notes: {
+            where: { organisationId },
+            include: { author: true },
+            orderBy: { createdAt: 'desc' },
+          },
+          activities: {
+            where: { organisationId },
+            include: { actorUser: true },
+            orderBy: { createdAt: 'desc' },
+          },
+          interviewProcesses: {
+            include: {
+              createdBy: true,
+              rounds: {
+                include: {
+                  panelMembers: { include: { user: true } },
+                  feedbacks: { include: { interviewer: true } },
+                },
+              },
+            },
+          },
+        },
       },
       savedByRecruiters: {
         where: { organisationId },
-        select: { id: true },
       },
     },
   });
@@ -110,9 +200,22 @@ export async function getAuthorizedCandidateDetail(candidateId, organisationId) 
     throw error;
   }
 
+  await recordAuditLog({
+    organisationId,
+    action: 'candidate.detail.access',
+    entityType: 'CandidateProfile',
+    entityId: candidateId,
+    metadata: {
+      accessReason: candidate.applications.length > 0 ? 'applied_to_organisation_job' : 'saved_by_organisation_recruiter',
+    },
+    ...requestMeta,
+  });
+
   return {
     ...serializeCandidatePrivateDetail(candidate),
     resumeBuilder: candidate.resumeBuilder ? serializeResumeBuilder(candidate.resumeBuilder) : null,
     accessReason: candidate.applications.length > 0 ? 'applied_to_organisation_job' : 'saved_by_organisation_recruiter',
+    organisationApplications: candidate.applications,
+    organisationTags: [...new Set(candidate.savedByRecruiters.map((item) => item.tag).filter(Boolean))],
   };
 }

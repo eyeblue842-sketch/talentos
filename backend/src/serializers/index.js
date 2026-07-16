@@ -96,6 +96,10 @@ export function serializeCandidateSearchCard(profile) {
     totalExperience: profile.totalExperience,
     availability: profile.availability,
     skills: profile.skills,
+    educationSummary: profile.educationSummary,
+    resumeAvailable: Boolean(profile.resumeUrl || profile.resumeBuilder),
+    savedByOrganisation: Boolean(profile.savedByOrganisation),
+    organisationTags: profile.organisationTags || [],
     updatedAt: iso(profile.updatedAt),
   };
 }
@@ -157,6 +161,7 @@ export function serializeJob(job, options = {}) {
     id: job.id,
     organisationId: job.organisationId,
     requisitionId: job.requisitionId,
+    hiringManagerId: job.hiringManagerId,
     title: job.title,
     slug: job.slug,
     description: job.description,
@@ -165,14 +170,25 @@ export function serializeJob(job, options = {}) {
     experienceMax: job.experienceMax,
     salaryMin: job.salaryMin,
     salaryMax: job.salaryMax,
+    currency: job.currency,
     location: job.location,
     employmentType: job.employmentType,
+    workplaceType: job.workplaceType,
+    numberOfOpenings: job.numberOfOpenings,
+    department: job.department,
+    businessUnit: job.businessUnit,
+    applicationDeadline: iso(job.applicationDeadline),
     status: job.status,
+    archivedAt: iso(job.archivedAt),
     createdAt: iso(job.createdAt),
     updatedAt: iso(job.updatedAt),
     applicationsCount: job._count?.applications,
-    recruiter: options.publicRecruiter ? serializePublicRecruiter(job.recruiter) : undefined,
+    recruiter: options.publicRecruiter ? serializePublicRecruiter(job.recruiter) : job.recruiter
+      ? { id: job.recruiter.id, email: job.recruiter.email }
+      : undefined,
+    hiringManager: job.hiringManager ? { id: job.hiringManager.id, email: job.hiringManager.email } : undefined,
     requisition: options.includeRequisition ? serializeJobRequisition(job.requisition) : undefined,
+    pipelineSummary: options.pipelineSummary || undefined,
   };
 }
 
@@ -182,8 +198,13 @@ export function serializeActivity(activity) {
     id: activity.id,
     organisationId: activity.organisationId,
     applicationId: activity.applicationId,
+    actorUserId: activity.actorUserId,
+    eventType: activity.eventType,
     message: activity.message,
+    metadata: activity.metadata,
     createdAt: iso(activity.createdAt),
+    updatedAt: iso(activity.updatedAt),
+    actor: activity.actorUser ? { id: activity.actorUser.id, email: activity.actorUser.email, role: activity.actorUser.role } : undefined,
   };
 }
 
@@ -196,6 +217,7 @@ export function serializeAtsNote(note) {
     authorId: note.authorId,
     content: note.content,
     createdAt: iso(note.createdAt),
+    updatedAt: iso(note.updatedAt),
     author: note.author
       ? {
           id: note.author.id,

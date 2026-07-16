@@ -5,6 +5,7 @@ import {
   updateCandidateProfile,
   uploadResume,
   saveCandidate,
+  unsaveCandidate,
   listSavedCandidates,
   downloadResumePdf,
   recommendedJobs,
@@ -18,6 +19,7 @@ resumeRouter.get('/search', auth(['RECRUITER']), searchResumeDatabase);
 resumeRouter.get('/search/:candidateId', auth(['RECRUITER']), getCandidateDetail);
 resumeRouter.get('/saved', auth(['RECRUITER']), listSavedCandidates);
 resumeRouter.post('/saved/:candidateId', auth(['RECRUITER']), saveCandidate);
+resumeRouter.delete('/saved/:candidateId', auth(['RECRUITER']), unsaveCandidate);
 resumeRouter.patch('/profile', auth(['CANDIDATE']), updateCandidateProfile);
 resumeRouter.get('/recommended-jobs', auth(['CANDIDATE']), recommendedJobs);
 resumeRouter.post('/upload', auth(['CANDIDATE']), upload.single('resume'), uploadResume);

@@ -27,6 +27,12 @@ export const employmentTypeSchema = z.enum([
   'INTERN',
 ]);
 
+export const workplaceTypeSchema = z.enum([
+  'ONSITE',
+  'REMOTE',
+  'HYBRID',
+]);
+
 export const candidateTagSchema = z.enum(['SHORTLISTED', 'REJECTED', 'HOLD']);
 
 export const requisitionPrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
@@ -85,18 +91,97 @@ export const applyToJobSchema = z.object({
   coverLetter: z.string().trim().max(5000).optional(),
 });
 
+export const jobStatusSchema = z.enum([
+  'DRAFT',
+  'OPEN',
+  'CLOSED',
+  'ON_HOLD',
+  'ARCHIVED',
+]);
+
+const jobBaseFieldsSchema = z.object({
+  title: z.string().trim().min(2).max(160),
+  description: z.string().trim().min(20).max(20000),
+  skillsRequired: z.array(z.string().trim().min(1).max(80)).min(1).max(50),
+  experienceMin: z.coerce.number().int().min(0).max(60),
+  experienceMax: z.coerce.number().int().min(0).max(60),
+  salaryMin: z.coerce.number().int().min(0).optional().nullable(),
+  salaryMax: z.coerce.number().int().min(0).optional().nullable(),
+  currency: z.string().trim().min(3).max(10).optional().nullable(),
+  location: z.string().trim().min(2).max(160),
+  employmentType: employmentTypeSchema.optional(),
+  workplaceType: workplaceTypeSchema.optional().nullable(),
+  numberOfOpenings: z.coerce.number().int().min(1).max(1000).optional(),
+  department: z.string().trim().max(120).optional().nullable(),
+  businessUnit: z.string().trim().max(120).optional().nullable(),
+  requisitionId: z.string().min(1).optional().nullable(),
+  hiringManagerId: z.string().min(1).optional().nullable(),
+  recruiterId: z.string().min(1).optional().nullable(),
+  applicationDeadline: z.string().datetime().optional().nullable(),
+  status: jobStatusSchema.optional(),
+});
+
+export const jobBaseSchema = jobBaseFieldsSchema.refine((value) => value.experienceMin <= value.experienceMax, {
+  message: 'Minimum experience must be less than or equal to maximum experience.',
+  path: ['experienceMin'],
+}).refine((value) => (
+  value.salaryMin == null
+  || value.salaryMax == null
+  || value.salaryMin <= value.salaryMax
+), {
+  message: 'Minimum salary must be less than or equal to maximum salary.',
+  path: ['salaryMin'],
+});
+
+export const createJobSchema = jobBaseSchema;
+export const updateJobSchema = jobBaseFieldsSchema.partial().refine((value) => (
+  value.experienceMin === undefined
+  || value.experienceMax === undefined
+  || value.experienceMin <= value.experienceMax
+), {
+  message: 'Minimum experience must be less than or equal to maximum experience.',
+  path: ['experienceMin'],
+}).refine((value) => (
+  value.salaryMin == null
+  || value.salaryMax == null
+  || value.salaryMin <= value.salaryMax
+), {
+  message: 'Minimum salary must be less than or equal to maximum salary.',
+  path: ['salaryMin'],
+});
+
+export const updateJobStatusSchema = z.object({
+  status: jobStatusSchema,
+});
+
 export const atsStageUpdateSchema = z.object({
   stage: pipelineStageSchema,
 });
 
 export const atsInterviewSchema = z.object({
-  interviewScheduledAt: z.string().datetime(),
-  interviewerName: z.string().trim().min(1).max(120),
+  roundId: z.string().min(1),
+  interviewType: interviewTypeSchema,
+  scheduledStartAt: z.string().datetime(),
+  scheduledEndAt: z.string().datetime(),
+  panelUserIds: z.array(z.string().min(1)).min(1).max(20),
+  meetingLocation: z.string().trim().max(200).optional().nullable(),
+  meetingLink: z.string().trim().url().optional().nullable().or(z.literal('')),
+  status: interviewStatusSchema.optional(),
+}).refine((value) => new Date(value.scheduledStartAt) < new Date(value.scheduledEndAt), {
+  message: 'Interview end time must be after the start time.',
+  path: ['scheduledEndAt'],
+});
+
+export const atsInterviewCancelSchema = z.object({
+  roundId: z.string().min(1),
+  cancelReason: z.string().trim().min(3).max(500),
 });
 
 export const atsNoteSchema = z.object({
   content: z.string().trim().min(1).max(2000),
 });
+
+export const atsNoteUpdateSchema = atsNoteSchema;
 
 export const organisationCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),

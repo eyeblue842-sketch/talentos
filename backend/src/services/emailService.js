@@ -33,7 +33,10 @@ function createTestTransport() {
 }
 
 export function __resolveEmailTransportInfo(config = {}) {
-  const isTest = config.isTest ?? env.isTest;
+  const inferredTestMode = process.env.NODE_ENV === 'test'
+    || process.argv.some((arg) => arg.includes('node:test') || arg === '--test')
+    || process.execArgv.includes('--test');
+  const isTest = config.isTest ?? (env.isTest || inferredTestMode);
   const smtpHost = config.smtpHost ?? env.smtpHost;
   const smtpPort = config.smtpPort ?? env.smtpPort;
 

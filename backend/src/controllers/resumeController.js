@@ -2,6 +2,7 @@ import {
   uploadCandidateResume,
   saveCandidateProfile,
   saveCandidateForRecruiter,
+  removeSavedCandidate,
   getSavedCandidates,
   generateResumePdf,
 } from '../services/resumeService.js';
@@ -14,24 +15,33 @@ export async function searchResumeDatabase(req, res, next) {
   try {
     const hasMinExperience = typeof req.query.minExperience !== 'undefined';
     const minExperience = hasMinExperience ? Number(req.query.minExperience) : undefined;
+    const hasMaxExperience = typeof req.query.maxExperience !== 'undefined';
+    const maxExperience = hasMaxExperience ? Number(req.query.maxExperience) : undefined;
 
-    if (hasMinExperience && Number.isNaN(minExperience)) {
+    if ((hasMinExperience && Number.isNaN(minExperience)) || (hasMaxExperience && Number.isNaN(maxExperience))) {
       return res.status(422).json(apiError('Validation failed.', {
         formErrors: [],
         fieldErrors: {
-          minExperience: ['minExperience must be a number.'],
+          ...(hasMinExperience && Number.isNaN(minExperience) ? { minExperience: ['minExperience must be a number.'] } : {}),
+          ...(hasMaxExperience && Number.isNaN(maxExperience) ? { maxExperience: ['maxExperience must be a number.'] } : {}),
         },
       }));
     }
 
     const filters = {
       keyword: req.query.keyword,
+      skill: req.query.skill,
       location: req.query.location,
       minExperience,
+      maxExperience,
+      fresher: req.query.fresher,
       availability: req.query.availability,
+      tag: req.query.tag,
+      page: req.query.page,
+      pageSize: req.query.pageSize,
     };
-    const candidates = await searchCandidates(filters);
-    sendSuccess(res, 200, candidates);
+    const result = await searchCandidates(filters, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);
   }
@@ -41,7 +51,12 @@ export async function getCandidateDetail(req, res, next) {
   try {
     const candidate = await getAuthorizedCandidateDetail(
       req.params.candidateId,
-      req.user.activeMembership?.organisationId
+      req.user.activeMembership?.organisationId,
+      {
+        actorUserId: req.user.id,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      }
     );
     sendSuccess(res, 200, candidate);
   } catch (error) {
@@ -84,8 +99,22 @@ export async function saveCandidate(req, res, next) {
 
 export async function listSavedCandidates(req, res, next) {
   try {
-    const saved = await getSavedCandidates(req.user, req.user.activeMembership?.organisationId);
-    sendSuccess(res, 200, saved);
+    const result = await getSavedCandidates(req.user, req.query, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, result.items, result.meta);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function unsaveCandidate(req, res, next) {
+  try {
+    const result = await removeSavedCandidate(
+      req.user,
+      req.params.candidateId,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

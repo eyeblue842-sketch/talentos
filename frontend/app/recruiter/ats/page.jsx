@@ -1,19 +1,27 @@
+import Link from 'next/link';
 import { Sidebar } from '@/components/layout/sidebar';
-import { PipelineBoard } from '@/components/sections/pipeline-board';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { recruiterNav } from '@/lib/mock-data';
-import { getRecruiterPipeline } from '@/lib/api';
+import { getRecruiterPipelinePage } from '@/lib/api';
+import { moveApplicationStageAction } from '../actions';
 
-export default async function RecruiterAtsPage() {
-  const applications = (await getRecruiterPipeline()).map((application) => ({
-    id: application.id,
-    currentStage: application.currentStage,
-    candidate: application.candidate.fullName,
-    role: application.job.title,
-    timeline: application.interviewScheduledAt
-      ? new Date(application.interviewScheduledAt).toLocaleString()
-      : new Date(application.appliedAt).toLocaleDateString(),
-  }));
+const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED'];
+
+export default async function RecruiterAtsPage({ searchParams }) {
+  const params = await searchParams;
+  const query = new URLSearchParams();
+  if (params?.jobId) query.set('jobId', params.jobId);
+  if (params?.stage) query.set('stage', params.stage);
+
+  let pipeline = { items: [], meta: { stageGroups: [] } };
+  let error = '';
+
+  try {
+    pipeline = await getRecruiterPipelinePage(query.toString());
+  } catch (caught) {
+    error = caught.message;
+  }
 
   return (
     <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
@@ -21,15 +29,46 @@ export default async function RecruiterAtsPage() {
       <section className="space-y-6">
         <Card className="bg-[var(--surface)]">
           <h1 className="font-[var(--font-display)] text-3xl font-semibold">ATS pipeline</h1>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <input className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Interview date & time" />
-            <input className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Interviewer name" />
-            <textarea className="md:col-span-2 min-h-28 rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Notes and activity updates" />
-          </div>
+          <p className="mt-2 text-sm text-[var(--muted)]">Organisation-scoped applications grouped by stage with real backend transitions. This phase uses explicit stage controls instead of drag-and-drop to reduce workflow risk.</p>
         </Card>
-        <PipelineBoard applications={applications} />
+
+        {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
+
+        {!error ? (
+          <div className="grid gap-4 xl:grid-cols-5">
+            {stages.map((stage) => {
+              const items = pipeline.items.filter((application) => application.currentStage === stage);
+              return (
+                <Card key={stage} className="bg-[var(--surface)]">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold">{stage.replaceAll('_', ' ')}</p>
+                    <Badge tone="brand">{items.length}</Badge>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {items.length === 0 ? <p className="text-sm text-[var(--muted)]">No applications.</p> : null}
+                    {items.map((application) => (
+                      <div key={application.id} className="rounded-2xl border border-[var(--line)] bg-white p-3 text-sm">
+                        <p className="font-semibold">{application.candidate.fullName}</p>
+                        <p className="text-[var(--muted)]">{application.candidate.headline || 'Candidate profile'}</p>
+                        <p className="mt-1 text-[var(--muted)]">{application.job.title}</p>
+                        <p className="mt-1 text-[var(--muted)]">Applied {new Date(application.appliedAt).toLocaleDateString()}</p>
+                        <p className="mt-1 text-[var(--muted)]">Latest activity: {application.activities?.[0]?.message || 'No activity yet'}</p>
+                        <form action={moveApplicationStageAction.bind(null, application.id)} className="mt-3 space-y-2">
+                          <select name="stage" defaultValue={application.currentStage} className="w-full rounded-2xl border border-[var(--line)] px-3 py-2">
+                            {stages.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                          <button className="w-full rounded-2xl border border-[var(--line)] px-3 py-2 font-semibold">Move stage</button>
+                        </form>
+                        <Link href={`/recruiter/ats/${application.id}`} className="mt-3 inline-flex font-semibold text-[var(--brand)]">Open application</Link>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
     </main>
   );
 }
-

@@ -4,15 +4,115 @@ import { serializeJob } from '../serializers/index.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 
+const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
+const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
+const assignableJobRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
+
+function buildJobWhere(organisationId, filters = {}) {
+  return {
+    organisationId,
+    status: filters.status || undefined,
+    title: filters.search ? { contains: filters.search, mode: 'insensitive' } : undefined,
+  };
+}
+
+async function ensureOrganisationMember(organisationId, userId, allowedRoles) {
+  if (!userId) return null;
+
+  const membership = await prisma.organisationMembership.findFirst({
+    where: {
+      organisationId,
+      userId,
+      status: 'ACTIVE',
+      role: { in: allowedRoles },
+    },
+    include: { user: true },
+  });
+
+  if (!membership) {
+    const error = new Error('Selected organisation member is not eligible for this job assignment.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  return membership.user;
+}
+
+async function ensureApprovedRequisition(organisationId, requisitionId) {
+  if (!requisitionId) return null;
+
+  const requisition = await prisma.jobRequisition.findFirst({
+    where: {
+      id: requisitionId,
+      organisationId,
+      approvalStatus: 'APPROVED',
+    },
+  });
+
+  if (!requisition) {
+    const error = new Error('Approved requisition not found.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  return requisition;
+}
+
+async function buildUniqueJobSlug(title, existingJobId = null) {
+  const base = slugify(title, { lower: true, strict: true }) || `job-${Date.now()}`;
+  let slug = base;
+  let counter = 1;
+
+  while (true) {
+    const existing = await prisma.job.findUnique({ where: { slug } });
+    if (!existing || existing.id === existingJobId) {
+      return slug;
+    }
+
+    counter += 1;
+    slug = `${base}-${counter}`;
+  }
+}
+
+function normalizeJobPayload(payload) {
+  return {
+    title: payload.title,
+    description: payload.description,
+    skillsRequired: payload.skillsRequired,
+    experienceMin: payload.experienceMin,
+    experienceMax: payload.experienceMax,
+    salaryMin: payload.salaryMin ?? null,
+    salaryMax: payload.salaryMax ?? null,
+    currency: payload.currency || null,
+    location: payload.location,
+    employmentType: payload.employmentType || 'FULL_TIME',
+    workplaceType: payload.workplaceType || null,
+    numberOfOpenings: payload.numberOfOpenings ?? 1,
+    department: payload.department || null,
+    businessUnit: payload.businessUnit || null,
+    requisitionId: payload.requisitionId || null,
+    hiringManagerId: payload.hiringManagerId || null,
+    recruiterId: payload.recruiterId || null,
+    applicationDeadline: payload.applicationDeadline ? new Date(payload.applicationDeadline) : null,
+    status: payload.status,
+    archivedAt: payload.status === 'ARCHIVED' ? new Date() : null,
+  };
+}
+
 async function getJobById(organisationId, jobId) {
   return prisma.job.findFirst({
     where: { id: jobId, organisationId },
-    include: { requisition: true },
+    include: {
+      requisition: true,
+      recruiter: true,
+      hiringManager: true,
+      _count: { select: { applications: true } },
+    },
   });
 }
 
 async function assertOrganisationCanAccessJob(actorUser, jobId, organisationId = null) {
-  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'], organisationId);
+  const context = await requireOrganisationRole(actorUser, readableRoles, organisationId);
   const job = await getJobById(context.organisationId, jobId);
   if (!job) {
     const error = new Error('Job not found.');
@@ -23,26 +123,50 @@ async function assertOrganisationCanAccessJob(actorUser, jobId, organisationId =
   return { context, job };
 }
 
+async function buildPipelineSummary(organisationId, jobId) {
+  const grouped = await prisma.application.groupBy({
+    by: ['currentStage'],
+    where: { organisationId, jobId },
+    _count: { currentStage: true },
+  });
+
+  return grouped.map((item) => ({
+    stage: item.currentStage,
+    count: item._count.currentStage,
+  }));
+}
+
+function buildPaginatedMeta(total, page, pageSize) {
+  return {
+    total,
+    page,
+    pageSize,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
 export async function createJob(actorUser, payload, organisationId = null, requestMeta = {}) {
-  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'], organisationId);
+  const context = await requireOrganisationRole(actorUser, writableRoles, organisationId);
+  const recruiter = await ensureOrganisationMember(context.organisationId, payload.recruiterId || actorUser.id, assignableJobRoles);
+  const hiringManager = await ensureOrganisationMember(context.organisationId, payload.hiringManagerId || null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
+  const requisition = await ensureApprovedRequisition(context.organisationId, payload.requisitionId || null);
+  const status = payload.status || 'DRAFT';
+
   const job = await prisma.job.create({
     data: {
       organisationId: context.organisationId,
-      recruiterId: actorUser.id,
-      requisitionId: payload.requisitionId || null,
-      title: payload.title,
-      slug: slugify(`${payload.title}-${Date.now()}`, { lower: true, strict: true }),
-      description: payload.description,
-      skillsRequired: payload.skillsRequired,
-      experienceMin: payload.experienceMin,
-      experienceMax: payload.experienceMax,
-      salaryMin: payload.salaryMin,
-      salaryMax: payload.salaryMax,
-      location: payload.location,
-      employmentType: payload.employmentType || 'FULL_TIME',
-      status: payload.status || 'OPEN',
+      recruiterId: recruiter.id,
+      hiringManagerId: hiringManager?.id || null,
+      requisitionId: requisition?.id || null,
+      slug: await buildUniqueJobSlug(payload.title),
+      ...normalizeJobPayload({ ...payload, status }),
     },
-    include: { requisition: true },
+    include: {
+      requisition: true,
+      recruiter: true,
+      hiringManager: true,
+      _count: { select: { applications: true } },
+    },
   });
 
   await recordAuditLog({
@@ -58,32 +182,87 @@ export async function createJob(actorUser, payload, organisationId = null, reque
   return serializeJob(job, { includeRequisition: true });
 }
 
-export async function listRecruiterJobs(actorUser, organisationId = null) {
+export async function listRecruiterJobs(actorUser, filters = {}, organisationId = null) {
+  let legacyArrayResponse = false;
+  if (typeof filters === 'string' && organisationId === null) {
+    organisationId = filters;
+    filters = {};
+    legacyArrayResponse = true;
+  }
   const context = await requireOrganisationContext(actorUser, organisationId);
-  const jobs = await prisma.job.findMany({
-    where: { organisationId: context.organisationId },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      requisition: true,
-      _count: { select: { applications: true } },
-    },
-  });
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 10));
+  const where = buildJobWhere(context.organisationId, filters);
 
-  return jobs.map((job) => serializeJob(job, { includeRequisition: true }));
+  const [total, jobs] = await Promise.all([
+    prisma.job.count({ where }),
+    prisma.job.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        requisition: true,
+        recruiter: true,
+        hiringManager: true,
+        _count: { select: { applications: true } },
+      },
+    }),
+  ]);
+
+  const result = {
+    items: jobs.map((job) => serializeJob(job, { includeRequisition: true })),
+    meta: buildPaginatedMeta(total, page, pageSize),
+  };
+  return legacyArrayResponse ? result.items : result;
+}
+
+export async function getJobDetail(actorUser, jobId, organisationId = null) {
+  const { context, job } = await assertOrganisationCanAccessJob(actorUser, jobId, organisationId);
+  const pipelineSummary = await buildPipelineSummary(context.organisationId, jobId);
+  return serializeJob(job, {
+    includeRequisition: true,
+    pipelineSummary,
+  });
 }
 
 export async function updateJob(jobId, actorUser, payload, organisationId = null, requestMeta = {}) {
   const { context, job: existing } = await assertOrganisationCanAccessJob(actorUser, jobId, organisationId);
-  if (!['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(context.activeMembership.role)) {
+  if (!writableRoles.includes(context.activeMembership.role)) {
     const error = new Error('You are not allowed to update this job.');
     error.statusCode = 403;
     throw error;
   }
 
+  const recruiter = await ensureOrganisationMember(context.organisationId, payload.recruiterId || existing.recruiterId, assignableJobRoles);
+  const hiringManager = await ensureOrganisationMember(context.organisationId, payload.hiringManagerId ?? existing.hiringManagerId ?? null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
+  const requisition = await ensureApprovedRequisition(context.organisationId, payload.requisitionId ?? existing.requisitionId ?? null);
+
+  const data = normalizeJobPayload({
+    ...existing,
+    ...payload,
+    recruiterId: recruiter.id,
+    hiringManagerId: hiringManager?.id || null,
+    requisitionId: requisition?.id || null,
+    status: payload.status || existing.status,
+  });
+
+  if (payload.title && payload.title !== existing.title) {
+    data.slug = await buildUniqueJobSlug(payload.title, existing.id);
+  }
+  data.recruiterId = recruiter.id;
+  data.hiringManagerId = hiringManager?.id || null;
+  data.requisitionId = requisition?.id || null;
+
   const job = await prisma.job.update({
     where: { id: jobId },
-    data: payload,
-    include: { requisition: true },
+    data,
+    include: {
+      requisition: true,
+      recruiter: true,
+      hiringManager: true,
+      _count: { select: { applications: true } },
+    },
   });
 
   await recordAuditLog({
@@ -98,6 +277,10 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
   });
 
   return serializeJob(job, { includeRequisition: true });
+}
+
+export async function updateJobStatus(jobId, actorUser, status, organisationId = null, requestMeta = {}) {
+  return updateJob(jobId, actorUser, { status }, organisationId, requestMeta);
 }
 
 export async function deleteJob(jobId, actorUser, organisationId = null, requestMeta = {}) {
@@ -123,19 +306,49 @@ export async function deleteJob(jobId, actorUser, organisationId = null, request
 }
 
 export async function browseJobs(filters = {}) {
-  const jobs = await prisma.job.findMany({
-    where: {
-      status: 'OPEN',
-      title: filters.keyword ? { contains: filters.keyword, mode: 'insensitive' } : undefined,
-      location: filters.location ? { contains: filters.location, mode: 'insensitive' } : undefined,
-      skillsRequired: filters.skill ? { has: filters.skill } : undefined,
-    },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      recruiter: { include: { recruiterProfile: { include: { organisation: true } } } },
-      requisition: true,
-    },
-  });
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 10));
+  const where = {
+    status: 'OPEN',
+    title: filters.keyword ? { contains: filters.keyword, mode: 'insensitive' } : undefined,
+    location: filters.location ? { contains: filters.location, mode: 'insensitive' } : undefined,
+    skillsRequired: filters.skill ? { has: filters.skill } : undefined,
+  };
 
-  return jobs.map((job) => serializeJob(job, { publicRecruiter: true, includeRequisition: true }));
+  const [total, jobs] = await Promise.all([
+    prisma.job.count({ where }),
+    prisma.job.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        organisation: true,
+        requisition: true,
+      },
+    }),
+  ]);
+
+  return {
+    items: jobs.map((job) => ({
+      id: job.id,
+      slug: job.slug,
+      title: job.title,
+      description: job.description,
+      skillsRequired: job.skillsRequired,
+      experienceMin: job.experienceMin,
+      experienceMax: job.experienceMax,
+      salaryMin: job.salaryMin,
+      salaryMax: job.salaryMax,
+      currency: job.currency,
+      location: job.location,
+      employmentType: job.employmentType,
+      workplaceType: job.workplaceType,
+      status: job.status,
+      organisation: job.organisation ? { id: job.organisation.id, name: job.organisation.name, slug: job.organisation.slug } : null,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+    })),
+    meta: buildPaginatedMeta(total, page, pageSize),
+  };
 }

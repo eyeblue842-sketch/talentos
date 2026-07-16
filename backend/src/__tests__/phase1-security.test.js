@@ -287,6 +287,7 @@ function installPrismaMocks() {
   prisma.application ||= {};
   prisma.candidateProfile ||= {};
   prisma.authToken ||= {};
+  prisma.savedCandidate ||= {};
 
   prisma.user.findUnique = async ({ where, include = {} }) => {
     const user = state.users.find((item) => (
@@ -460,6 +461,20 @@ function installPrismaMocks() {
       applications = applications.filter((item) => state.jobs.find((job) => job.id === item.jobId)?.recruiterId === where.job.recruiterId);
     }
     return applications.map((application) => withRelationsApplication(application, include));
+  };
+
+  prisma.savedCandidate.findMany = async ({ where = {} }) => {
+    let saved = [...(state.savedCandidates || [])];
+    if (where.organisationId) {
+      saved = saved.filter((item) => item.organisationId === where.organisationId);
+    }
+    if (where.candidateId?.in) {
+      saved = saved.filter((item) => where.candidateId.in.includes(item.candidateId));
+    }
+    if (where.tag) {
+      saved = saved.filter((item) => item.tag === where.tag);
+    }
+    return saved.map(clone);
   };
 
   prisma.authToken.updateMany = async ({ where, data }) => {

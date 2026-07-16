@@ -86,18 +86,68 @@ export async function saveCandidateForRecruiter(actorUser, candidateId, organisa
   return serializeSavedCandidate(savedCandidate, { minimalCandidate: true });
 }
 
-export async function getSavedCandidates(actorUser, organisationId = null) {
+export async function removeSavedCandidate(actorUser, candidateId, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationContext(actorUser, organisationId);
-  const savedCandidates = await prisma.savedCandidate.findMany({
+  const savedCandidate = await prisma.savedCandidate.findFirst({
     where: {
       organisationId: context.organisationId,
       recruiterId: actorUser.recruiterProfile.id,
+      candidateId,
     },
-    include: { candidate: true },
-    orderBy: { createdAt: 'desc' },
   });
 
-  return savedCandidates.map((item) => serializeSavedCandidate(item, { minimalCandidate: true }));
+  if (!savedCandidate) {
+    const error = new Error('Saved candidate not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await prisma.savedCandidate.delete({ where: { id: savedCandidate.id } });
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'candidate.unsave',
+    entityType: 'SavedCandidate',
+    entityId: savedCandidate.id,
+    beforeData: savedCandidate,
+    ...requestMeta,
+  });
+
+  return { deleted: true };
+}
+
+export async function getSavedCandidates(actorUser, filters = {}, organisationId = null) {
+  const context = await requireOrganisationContext(actorUser, organisationId);
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
+  const where = {
+    organisationId: context.organisationId,
+    tag: filters.tag || undefined,
+  };
+
+  const [total, savedCandidates] = await Promise.all([
+    prisma.savedCandidate.count({ where }),
+    prisma.savedCandidate.findMany({
+      where,
+      include: { candidate: true, recruiter: { include: { user: true } } },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    items: savedCandidates.map((item) => ({
+      ...serializeSavedCandidate(item, { minimalCandidate: true }),
+      savedBy: item.recruiter?.user ? { id: item.recruiter.user.id, email: item.recruiter.user.email } : undefined,
+    })),
+    meta: {
+      total,
+      page,
+      pageSize,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    },
+  };
 }
 
 export async function generateResumePdf(candidate, resumeBuilder) {

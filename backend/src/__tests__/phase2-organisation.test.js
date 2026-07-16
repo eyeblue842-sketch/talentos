@@ -166,7 +166,13 @@ function installPrismaMocks() {
     }));
   };
   prisma.organisationMembership.findFirst = async ({ where = {}, include = {} }) => {
-    const item = state.memberships.find((row) => row.id === where.id && row.organisationId === where.organisationId);
+    const item = state.memberships.find((row) => (
+      (!where.id || row.id === where.id)
+      && (!where.organisationId || row.organisationId === where.organisationId)
+      && (!where.userId || row.userId === where.userId)
+      && (!where.status || row.status === where.status)
+      && (!where.role || (typeof where.role === 'string' ? row.role === where.role : where.role.in?.includes(row.role)))
+    ));
     if (!item) return null;
     return {
       ...clone(item),
@@ -257,6 +263,7 @@ function installPrismaMocks() {
     state.jobs.push(item);
     return hydrateJob(item, include);
   };
+  prisma.job.findUnique = async ({ where }) => clone(state.jobs.find((item) => item.id === where.id || item.slug === where.slug) || null);
   prisma.job.findMany = async ({ where = {}, include = {} }) => {
     let rows = [...state.jobs];
     if (where.organisationId) rows = rows.filter((item) => item.organisationId === where.organisationId);

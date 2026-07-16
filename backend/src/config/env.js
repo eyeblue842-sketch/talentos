@@ -45,7 +45,9 @@ if (!parsed.success) {
 export const env = {
   nodeEnv: parsed.data.NODE_ENV,
   isProduction: parsed.data.NODE_ENV === 'production',
-  isTest: parsed.data.NODE_ENV === 'test',
+  isTest: parsed.data.NODE_ENV === 'test'
+    || process.argv.some((arg) => arg.includes('node:test') || arg === '--test')
+    || process.execArgv.includes('--test'),
   port: parsed.data.PORT,
   frontendUrl: parsed.data.FRONTEND_URL,
   backendUrl: parsed.data.BACKEND_URL || `http://localhost:${parsed.data.PORT}`,

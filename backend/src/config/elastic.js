@@ -2,7 +2,10 @@ import { Client } from '@elastic/elasticsearch';
 import { env } from './env.js';
 
 export function __resolveElasticConfig(config = {}) {
-  const isTest = config.isTest ?? env.isTest;
+  const inferredTestMode = process.env.NODE_ENV === 'test'
+    || process.argv.some((arg) => arg.includes('node:test') || arg === '--test')
+    || process.execArgv.includes('--test');
+  const isTest = config.isTest ?? (env.isTest || inferredTestMode);
   const elasticsearchUrl = config.elasticsearchUrl ?? env.elasticsearchUrl;
 
   return {

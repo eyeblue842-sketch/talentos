@@ -1,9 +1,13 @@
 import {
   applyToJob,
+  cancelInterview,
+  getApplicationDetail,
   getRecruiterPipeline,
   updatePipelineStage,
   scheduleInterview,
   addAtsNote,
+  updateAtsNote,
+  deleteAtsNote,
   getCandidateApplications,
 } from '../services/atsService.js';
 import { sendSuccess } from '../utils/response.js';
@@ -19,8 +23,17 @@ export async function applyForJob(req, res, next) {
 
 export async function getPipeline(req, res, next) {
   try {
-    const pipeline = await getRecruiterPipeline(req.user, req.user.activeMembership?.organisationId);
-    sendSuccess(res, 200, pipeline);
+    const pipeline = await getRecruiterPipeline(req.user, req.query, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, pipeline.items, { stageGroups: pipeline.stageGroups });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPipelineApplication(req, res, next) {
+  try {
+    const application = await getApplicationDetail(req.user, req.params.applicationId, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, application);
   } catch (error) {
     next(error);
   }
@@ -56,6 +69,21 @@ export async function planInterview(req, res, next) {
   }
 }
 
+export async function cancelPlannedInterview(req, res, next) {
+  try {
+    const updated = await cancelInterview(
+      req.params.applicationId,
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    sendSuccess(res, 200, updated);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function createAtsNote(req, res, next) {
   try {
     const note = await addAtsNote(
@@ -66,6 +94,37 @@ export async function createAtsNote(req, res, next) {
       { ipAddress: req.ip, userAgent: req.get('user-agent') }
     );
     sendSuccess(res, 201, note);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function editAtsNote(req, res, next) {
+  try {
+    const note = await updateAtsNote(
+      req.params.applicationId,
+      req.params.noteId,
+      req.user,
+      req.body.content,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    sendSuccess(res, 200, note);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeAtsNote(req, res, next) {
+  try {
+    const result = await deleteAtsNote(
+      req.params.applicationId,
+      req.params.noteId,
+      req.user,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

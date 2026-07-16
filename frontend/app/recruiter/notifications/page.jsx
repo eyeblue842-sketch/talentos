@@ -1,8 +1,20 @@
+import Link from 'next/link';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { recruiterNav } from '@/lib/mock-data';
 import { getNotifications } from '@/lib/api';
+import { markNotificationReadAction } from '../actions';
+
+function entityLink(notification) {
+  if (notification.entityType === 'Application' && notification.entityId) {
+    return `/recruiter/ats/${notification.entityId}`;
+  }
+  if (notification.entityType === 'Job' && notification.entityId) {
+    return `/recruiter/jobs/${notification.entityId}`;
+  }
+  return null;
+}
 
 export default async function RecruiterNotificationsPage() {
   let notifications = [];
@@ -30,8 +42,17 @@ export default async function RecruiterNotificationsPage() {
                     <div>
                       <p className="font-semibold">{notification.title}</p>
                       <p className="text-sm text-[var(--muted)]">{notification.message}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">{new Date(notification.createdAt).toLocaleString()}</p>
                     </div>
-                    <Badge tone={notification.readAt ? 'neutral' : 'brand'}>{notification.readAt ? 'READ' : 'UNREAD'}</Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={notification.readAt ? 'neutral' : 'brand'}>{notification.readAt ? 'READ' : 'UNREAD'}</Badge>
+                      {!notification.readAt ? (
+                        <form action={markNotificationReadAction.bind(null, notification.id)}>
+                          <button className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm font-semibold">Mark read</button>
+                        </form>
+                      ) : null}
+                      {entityLink(notification) ? <Link href={entityLink(notification)} className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm font-semibold">Open</Link> : null}
+                    </div>
                   </div>
                 </div>
               ))}

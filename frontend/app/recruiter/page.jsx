@@ -22,9 +22,9 @@ export default async function RecruiterDashboardPage() {
           <p className="mt-2 text-[var(--muted)]">Manage organisation roles, requisitions, candidate flow, and hiring execution inside Careeriz.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          <StatCard label="Total jobs posted" value={dashboard.jobsCount} helper="Active and archived requisitions" />
+          <StatCard label="Active jobs" value={dashboard.activeJobsCount} helper={`Total jobs: ${dashboard.jobsCount}`} />
           <StatCard label="Total applicants" value={dashboard.applicantsCount} helper="Across all open jobs" />
-          <StatCard label="Interview stage" value={dashboard.pipelineCounts?.find((item) => item.currentStage === 'INTERVIEW_SCHEDULED')?._count.currentStage || 0} helper="Candidates moving through interviews" />
+          <StatCard label="Saved candidates" value={dashboard.savedCandidatesCount} helper={`Open requisitions: ${dashboard.openRequisitions}`} />
         </div>
         <JobsTable jobs={jobs.map((job) => ({ ...job, applicants: job.applicationsCount || 0 }))} />
         <Card>
@@ -41,6 +41,32 @@ export default async function RecruiterDashboardPage() {
             ))}
           </div>
         </Card>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <h3 className="font-[var(--font-display)] text-xl font-semibold">Upcoming interviews</h3>
+            <div className="mt-4 space-y-3">
+              {dashboard.upcomingInterviews?.length ? dashboard.upcomingInterviews.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-[var(--line)] p-4">
+                  <p className="font-semibold">{item.candidateName}</p>
+                  <p className="text-sm text-[var(--muted)]">{item.jobTitle}</p>
+                  <p className="text-sm text-[var(--muted)]">{new Date(item.scheduledStartAt).toLocaleString()}</p>
+                </div>
+              )) : <p className="text-sm text-[var(--muted)]">No upcoming interviews scheduled.</p>}
+            </div>
+          </Card>
+          <Card>
+            <h3 className="font-[var(--font-display)] text-xl font-semibold">Jobs closing soon</h3>
+            <div className="mt-4 space-y-3">
+              {dashboard.jobsClosingSoon?.length ? dashboard.jobsClosingSoon.map((job) => (
+                <div key={job.id} className="rounded-2xl border border-[var(--line)] p-4">
+                  <p className="font-semibold">{job.title}</p>
+                  <p className="text-sm text-[var(--muted)]">{job.location}</p>
+                  <p className="text-sm text-[var(--muted)]">{job.applicationDeadline ? new Date(job.applicationDeadline).toLocaleString() : 'No deadline'}</p>
+                </div>
+              )) : <p className="text-sm text-[var(--muted)]">No open jobs are closing in the next two weeks.</p>}
+            </div>
+          </Card>
+        </div>
       </section>
     </main>
   );

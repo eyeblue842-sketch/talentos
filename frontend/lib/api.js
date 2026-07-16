@@ -48,6 +48,18 @@ export async function getRequisitions() {
   return response.data;
 }
 
+export async function getApprovedRequisitions() {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend('/requisitions', { method: 'GET' }, token);
+  return (response.data || []).filter((item) => item.approvalStatus === 'APPROVED');
+}
+
 export async function getNotifications() {
   const token = await getSessionToken();
   if (!token) {
@@ -68,9 +80,12 @@ export async function searchCandidates(query = '') {
     throw error;
   }
 
-  const suffix = query ? `?keyword=${encodeURIComponent(query)}` : '';
+  const suffix = query ? `?${query}` : '';
   const response = await requestBackend(`/resumes/search${suffix}`, { method: 'GET' }, token);
-  return response.data;
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
 }
 
 export async function getCandidateDashboard() {
@@ -102,6 +117,33 @@ export async function getRecruiterJobs() {
   return response.data;
 }
 
+export async function getRecruiterJobsPage(query = '') {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend(`/jobs${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getRecruiterJob(jobId) {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend(`/jobs/${jobId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function getCandidateDetail(candidateId) {
   const token = await getSessionToken();
   if (!token) {
@@ -114,6 +156,21 @@ export async function getCandidateDetail(candidateId) {
   return response.data;
 }
 
+export async function getSavedCandidates(query = '') {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend(`/resumes/saved${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
 export async function getRecruiterPipeline() {
   const token = await getSessionToken();
   if (!token) {
@@ -123,6 +180,36 @@ export async function getRecruiterPipeline() {
   }
 
   const response = await requestBackend('/ats/pipeline', { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getRecruiterPipelinePage(query = '') {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend(`/ats/pipeline${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getRecruiterApplication(applicationId) {
+  const token = await getSessionToken();
+  if (!token) {
+    const error = new Error('Authentication required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const response = await requestBackend(`/ats/pipeline/${applicationId}`, { method: 'GET' }, token);
   return response.data;
 }
 

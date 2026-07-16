@@ -33,8 +33,11 @@ enum MembershipStatus {
 }
 
 enum JobStatus {
+  DRAFT
   OPEN
   CLOSED
+  ON_HOLD
+  ARCHIVED
 }
 
 enum EmploymentType {
@@ -42,6 +45,12 @@ enum EmploymentType {
   PART_TIME
   CONTRACT
   INTERN
+}
+
+enum WorkplaceType {
+  ONSITE
+  REMOTE
+  HYBRID
 }
 
 enum CandidateTag {
@@ -150,12 +159,14 @@ model User {
   candidateProfile         CandidateProfile?
   jobs                     Job[]                     @relation("PostedJobs")
   notes                    AtsNote[]                 @relation("NoteAuthor")
+  applicationActivities    ApplicationActivity[]
   authTokens               AuthToken[]
   memberships              OrganisationMembership[]
   createdRequisitions      JobRequisition[]          @relation("RequisitionCreatedBy")
   approvedRequisitions     JobRequisition[]          @relation("RequisitionApprovedBy")
   managedRequisitions      JobRequisition[]          @relation("RequisitionHiringManager")
   recruitedRequisitions    JobRequisition[]          @relation("RequisitionRecruiter")
+  managedJobs              Job[]                     @relation("JobHiringManager")
   interviewPlanCreators    InterviewProcess[]        @relation("InterviewPlanCreatedBy")
   interviewPanelMemberships InterviewPanelMember[]
   interviewFeedbacks       InterviewFeedback[]       @relation("InterviewFeedbackAuthor")
@@ -263,6 +274,7 @@ model Job {
   organisationId    String?
   recruiterId       String
   requisitionId     String?
+  hiringManagerId   String?
   title             String
   slug              String            @unique
   description       String
@@ -271,13 +283,21 @@ model Job {
   experienceMax     Int
   salaryMin         Int?
   salaryMax         Int?
+  currency          String?
   location          String
   employmentType    EmploymentType    @default(FULL_TIME)
+  workplaceType     WorkplaceType?
+  numberOfOpenings  Int               @default(1)
+  department        String?
+  businessUnit      String?
+  applicationDeadline DateTime?
   status            JobStatus         @default(OPEN)
+  archivedAt        DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   organisation      Organisation?     @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   recruiter         User              @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
+  hiringManager     User?             @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
   requisition       JobRequisition?   @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   applications      Application[]
 
@@ -285,6 +305,7 @@ model Job {
   @@index([organisationId, status])
   @@index([recruiterId])
   @@index([requisitionId])
+  @@index([hiringManagerId])
 }
 
 model Application {
@@ -321,6 +342,7 @@ model AtsNote {
   authorId       String
   content        String
   createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   organisation   Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   author         User          @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
@@ -332,12 +354,18 @@ model ApplicationActivity {
   id             String        @id @default(cuid())
   organisationId String?
   applicationId  String
+  actorUserId    String?
+  eventType      String?
   message        String
+  metadata       Json?
   createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   organisation   Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actorUser      User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, applicationId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model ResumeBuilder {
@@ -434,6 +462,9 @@ model InterviewRound {
   status            InterviewStatus       @default(PLANNED)
   scheduledStartAt  DateTime?
   scheduledEndAt    DateTime?
+  meetingLocation   String?
+  meetingLink       String?
+  cancelReason      String?
   scorecardCriteria Json?
   feedbackLockedAt  DateTime?
   createdAt         DateTime              @default(now())
