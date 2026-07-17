@@ -2,9 +2,21 @@ import Link from 'next/link';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ScreeningQuestionBuilder } from '@/components/sections/screening-question-builder';
 import { recruiterNav } from '@/lib/mock-data';
-import { getApprovedRequisitions, getOrganisationMembers, getRecruiterJob } from '@/lib/api';
-import { deleteJobAction, updateJobAction, updateJobStatusAction } from '../../actions';
+import { getApprovedRequisitions, getOrganisationMembers, getRecruiterJob, getRecruiterScreeningTemplates } from '@/lib/api';
+import {
+  addJobQuestionAction,
+  addJobQuestionFromLibraryAction,
+  createScreeningTemplateAction,
+  deleteJobAction,
+  deleteJobQuestionAction,
+  duplicateJobQuestionAction,
+  reorderJobQuestionsAction,
+  updateJobAction,
+  updateJobQuestionAction,
+  updateJobStatusAction,
+} from '../../actions';
 
 function statusTone(status) {
   if (status === 'OPEN') return 'success';
@@ -20,13 +32,15 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   let job = null;
   let members = [];
   let requisitions = [];
+  let templates = [];
   let error = '';
 
   try {
-    [job, members, requisitions] = await Promise.all([
+    [job, members, requisitions, templates] = await Promise.all([
       getRecruiterJob(jobId),
       getOrganisationMembers(),
       getApprovedRequisitions(),
+      getRecruiterScreeningTemplates(),
     ]);
   } catch (caught) {
     error = caught.message;
@@ -111,6 +125,19 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                   <input name="department" defaultValue={job.department || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
                   <input name="businessUnit" defaultValue={job.businessUnit || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
                   <input name="applicationDeadline" type="datetime-local" defaultValue={job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
+                  <input name="applicationOpensAt" type="datetime-local" defaultValue={job.applicationOpensAt ? new Date(job.applicationOpensAt).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
+                  <input name="applicationClosesAt" type="datetime-local" defaultValue={job.applicationClosesAt ? new Date(job.applicationClosesAt).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
+                  <input name="maxApplications" type="number" min="1" defaultValue={job.maxApplications ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Max applications" />
+                  <input name="targetHires" type="number" min="1" defaultValue={job.targetHires ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Target hires" />
+                  <select name="visibility" defaultValue={job.visibility || 'EXTERNAL'} className="rounded-2xl border border-[var(--line)] px-4 py-3">
+                    <option value="EXTERNAL">External visibility</option>
+                    <option value="INTERNAL">Internal visibility</option>
+                    <option value="BOTH">Both</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm"><input name="isPublic" type="checkbox" defaultChecked={job.isPublic} /> Public job page</label>
+                  <label className="flex items-center gap-2 text-sm"><input name="publicSalaryEnabled" type="checkbox" defaultChecked={job.publicSalaryEnabled} /> Show salary publicly</label>
+                  <label className="flex items-center gap-2 text-sm"><input name="featuredInPortal" type="checkbox" defaultChecked={job.featuredInPortal} /> Feature on portal</label>
+                  <label className="flex items-center gap-2 text-sm"><input name="autoCloseOnTargetHire" type="checkbox" defaultChecked={job.autoCloseOnTargetHire} /> Auto-close on target hires</label>
                   <select name="status" defaultValue={job.status} className="rounded-2xl border border-[var(--line)] px-4 py-3">
                     <option value="DRAFT">Draft</option>
                     <option value="OPEN">Open</option>
@@ -132,11 +159,26 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                   <p><span className="font-semibold">Business unit:</span> {job.businessUnit || 'Not set'}</p>
                   <p><span className="font-semibold">Openings:</span> {job.numberOfOpenings || 1}</p>
                   <p><span className="font-semibold">Deadline:</span> {job.applicationDeadline ? new Date(job.applicationDeadline).toLocaleString() : 'No deadline'}</p>
+                  <p><span className="font-semibold">Opens:</span> {job.applicationOpensAt ? new Date(job.applicationOpensAt).toLocaleString() : 'Immediate'}</p>
+                  <p><span className="font-semibold">Closes:</span> {job.applicationClosesAt ? new Date(job.applicationClosesAt).toLocaleString() : 'No closing date'}</p>
+                  <p><span className="font-semibold">Visibility:</span> {job.visibility}</p>
                   <p><span className="font-semibold">Pipeline summary:</span> {job.pipelineSummary?.map((item) => `${item.stage}: ${item.count}`).join(', ') || 'No applicants yet'}</p>
                 </div>
                 <Link href={`/recruiter/ats?jobId=${job.id}`} className="mt-6 inline-flex rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">Open ATS pipeline</Link>
               </Card>
             </div>
+
+            <ScreeningQuestionBuilder
+              job={job}
+              templates={templates}
+              addJobQuestionAction={addJobQuestionAction}
+              addJobQuestionFromLibraryAction={addJobQuestionFromLibraryAction}
+              createScreeningTemplateAction={createScreeningTemplateAction}
+              deleteJobQuestionAction={deleteJobQuestionAction}
+              duplicateJobQuestionAction={duplicateJobQuestionAction}
+              reorderJobQuestionsAction={reorderJobQuestionsAction}
+              updateJobQuestionAction={updateJobQuestionAction}
+            />
           </>
         ) : null}
       </section>

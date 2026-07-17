@@ -8,6 +8,7 @@ import {
   unsaveCandidate,
   listSavedCandidates,
   downloadResumePdf,
+  downloadCandidateResume,
   recommendedJobs,
 } from '../controllers/resumeController.js';
 import { auth } from '../middleware/auth.js';
@@ -21,6 +22,7 @@ resumeRouter.get('/saved', auth(['RECRUITER']), listSavedCandidates);
 resumeRouter.post('/saved/:candidateId', auth(['RECRUITER']), saveCandidate);
 resumeRouter.delete('/saved/:candidateId', auth(['RECRUITER']), unsaveCandidate);
 resumeRouter.patch('/profile', auth(['CANDIDATE']), updateCandidateProfile);
+resumeRouter.get('/candidate/:candidateId/download', auth(['RECRUITER', 'CANDIDATE']), downloadCandidateResume);
 resumeRouter.get('/recommended-jobs', auth(['CANDIDATE']), recommendedJobs);
 resumeRouter.post('/upload', auth(['CANDIDATE']), upload.single('resume'), uploadResume);
 resumeRouter.get('/pdf', auth(['CANDIDATE']), downloadResumePdf);

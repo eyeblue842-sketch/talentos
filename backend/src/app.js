@@ -15,6 +15,7 @@ import { interviewRouter } from './routes/interviewRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
 import { publicRouter } from './routes/publicRoutes.js';
 import { candidateRouter } from './routes/candidateRoutes.js';
+import { applicationWorkflowRouter } from './routes/applicationWorkflowRoutes.js';
 import { errorHandler } from './middleware/error.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,13 +26,12 @@ export const app = express();
 app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.resolve(__dirname, '..', env.localStoragePath)));
-
 app.get('/api/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', service: 'careeriz-api' } });
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api', applicationWorkflowRouter);
 app.use('/api/jobs', jobRouter);
 app.use('/api/public', publicRouter);
 app.use('/api/candidate', candidateRouter);

@@ -77,6 +77,12 @@ export async function getPublicJob(slug) {
   return response.data;
 }
 
+export async function getPublicJobApplyContext(slug) {
+  const token = await getSessionToken();
+  const response = await requestBackend(`/public/jobs/${slug}/apply`, { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function getPublicOrganisation(slug, filters = {}) {
   const token = await getSessionToken();
   const response = await requestBackend(`/public/companies/${slug}${buildQueryString(filters)}`, { method: 'GET' }, token);
@@ -245,6 +251,42 @@ export async function getRecruiterApplication(applicationId) {
 
 export async function getCandidateApplications() {
   const token = await requireToken();
-  const response = await requestBackend('/ats/applications', { method: 'GET' }, token);
+  const response = await requestBackend('/candidate/applications', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateApplication(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/applications/${applicationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateResumeAssets() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/resumes', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterScreeningTemplates(query = '') {
+  const token = await requireToken();
+  const response = await requestBackend(`/jobs/screening-templates${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getRecruiterApplicationsV2(query = '') {
+  const token = await requireToken();
+  const response = await requestBackend(`/ats/applications${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getRecruiterApplicationV2(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/ats/applications/${applicationId}`, { method: 'GET' }, token);
   return response.data;
 }

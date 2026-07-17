@@ -1,6 +1,5 @@
 import PDFDocument from 'pdfkit';
 import { prisma } from '../config/db.js';
-import { storeResume } from '../config/storage.js';
 import { indexCandidateResume } from './searchService.js';
 import {
   serializeCandidateProfile,
@@ -8,6 +7,9 @@ import {
 } from '../serializers/index.js';
 import { requireOrganisationContext } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
+import { uploadCandidateResumeAsset } from './applicationWorkflowService.js';
+import { readPrivateFileNodeStream } from '../config/storage.js';
+import { openLegacyResumeFile } from './legacyResumeService.js';
 
 function normalizeStringArray(value) {
   if (Array.isArray(value)) {
@@ -21,15 +23,16 @@ function normalizeStringArray(value) {
   return [];
 }
 
-export async function uploadCandidateResume(candidateId, file) {
-  const resumeUrl = await storeResume(file);
-  const candidate = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: { resumeUrl },
+export async function uploadCandidateResume(candidateUser, file) {
+  const asset = await uploadCandidateResumeAsset(candidateUser, file, { kind: 'RESUME' });
+  const candidate = await prisma.candidateProfile.findUnique({
+    where: { id: candidateUser.candidateProfile.id },
   });
-
   await indexCandidateResume(candidate);
-  return serializeCandidateProfile(candidate, { includePrivate: true });
+  return {
+    profile: serializeCandidateProfile(candidate, { includePrivate: true }),
+    resume: asset,
+  };
 }
 
 export async function saveCandidateProfile(candidateId, payload) {
@@ -173,4 +176,84 @@ export async function generateResumePdf(candidate, resumeBuilder) {
   return new Promise((resolve) => {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
   });
+}
+
+export async function getCandidateResumeDownload(actorUser, candidateId, organisationId = null, requestMeta = {}) {
+  let candidate;
+
+  if (actorUser.role === 'CANDIDATE') {
+    if (actorUser.candidateProfile.id !== candidateId) {
+      const error = new Error('Resume not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    candidate = await prisma.candidateProfile.findUnique({
+      where: { id: candidateId },
+    });
+  } else {
+    const context = await requireOrganisationContext(actorUser, organisationId);
+    candidate = await prisma.candidateProfile.findFirst({
+      where: {
+        id: candidateId,
+        OR: [
+          { applications: { some: { organisationId: context.organisationId } } },
+          { savedByRecruiters: { some: { organisationId: context.organisationId } } },
+        ],
+      },
+    });
+  }
+
+  if (!candidate) {
+    const error = new Error('Resume not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (candidate.latestResumeAssetId) {
+    const asset = await prisma.resumeAsset.findUnique({ where: { id: candidate.latestResumeAssetId } });
+    if (!asset) {
+      const error = new Error('Resume not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    await recordAuditLog({
+      organisationId: organisationId || null,
+      actorUserId: actorUser.id,
+      action: 'resume.download',
+      entityType: 'ResumeAsset',
+      entityId: asset.id,
+      metadata: { candidateId, mode: 'private-asset' },
+      ...requestMeta,
+    });
+    return {
+      filename: asset.originalFilename,
+      mimeType: asset.mimeType,
+      contentLength: asset.sizeBytes,
+      stream: readPrivateFileNodeStream(asset.storageProvider, asset.storageKey).stream,
+    };
+  }
+
+  if (!candidate.resumeUrl) {
+    const error = new Error('Resume not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const file = openLegacyResumeFile(candidate.resumeUrl);
+  await recordAuditLog({
+    organisationId: organisationId || null,
+    actorUserId: actorUser.id,
+    action: 'resume.download',
+    entityType: 'CandidateProfile',
+    entityId: candidateId,
+    metadata: { candidateId, mode: 'legacy-compatibility' },
+    ...requestMeta,
+  });
+
+  return {
+    filename: file.filename,
+    mimeType: 'application/octet-stream',
+    contentLength: file.contentLength,
+    stream: file.stream,
+  };
 }

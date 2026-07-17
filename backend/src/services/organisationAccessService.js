@@ -17,7 +17,7 @@ export function buildOrganisationAccessError(message, statusCode) {
 }
 
 export function getRequestOrganisationId(req) {
-  return req.headers['x-organisation-id'] || req.query.organisationId || req.body?.organisationId || null;
+  return req.headers['x-organisation-id'] || req.query.organisationId || null;
 }
 
 export async function getActiveMemberships(userId) {

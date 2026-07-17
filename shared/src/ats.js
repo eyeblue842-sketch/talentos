@@ -34,6 +34,7 @@ export const workplaceTypeSchema = z.enum([
 ]);
 
 export const candidateTagSchema = z.enum(['SHORTLISTED', 'REJECTED', 'HOLD']);
+export const jobVisibilitySchema = z.enum(['EXTERNAL', 'INTERNAL', 'BOTH']);
 
 export const requisitionPrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 export const requisitionStatusSchema = z.enum([
@@ -115,6 +116,10 @@ const jobBaseFieldsSchema = z.object({
   salaryMin: z.coerce.number().int().min(0).optional().nullable(),
   salaryMax: z.coerce.number().int().min(0).optional().nullable(),
   currency: z.string().trim().min(3).max(10).optional().nullable(),
+  isPublic: z.boolean().optional(),
+  publicSalaryEnabled: z.boolean().optional(),
+  featuredInPortal: z.boolean().optional(),
+  visibility: jobVisibilitySchema.optional(),
   location: z.string().trim().min(2).max(160),
   employmentType: employmentTypeSchema.optional(),
   workplaceType: workplaceTypeSchema.optional().nullable(),
@@ -125,6 +130,11 @@ const jobBaseFieldsSchema = z.object({
   hiringManagerId: z.string().min(1).optional().nullable(),
   recruiterId: z.string().min(1).optional().nullable(),
   applicationDeadline: z.string().datetime().optional().nullable(),
+  applicationOpensAt: z.string().datetime().optional().nullable(),
+  applicationClosesAt: z.string().datetime().optional().nullable(),
+  maxApplications: z.coerce.number().int().min(1).max(100000).optional().nullable(),
+  targetHires: z.coerce.number().int().min(1).max(100000).optional().nullable(),
+  autoCloseOnTargetHire: z.boolean().optional(),
   status: jobStatusSchema.optional(),
 });
 
@@ -138,6 +148,13 @@ export const jobBaseSchema = jobBaseFieldsSchema.refine((value) => value.experie
 ), {
   message: 'Minimum salary must be less than or equal to maximum salary.',
   path: ['salaryMin'],
+}).refine((value) => (
+  !value.applicationOpensAt
+  || !value.applicationClosesAt
+  || new Date(value.applicationOpensAt).getTime() <= new Date(value.applicationClosesAt).getTime()
+), {
+  message: 'Application opening date must be before the closing date.',
+  path: ['applicationOpensAt'],
 });
 
 export const createJobSchema = jobBaseSchema;
@@ -155,6 +172,15 @@ export const updateJobSchema = jobBaseFieldsSchema.partial().refine((value) => (
 ), {
   message: 'Minimum salary must be less than or equal to maximum salary.',
   path: ['salaryMin'],
+}).refine((value) => (
+  value.applicationOpensAt === undefined
+  || value.applicationClosesAt === undefined
+  || !value.applicationOpensAt
+  || !value.applicationClosesAt
+  || new Date(value.applicationOpensAt).getTime() <= new Date(value.applicationClosesAt).getTime()
+), {
+  message: 'Application opening date must be before the closing date.',
+  path: ['applicationOpensAt'],
 });
 
 export const updateJobStatusSchema = z.object({

@@ -3,7 +3,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { recruiterNav } from '@/lib/mock-data';
-import { getRecruiterPipelinePage } from '@/lib/api';
+import { getRecruiterApplicationsV2 } from '@/lib/api';
 import { moveApplicationStageAction } from '../actions';
 
 const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED'];
@@ -14,11 +14,11 @@ export default async function RecruiterAtsPage({ searchParams }) {
   if (params?.jobId) query.set('jobId', params.jobId);
   if (params?.stage) query.set('stage', params.stage);
 
-  let pipeline = { items: [], meta: { stageGroups: [] } };
+  let pipeline = { items: [], meta: {} };
   let error = '';
 
   try {
-    pipeline = await getRecruiterPipelinePage(query.toString());
+    pipeline = await getRecruiterApplicationsV2(query.toString());
   } catch (caught) {
     error = caught.message;
   }
@@ -37,7 +37,7 @@ export default async function RecruiterAtsPage({ searchParams }) {
         {!error ? (
           <div className="grid gap-4 xl:grid-cols-5">
             {stages.map((stage) => {
-              const items = pipeline.items.filter((application) => application.currentStage === stage);
+              const items = pipeline.items.filter((application) => application.stage === stage);
               return (
                 <Card key={stage} className="bg-[var(--surface)]">
                   <div className="flex items-center justify-between">
@@ -49,12 +49,12 @@ export default async function RecruiterAtsPage({ searchParams }) {
                     {items.map((application) => (
                       <div key={application.id} className="rounded-2xl border border-[var(--line)] bg-white p-3 text-sm">
                         <p className="font-semibold">{application.candidate.fullName}</p>
-                        <p className="text-[var(--muted)]">{application.candidate.headline || 'Candidate profile'}</p>
+                        <p className="text-[var(--muted)]">Reference {application.publicReference}</p>
                         <p className="mt-1 text-[var(--muted)]">{application.job.title}</p>
-                        <p className="mt-1 text-[var(--muted)]">Applied {new Date(application.appliedAt).toLocaleDateString()}</p>
-                        <p className="mt-1 text-[var(--muted)]">Latest activity: {application.activities?.[0]?.message || 'No activity yet'}</p>
-                        <form action={moveApplicationStageAction.bind(null, application.id)} className="mt-3 space-y-2">
-                          <select name="stage" defaultValue={application.currentStage} className="w-full rounded-2xl border border-[var(--line)] px-3 py-2">
+                        <p className="mt-1 text-[var(--muted)]">Applied {new Date(application.submittedAt).toLocaleDateString()}</p>
+                        <p className="mt-1 text-[var(--muted)]">Flags: {application.flagCount} • Source: {application.source?.sourceName || application.source?.sourceType || 'Unknown'}</p>
+                        <form action={moveApplicationStageAction.bind(null, application.applicationId || application.id)} className="mt-3 space-y-2">
+                          <select name="stage" defaultValue={application.stage} className="w-full rounded-2xl border border-[var(--line)] px-3 py-2">
                             {stages.map((option) => <option key={option} value={option}>{option}</option>)}
                           </select>
                           <button className="w-full rounded-2xl border border-[var(--line)] px-3 py-2 font-semibold">Move stage</button>

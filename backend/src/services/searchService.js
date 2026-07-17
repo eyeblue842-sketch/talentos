@@ -214,6 +214,7 @@ export async function getAuthorizedCandidateDetail(candidateId, organisationId, 
   return {
     ...serializeCandidatePrivateDetail(candidate),
     resumeBuilder: candidate.resumeBuilder ? serializeResumeBuilder(candidate.resumeBuilder) : null,
+    resumeDownloadUrl: candidate.resumeUrl ? `/api/resumes/candidate/${candidateId}/download` : null,
     accessReason: candidate.applications.length > 0 ? 'applied_to_organisation_job' : 'saved_by_organisation_recruiter',
     organisationApplications: candidate.applications,
     organisationTags: [...new Set(candidate.savedByRecruiters.map((item) => item.tag).filter(Boolean))],

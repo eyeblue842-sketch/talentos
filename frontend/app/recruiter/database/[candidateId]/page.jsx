@@ -47,7 +47,7 @@ export default async function RecruiterCandidateDetailPage({ params }) {
                   <p><span className="font-semibold">Availability:</span> {candidate.availability}</p>
                   <p><span className="font-semibold">Summary:</span> {candidate.summary || 'No summary provided'}</p>
                   <p><span className="font-semibold">Skills:</span> {candidate.skills.join(', ')}</p>
-                  <p><span className="font-semibold">Resume URL:</span> {candidate.resumeUrl || 'No private resume uploaded'}</p>
+                  <p><span className="font-semibold">Resume:</span> {candidate.resumeDownloadUrl ? <a className="text-[var(--brand)]" href={candidate.resumeDownloadUrl}>Download authenticated resume</a> : 'No private resume uploaded'}</p>
                 </div>
                 <div className="mt-6 flex flex-wrap gap-3">
                   <form action={saveCandidateAction.bind(null, candidate.id)} className="flex gap-2">

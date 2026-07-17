@@ -18,12 +18,12 @@ export default async function CandidateApplicationsPage() {
           applications={applications.map((application) => ({
             id: application.id,
             role: application.job.title,
-            company: application.job.recruiter?.recruiterProfile?.companyName || 'Careeriz employer',
-            location: application.job.location,
-            summary: application.coverLetter || 'Application submitted through Careeriz.',
-            tone: application.currentStage === 'REJECTED' ? 'warning' : 'success',
-            status: application.statusLabel,
-            date: new Date(application.appliedAt).toLocaleDateString(),
+            company: application.job.organisation?.name || 'Careeriz employer',
+            location: application.job.slug,
+            summary: `Reference ${application.publicReference}${application.resume?.filename ? ` • Resume ${application.resume.filename}` : ''}`,
+            tone: application.stage === 'REJECTED' ? 'warning' : 'success',
+            status: application.status,
+            date: new Date(application.submittedAt).toLocaleDateString(),
           }))}
         />
       </section>

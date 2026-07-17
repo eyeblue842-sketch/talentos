@@ -84,6 +84,10 @@ function normalizeJobPayload(payload) {
     salaryMin: payload.salaryMin ?? null,
     salaryMax: payload.salaryMax ?? null,
     currency: payload.currency || null,
+    isPublic: payload.isPublic ?? true,
+    publicSalaryEnabled: payload.publicSalaryEnabled ?? false,
+    featuredInPortal: payload.featuredInPortal ?? false,
+    visibility: payload.visibility || 'EXTERNAL',
     location: payload.location,
     employmentType: payload.employmentType || 'FULL_TIME',
     workplaceType: payload.workplaceType || null,
@@ -94,6 +98,15 @@ function normalizeJobPayload(payload) {
     hiringManagerId: payload.hiringManagerId || null,
     recruiterId: payload.recruiterId || null,
     applicationDeadline: payload.applicationDeadline ? new Date(payload.applicationDeadline) : null,
+    applicationOpensAt: payload.applicationOpensAt ? new Date(payload.applicationOpensAt) : null,
+    applicationClosesAt: payload.applicationClosesAt
+      ? new Date(payload.applicationClosesAt)
+      : payload.applicationDeadline
+        ? new Date(payload.applicationDeadline)
+        : null,
+    maxApplications: payload.maxApplications ?? null,
+    targetHires: payload.targetHires ?? null,
+    autoCloseOnTargetHire: payload.autoCloseOnTargetHire ?? false,
     status: payload.status,
     archivedAt: payload.status === 'ARCHIVED' ? new Date() : null,
   };
@@ -106,6 +119,7 @@ async function getJobById(organisationId, jobId) {
       requisition: true,
       recruiter: true,
       hiringManager: true,
+      screeningQuestions: { orderBy: { displayOrder: 'asc' } },
       _count: { select: { applications: true } },
     },
   });
@@ -205,6 +219,7 @@ export async function listRecruiterJobs(actorUser, filters = {}, organisationId 
         requisition: true,
         recruiter: true,
         hiringManager: true,
+        screeningQuestions: { orderBy: { displayOrder: 'asc' } },
         _count: { select: { applications: true } },
       },
     }),
@@ -261,6 +276,7 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
       requisition: true,
       recruiter: true,
       hiringManager: true,
+      screeningQuestions: { orderBy: { displayOrder: 'asc' } },
       _count: { select: { applications: true } },
     },
   });

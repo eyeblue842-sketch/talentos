@@ -5,6 +5,7 @@ import {
   removeSavedCandidate,
   getSavedCandidates,
   generateResumePdf,
+  getCandidateResumeDownload,
 } from '../services/resumeService.js';
 import { getAuthorizedCandidateDetail, searchCandidates } from '../services/searchService.js';
 import { prisma } from '../config/db.js';
@@ -75,7 +76,7 @@ export async function updateCandidateProfile(req, res, next) {
 
 export async function uploadResume(req, res, next) {
   try {
-    const candidate = await uploadCandidateResume(req.user.candidateProfile.id, req.file);
+    const candidate = await uploadCandidateResume(req.user, req.file);
     sendSuccess(res, 200, candidate);
   } catch (error) {
     next(error);
@@ -138,6 +139,23 @@ export async function recommendedJobs(req, res, next) {
   try {
     const result = await getCandidateRecommendations(req.user.candidateProfile.id, { excludeSaved: true });
     sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function downloadCandidateResume(req, res, next) {
+  try {
+    const file = await getCandidateResumeDownload(
+      req.user,
+      req.params.candidateId,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', String(file.contentLength));
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    file.stream.pipe(res);
   } catch (error) {
     next(error);
   }

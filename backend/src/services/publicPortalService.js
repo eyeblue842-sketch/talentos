@@ -29,6 +29,19 @@ export function buildPublicJobWhere(filters = {}) {
     { status: 'OPEN' },
     { archivedAt: null },
     { isPublic: true },
+    { visibility: { in: ['EXTERNAL', 'BOTH'] } },
+    {
+      OR: [
+        { applicationOpensAt: null },
+        { applicationOpensAt: { lte: now } },
+      ],
+    },
+    {
+      OR: [
+        { applicationClosesAt: null },
+        { applicationClosesAt: { gte: now } },
+      ],
+    },
     {
       OR: [
         { applicationDeadline: null },

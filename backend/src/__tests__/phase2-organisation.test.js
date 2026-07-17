@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 let prisma;
 let createOrganisationForUser;
-let listOrganisationMembers;
 let addOrganisationMember;
 let updateOrganisationMember;
 let createRequisition;
@@ -356,7 +355,7 @@ function hydrateRound(round, include = {}) {
 
 before(async () => {
   ({ prisma } = await import('../config/db.js'));
-  ({ createOrganisationForUser, listOrganisationMembers, addOrganisationMember, updateOrganisationMember } = await import('../services/organisationService.js'));
+  ({ createOrganisationForUser, addOrganisationMember, updateOrganisationMember } = await import('../services/organisationService.js'));
   ({ createRequisition, approveRequisition } = await import('../services/requisitionService.js'));
   ({ createJob, listRecruiterJobs } = await import('../services/jobService.js'));
   ({ getAuthorizedCandidateDetail } = await import('../services/searchService.js'));
@@ -430,7 +429,7 @@ test('candidate search cards stay minimal and candidate detail requires organisa
   state.savedCandidates.push({ id: 'saved-1', organisationId: 'org-1', recruiterId: 'rp-1', candidateId: 'candidate-1', tag: null, createdAt: new Date() });
   const detail = await getAuthorizedCandidateDetail('candidate-1', 'org-1');
   assert.equal(detail.user.email, 'candidate@example.com');
-  assert.equal(detail.resumeUrl, '/private.pdf');
+  assert.equal(detail.resumeUrl, '/api/resumes/candidate/candidate-1/download');
 
   await assert.rejects(
     () => getAuthorizedCandidateDetail('candidate-1', 'org-2'),

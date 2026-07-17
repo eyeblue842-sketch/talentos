@@ -3,8 +3,9 @@ import { notFound } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { PublicJobCard } from '@/components/sections/public-job-card';
+import { PublicJobApplyAction } from '@/components/sections/public-job-apply-action';
 import { getCurrentUser } from '@/lib/auth';
-import { getPublicJob } from '@/lib/api';
+import { getPublicJob, getPublicJobApplyContext } from '@/lib/api';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
 
 export async function generateMetadata({ params }) {
@@ -38,6 +39,9 @@ export default async function PublicJobDetailPage({ params }) {
 
   const user = await getCurrentUser();
   const { job, similarJobs } = data;
+  const applyContext = await getPublicJobApplyContext(job.slug);
+  const eligibility = applyContext.eligibility;
+
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'JobPosting',
@@ -122,16 +126,14 @@ export default async function PublicJobDetailPage({ params }) {
                       {job.saved ? 'Remove from saved jobs' : 'Save this job'}
                     </button>
                   </form>
-                  <a href="#apply" className="block rounded-2xl border border-[var(--line)] px-5 py-3 text-center font-semibold text-[var(--text)]">Continue to application foundation</a>
+                  <PublicJobApplyAction user={user} eligibility={eligibility} slug={job.slug} />
                 </>
               ) : (
-                <Link href="/auth" className="block rounded-2xl bg-[var(--brand)] px-5 py-3 text-center font-semibold text-white">
-                  Sign in to save or apply
-                </Link>
+                <PublicJobApplyAction user={user} eligibility={eligibility} slug={job.slug} />
               )}
             </div>
             <div id="apply" className="mt-6 rounded-[24px] border border-dashed border-[var(--line)] p-4 text-sm text-[var(--muted)]">
-              Application submission is scheduled for Phase 4.3. This page currently prepares the candidate journey without submitting an application.
+              {eligibility.reasonCode ? `Application status: ${eligibility.reasonCode}.` : 'Applications are open for eligible candidates.'}
             </div>
           </Card>
         </div>
@@ -152,4 +154,3 @@ export default async function PublicJobDetailPage({ params }) {
     </main>
   );
 }
-

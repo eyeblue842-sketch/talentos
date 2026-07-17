@@ -13,10 +13,6 @@ let resolveEmailTransportInfo;
 let resolveElasticConfig;
 let searchCandidatesWithAdapters;
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }

@@ -46,12 +46,27 @@ Base URL: `http://localhost:5000/api`
 - `GET /jobs/public`
   - Public/candidate job browsing
   - Query: `keyword`, `location`, `skill`
+- `GET /public/jobs/:slug/apply`
+  - Public-safe application context and server-authoritative eligibility
 - `GET /jobs`
   - Recruiter jobs
 - `POST /jobs`
   - Create a job posting
 - `PATCH /jobs/:jobId`
 - `DELETE /jobs/:jobId`
+- `GET /jobs/screening-templates`
+- `POST /jobs/screening-templates`
+- `PATCH /jobs/screening-templates/:templateId`
+- `POST /jobs/screening-templates/:templateId/archive`
+- `POST /jobs/screening-templates/:templateId/duplicate`
+- `GET /jobs/:jobId/screening-questions`
+- `POST /jobs/:jobId/screening-questions`
+- `POST /jobs/:jobId/screening-questions/from-library`
+- `PATCH /jobs/:jobId/screening-questions/:questionId`
+- `POST /jobs/:jobId/screening-questions/reorder`
+- `POST /jobs/:jobId/screening-questions/:questionId/duplicate`
+- `DELETE /jobs/:jobId/screening-questions/:questionId`
+- `GET /jobs/:jobId/screening-questions/preview`
 
 ## Resume Database
 
@@ -69,12 +84,36 @@ Base URL: `http://localhost:5000/api`
   - Multipart form-data with `resume`
 - `GET /resumes/pdf`
   - Candidate PDF export
+- `GET /candidate/resumes`
+  - Candidate-owned resume inventory
+- `POST /candidate/resumes`
+  - Candidate resume upload with private storage
+- `GET /candidate/resumes/:assetId/download`
+  - Authenticated candidate resume download
 
 ## ATS / Applications
 
 - `POST /ats/apply`
   - Candidate applies to a job
   - Body: `{ "jobId": "...", "coverLetter": "..." }`
+- `POST /candidate/application-files`
+  - Candidate answer-attachment upload
+- `POST /candidate/applications/validate`
+  - Validate screening answers and eligibility before submission
+- `POST /candidate/applications`
+  - Atomic application submission with snapshots, flags, source attribution, timeline, notifications, and duplicate protection
+- `GET /candidate/applications`
+  - Candidate-safe submitted application list
+- `GET /candidate/applications/:applicationId`
+  - Candidate-safe submitted application detail
+- `GET /ats/applications`
+  - Recruiter application list with flags, source, and resume availability
+- `GET /ats/applications/:applicationId`
+  - Recruiter application detail with answer snapshots and screening flags
+- `GET /ats/applications/:applicationId/resume`
+  - Authenticated recruiter resume snapshot download
+- `GET /ats/files/:assetId?applicationId=...`
+  - Authenticated recruiter screening-file download
 - `GET /ats/pipeline`
   - Recruiter application board
 - `PATCH /ats/pipeline/:applicationId/stage`

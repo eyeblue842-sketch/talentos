@@ -2,6 +2,11 @@ function iso(value) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+function resumeDownloadUrl(profile) {
+  if (!profile?.id || !profile?.resumeUrl) return undefined;
+  return `/api/resumes/candidate/${profile.id}/download`;
+}
+
 export function serializeOrganisation(organisation) {
   if (!organisation) return null;
   return {
@@ -110,7 +115,7 @@ export function serializeCandidateProfile(profile, options = {}) {
     notifyForInterviews: includePrivate ? profile.notifyForInterviews : undefined,
     currentCtcLpa: includePrivate ? profile.currentCtcLpa : undefined,
     expectedCtcLpa: includePrivate ? profile.expectedCtcLpa : undefined,
-    resumeUrl: includePrivate ? profile.resumeUrl : undefined,
+    resumeUrl: includePrivate ? resumeDownloadUrl(profile) : undefined,
     sharedResumeSlug: profile.sharedResumeSlug,
     profileViews: includePrivate ? profile.profileViews : undefined,
     lastActiveAt: iso(profile.lastActiveAt),
@@ -206,6 +211,7 @@ export function serializeJob(job, options = {}) {
     isPublic: job.isPublic,
     publicSalaryEnabled: job.publicSalaryEnabled,
     featuredInPortal: job.featuredInPortal,
+    visibility: job.visibility,
     location: job.location,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
@@ -216,6 +222,11 @@ export function serializeJob(job, options = {}) {
     requirements: job.requirements,
     benefits: job.benefits,
     applicationDeadline: iso(job.applicationDeadline),
+    applicationOpensAt: iso(job.applicationOpensAt),
+    applicationClosesAt: iso(job.applicationClosesAt),
+    maxApplications: job.maxApplications,
+    targetHires: job.targetHires,
+    autoCloseOnTargetHire: job.autoCloseOnTargetHire,
     status: job.status,
     archivedAt: iso(job.archivedAt),
     createdAt: iso(job.createdAt),
@@ -227,6 +238,23 @@ export function serializeJob(job, options = {}) {
     hiringManager: job.hiringManager ? { id: job.hiringManager.id, email: job.hiringManager.email } : undefined,
     requisition: options.includeRequisition ? serializeJobRequisition(job.requisition) : undefined,
     pipelineSummary: options.pipelineSummary || undefined,
+    screeningQuestions: job.screeningQuestions?.map((question) => ({
+      id: question.id,
+      templateId: question.templateId,
+      questionText: question.questionText,
+      internalLabel: question.internalLabel,
+      helpText: question.helpText,
+      placeholder: question.placeholder,
+      questionType: question.questionType,
+      required: question.required,
+      displayOrder: question.displayOrder,
+      isActive: question.isActive,
+      config: question.config || {},
+      validationConfig: question.validationConfig || {},
+      rules: question.rules || [],
+      createdAt: iso(question.createdAt),
+      updatedAt: iso(question.updatedAt),
+    })),
   };
 }
 
@@ -248,6 +276,9 @@ export function serializePublicJob(job, options = {}) {
     currency: salaryVisible ? job.currency : null,
     numberOfOpenings: job.numberOfOpenings,
     applicationDeadline: iso(job.applicationDeadline),
+    applicationOpensAt: iso(job.applicationOpensAt),
+    applicationClosesAt: iso(job.applicationClosesAt),
+    visibility: job.visibility,
     createdAt: iso(job.createdAt),
     updatedAt: iso(job.updatedAt),
     postedAt: iso(job.createdAt),

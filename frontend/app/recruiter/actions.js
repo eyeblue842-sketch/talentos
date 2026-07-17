@@ -45,7 +45,60 @@ function buildJobPayload(formData) {
     hiringManagerId: asNullableString(formData.get('hiringManagerId')),
     recruiterId: asNullableString(formData.get('recruiterId')),
     applicationDeadline: asNullableString(formData.get('applicationDeadline')),
+    applicationOpensAt: asNullableString(formData.get('applicationOpensAt')),
+    applicationClosesAt: asNullableString(formData.get('applicationClosesAt')),
+    maxApplications: formData.get('maxApplications') ? Number(formData.get('maxApplications')) : null,
+    targetHires: formData.get('targetHires') ? Number(formData.get('targetHires')) : null,
+    autoCloseOnTargetHire: formData.get('autoCloseOnTargetHire') === 'on',
+    isPublic: formData.get('isPublic') === 'on',
+    publicSalaryEnabled: formData.get('publicSalaryEnabled') === 'on',
+    featuredInPortal: formData.get('featuredInPortal') === 'on',
+    visibility: String(formData.get('visibility') || 'EXTERNAL'),
     status: String(formData.get('status') || 'DRAFT'),
+  };
+}
+
+function buildQuestionPayload(formData) {
+  const questionType = String(formData.get('questionType') || 'SHORT_TEXT');
+  const rawOptions = splitCommaList(formData.get('options'));
+  return {
+    questionText: String(formData.get('questionText') || '').trim(),
+    internalLabel: asNullableString(formData.get('internalLabel')),
+    helpText: asNullableString(formData.get('helpText')),
+    placeholder: asNullableString(formData.get('placeholder')),
+    questionType,
+    required: formData.get('required') === 'on',
+    isActive: formData.get('isActive') !== 'off',
+    config: ['SINGLE_SELECT', 'MULTI_SELECT'].includes(questionType)
+      ? {
+          options: rawOptions.map((item, index) => ({
+            id: `option-${index + 1}`,
+            label: item,
+            value: item,
+          })),
+        }
+      : {},
+    validationConfig: {
+      minTextLength: formData.get('minTextLength') ? Number(formData.get('minTextLength')) : null,
+      maxTextLength: formData.get('maxTextLength') ? Number(formData.get('maxTextLength')) : null,
+      minNumber: formData.get('minNumber') ? Number(formData.get('minNumber')) : null,
+      maxNumber: formData.get('maxNumber') ? Number(formData.get('maxNumber')) : null,
+      allowedCurrency: asNullableString(formData.get('allowedCurrency')),
+      allowedFileTypes: splitCommaList(formData.get('allowedFileTypes')),
+      maxFileSizeBytes: formData.get('maxFileSizeBytes') ? Number(formData.get('maxFileSizeBytes')) : null,
+    },
+    rules: formData.get('ruleOperator') && formData.get('ruleOutcome') && formData.get('ruleReason')
+      ? [{
+          operator: String(formData.get('ruleOperator')),
+          value: ['NUMBER', 'CURRENCY'].includes(questionType)
+            ? Number(formData.get('ruleValue'))
+            : ['MULTI_SELECT', 'SINGLE_SELECT'].includes(questionType)
+              ? splitCommaList(formData.get('ruleValue'))
+              : String(formData.get('ruleValue') || ''),
+          outcome: String(formData.get('ruleOutcome')),
+          reason: String(formData.get('ruleReason')),
+        }]
+      : [],
   };
 }
 
@@ -175,4 +228,54 @@ export async function markNotificationReadAction(notificationId) {
     body: JSON.stringify({ notificationIds: [notificationId] }),
   });
   revalidatePath('/recruiter/notifications');
+}
+
+export async function createScreeningTemplateAction(formData) {
+  await recruiterRequest('/jobs/screening-templates', {
+    method: 'POST',
+    body: JSON.stringify(buildQuestionPayload(formData)),
+  });
+  revalidatePath('/recruiter/jobs');
+}
+
+export async function addJobQuestionAction(jobId, formData) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions`, {
+    method: 'POST',
+    body: JSON.stringify(buildQuestionPayload(formData)),
+  });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
+}
+
+export async function addJobQuestionFromLibraryAction(jobId, formData) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions/from-library`, {
+    method: 'POST',
+    body: JSON.stringify({ templateId: String(formData.get('templateId')) }),
+  });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
+}
+
+export async function updateJobQuestionAction(jobId, questionId, formData) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions/${questionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(buildQuestionPayload(formData)),
+  });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
+}
+
+export async function deleteJobQuestionAction(jobId, questionId) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions/${questionId}`, { method: 'DELETE' });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
+}
+
+export async function duplicateJobQuestionAction(jobId, questionId) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions/${questionId}/duplicate`, { method: 'POST' });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
+}
+
+export async function reorderJobQuestionsAction(jobId, questionIds) {
+  await recruiterRequest(`/jobs/${jobId}/screening-questions/reorder`, {
+    method: 'POST',
+    body: JSON.stringify({ questionIds }),
+  });
+  revalidatePath(`/recruiter/jobs/${jobId}`);
 }
