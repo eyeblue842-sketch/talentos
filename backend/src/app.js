@@ -13,6 +13,8 @@ import { organisationRouter } from './routes/organisationRoutes.js';
 import { requisitionRouter } from './routes/requisitionRoutes.js';
 import { interviewRouter } from './routes/interviewRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
+import { publicRouter } from './routes/publicRoutes.js';
+import { candidateRouter } from './routes/candidateRoutes.js';
 import { errorHandler } from './middleware/error.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +33,8 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/jobs', jobRouter);
+app.use('/api/public', publicRouter);
+app.use('/api/candidate', candidateRouter);
 app.use('/api/resumes', resumeRouter);
 app.use('/api/ats', atsRouter);
 app.use('/api/resume-builder', resumeBuilderRouter);

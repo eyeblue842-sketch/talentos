@@ -74,6 +74,12 @@ enum AvailabilityStatus {
   NOT_LOOKING
 }
 
+enum ProfileVisibility {
+  PRIVATE
+  RECRUITERS_ONLY
+  PUBLIC
+}
+
 enum AuthTokenType {
   PASSWORD_RESET
   PASSWORD_RESET_SESSION
@@ -181,6 +187,14 @@ model Organisation {
   status           OrganisationStatus        @default(ACTIVE)
   website          String?
   logoUrl          String?
+  publicDescription String?
+  industry         String?
+  organisationSize String?
+  headquarters     String?
+  publicLocations  String[]                  @default([])
+  cultureSummary   String?
+  benefitsSummary  String?
+  careersEnabled   Boolean                   @default(true)
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   recruiterProfiles RecruiterProfile[]
@@ -250,15 +264,29 @@ model CandidateProfile {
   userId             String             @unique
   fullName           String
   headline           String?
+  currentTitle       String?
   location           String?
   preferredLocations String[]
+  preferredRoles     String[]             @default([])
   totalExperience    Int                @default(0)
+  workplacePreferences WorkplaceType[]   @default([])
+  employmentPreferences EmploymentType[] @default([])
   currentCtcLpa      Int?
   expectedCtcLpa     Int?
   availability       AvailabilityStatus @default(IMMEDIATE)
+  noticePeriodDays   Int?
   skills             String[]
   summary            String?
   resumeUrl          String?
+  profileImageUrl    String?
+  portfolioUrl       String?
+  linkedInUrl        String?
+  githubUrl          String?
+  profileVisibility  ProfileVisibility   @default(PRIVATE)
+  recommendationEnabled Boolean          @default(true)
+  notifyForSavedJobUpdates Boolean       @default(true)
+  notifyForRecommendations Boolean       @default(true)
+  notifyForInterviews Boolean            @default(true)
   sharedResumeSlug   String?            @unique
   profileViews       Int                @default(0)
   lastActiveAt       DateTime?
@@ -267,6 +295,9 @@ model CandidateProfile {
   applications       Application[]
   resumeBuilder      ResumeBuilder?
   savedByRecruiters  SavedCandidate[]
+  savedJobs          SavedJob[]
+
+  @@index([recommendationEnabled, updatedAt])
 }
 
 model Job {
@@ -284,12 +315,18 @@ model Job {
   salaryMin         Int?
   salaryMax         Int?
   currency          String?
+  isPublic          Boolean           @default(false)
+  publicSalaryEnabled Boolean         @default(false)
+  featuredInPortal  Boolean           @default(false)
   location          String
   employmentType    EmploymentType    @default(FULL_TIME)
   workplaceType     WorkplaceType?
   numberOfOpenings  Int               @default(1)
   department        String?
   businessUnit      String?
+  responsibilities  String[]           @default([])
+  requirements      String[]           @default([])
+  benefits          String[]           @default([])
   applicationDeadline DateTime?
   status            JobStatus         @default(OPEN)
   archivedAt        DateTime?
@@ -300,12 +337,32 @@ model Job {
   hiringManager     User?             @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
   requisition       JobRequisition?   @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   applications      Application[]
+  savedJobs         SavedJob[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status])
+  @@index([isPublic, status, createdAt])
   @@index([recruiterId])
   @@index([requisitionId])
   @@index([hiringManagerId])
+}
+
+model SavedJob {
+  id                       String           @id @default(cuid())
+  candidateId              String
+  jobId                    String?
+  organisationId           String?
+  jobSlugSnapshot          String
+  jobTitleSnapshot         String
+  organisationNameSnapshot String
+  createdAt                DateTime         @default(now())
+  candidate                CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job                      Job?             @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, jobId])
+  @@index([candidateId, createdAt])
+  @@index([jobId])
+  @@index([organisationId, createdAt])
 }
 
 model Application {

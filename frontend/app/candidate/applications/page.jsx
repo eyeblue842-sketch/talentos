@@ -1,6 +1,6 @@
 import { Sidebar } from '@/components/layout/sidebar';
 import { ApplicationsList } from '@/components/sections/applications-list';
-import { candidateNav } from '@/lib/mock-data';
+import { candidateNav } from '@/lib/navigation';
 import { getCandidateApplications } from '@/lib/api';
 
 export default async function CandidateApplicationsPage() {
@@ -8,7 +8,7 @@ export default async function CandidateApplicationsPage() {
 
   return (
     <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="CareerCraft AI" items={candidateNav} />
+      <Sidebar brand="Careeriz" items={candidateNav} />
       <section className="space-y-6">
         <div>
           <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">Job application flow</p>

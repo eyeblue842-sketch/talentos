@@ -8,7 +8,7 @@ import {
 } from '../services/resumeService.js';
 import { getAuthorizedCandidateDetail, searchCandidates } from '../services/searchService.js';
 import { prisma } from '../config/db.js';
-import { getCandidateRecommendedJobs } from '../services/recommendationService.js';
+import { getCandidateRecommendations } from '../services/candidateService.js';
 import { apiError, sendSuccess } from '../utils/response.js';
 
 export async function searchResumeDatabase(req, res, next) {
@@ -136,7 +136,7 @@ export async function downloadResumePdf(req, res, next) {
 
 export async function recommendedJobs(req, res, next) {
   try {
-    const result = await getCandidateRecommendedJobs(req.user.candidateProfile.id);
+    const result = await getCandidateRecommendations(req.user.candidateProfile.id, { excludeSaved: true });
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

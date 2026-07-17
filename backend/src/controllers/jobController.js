@@ -5,8 +5,8 @@ import {
   updateJob,
   updateJobStatus,
   deleteJob,
-  browseJobs,
 } from '../services/jobService.js';
+import { searchPublicJobs } from '../services/publicPortalService.js';
 import { sendSuccess } from '../utils/response.js';
 
 export async function createRecruiterJob(req, res, next) {
@@ -77,7 +77,7 @@ export async function removeRecruiterJob(req, res, next) {
 
 export async function getPublicJobs(req, res, next) {
   try {
-    const result = await browseJobs(req.query);
+    const result = await searchPublicJobs(req.query);
     sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);

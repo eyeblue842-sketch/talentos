@@ -1,7 +1,7 @@
 import { FileCheck2, FileText, ScanSearch, Sparkles, Target, WandSparkles } from 'lucide-react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Card } from '@/components/ui/card';
-import { candidateNav } from '@/lib/mock-data';
+import { candidateNav } from '@/lib/navigation';
 
 const tools = [
   {
@@ -45,7 +45,7 @@ const tools = [
 export default function CandidateToolsPage() {
   return (
     <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="CareerCraft AI" items={candidateNav} />
+      <Sidebar brand="Careeriz" items={candidateNav} />
       <section className="space-y-6">
         <Card className="bg-[linear-gradient(135deg,#0f2618_0%,#19452a_60%,#285c39_100%)] text-white">
           <p className="text-sm uppercase tracking-[0.24em] text-emerald-200">AI career tools</p>

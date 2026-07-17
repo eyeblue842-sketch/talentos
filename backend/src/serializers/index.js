@@ -16,6 +16,24 @@ export function serializeOrganisation(organisation) {
   };
 }
 
+export function serializePublicOrganisation(organisation) {
+  if (!organisation) return null;
+  return {
+    id: organisation.id,
+    name: organisation.name,
+    slug: organisation.slug,
+    website: organisation.website,
+    logoUrl: organisation.logoUrl,
+    publicDescription: organisation.publicDescription,
+    industry: organisation.industry,
+    organisationSize: organisation.organisationSize,
+    headquarters: organisation.headquarters,
+    publicLocations: organisation.publicLocations || [],
+    cultureSummary: organisation.cultureSummary,
+    benefitsSummary: organisation.benefitsSummary,
+  };
+}
+
 export function serializeOrganisationMembership(membership) {
   if (!membership) return null;
   return {
@@ -70,12 +88,26 @@ export function serializeCandidateProfile(profile, options = {}) {
     id: profile.id,
     fullName: profile.fullName,
     headline: profile.headline,
+    currentTitle: profile.currentTitle,
     location: profile.location,
     preferredLocations: profile.preferredLocations,
+    preferredRoles: profile.preferredRoles,
     totalExperience: profile.totalExperience,
+    workplacePreferences: profile.workplacePreferences,
+    employmentPreferences: profile.employmentPreferences,
     availability: profile.availability,
+    noticePeriodDays: includePrivate ? profile.noticePeriodDays : undefined,
     skills: profile.skills,
     summary: profile.summary,
+    profileImageUrl: profile.profileImageUrl,
+    portfolioUrl: profile.portfolioUrl,
+    linkedInUrl: profile.linkedInUrl,
+    githubUrl: profile.githubUrl,
+    profileVisibility: includePrivate ? profile.profileVisibility : undefined,
+    recommendationEnabled: includePrivate ? profile.recommendationEnabled : undefined,
+    notifyForSavedJobUpdates: includePrivate ? profile.notifyForSavedJobUpdates : undefined,
+    notifyForRecommendations: includePrivate ? profile.notifyForRecommendations : undefined,
+    notifyForInterviews: includePrivate ? profile.notifyForInterviews : undefined,
     currentCtcLpa: includePrivate ? profile.currentCtcLpa : undefined,
     expectedCtcLpa: includePrivate ? profile.expectedCtcLpa : undefined,
     resumeUrl: includePrivate ? profile.resumeUrl : undefined,
@@ -171,12 +203,18 @@ export function serializeJob(job, options = {}) {
     salaryMin: job.salaryMin,
     salaryMax: job.salaryMax,
     currency: job.currency,
+    isPublic: job.isPublic,
+    publicSalaryEnabled: job.publicSalaryEnabled,
+    featuredInPortal: job.featuredInPortal,
     location: job.location,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     numberOfOpenings: job.numberOfOpenings,
     department: job.department,
     businessUnit: job.businessUnit,
+    responsibilities: job.responsibilities,
+    requirements: job.requirements,
+    benefits: job.benefits,
     applicationDeadline: iso(job.applicationDeadline),
     status: job.status,
     archivedAt: iso(job.archivedAt),
@@ -189,6 +227,37 @@ export function serializeJob(job, options = {}) {
     hiringManager: job.hiringManager ? { id: job.hiringManager.id, email: job.hiringManager.email } : undefined,
     requisition: options.includeRequisition ? serializeJobRequisition(job.requisition) : undefined,
     pipelineSummary: options.pipelineSummary || undefined,
+  };
+}
+
+export function serializePublicJob(job, options = {}) {
+  if (!job) return null;
+  const salaryVisible = Boolean(job.publicSalaryEnabled);
+  return {
+    id: job.id,
+    slug: job.slug,
+    title: job.title,
+    description: job.description,
+    location: job.location,
+    employmentType: job.employmentType,
+    workplaceType: job.workplaceType,
+    experienceMin: job.experienceMin,
+    experienceMax: job.experienceMax,
+    salaryMin: salaryVisible ? job.salaryMin : null,
+    salaryMax: salaryVisible ? job.salaryMax : null,
+    currency: salaryVisible ? job.currency : null,
+    numberOfOpenings: job.numberOfOpenings,
+    applicationDeadline: iso(job.applicationDeadline),
+    createdAt: iso(job.createdAt),
+    updatedAt: iso(job.updatedAt),
+    postedAt: iso(job.createdAt),
+    skillsRequired: job.skillsRequired || [],
+    responsibilities: job.responsibilities || [],
+    requirements: job.requirements || [],
+    benefits: job.benefits || [],
+    organisation: serializePublicOrganisation(job.organisation),
+    saved: options.saved ?? undefined,
+    applyPath: `/jobs/${job.slug}#apply`,
   };
 }
 
@@ -402,6 +471,45 @@ export function serializeNotification(notification) {
     entityId: notification.entityId,
     readAt: iso(notification.readAt),
     createdAt: iso(notification.createdAt),
+  };
+}
+
+export function serializeCandidateNotification(notification) {
+  if (!notification) return null;
+  return {
+    id: notification.id,
+    type: notification.type,
+    title: notification.title,
+    message: notification.message,
+    entityType: notification.entityType,
+    entityId: notification.entityId,
+    readAt: iso(notification.readAt),
+    createdAt: iso(notification.createdAt),
+    isUnread: !notification.readAt,
+    link:
+      notification.entityType === 'Job' && notification.entityId
+        ? `/jobs/${notification.entityId}`
+        : notification.entityType === 'Application' && notification.entityId
+          ? `/candidate/applications`
+          : notification.entityType === 'InterviewRound' && notification.entityId
+            ? `/candidate/applications`
+            : '/candidate/notifications',
+  };
+}
+
+export function serializeSavedJob(savedJob, options = {}) {
+  if (!savedJob) return null;
+  return {
+    id: savedJob.id,
+    createdAt: iso(savedJob.createdAt),
+    job: savedJob.job ? serializePublicJob(savedJob.job, options) : null,
+    snapshot: {
+      slug: savedJob.jobSlugSnapshot,
+      title: savedJob.jobTitleSnapshot,
+      organisationName: savedJob.organisationNameSnapshot,
+    },
+    status: savedJob.job?.status || 'REMOVED',
+    isActive: Boolean(savedJob.job && savedJob.job.status === 'OPEN' && !savedJob.job.archivedAt),
   };
 }
 

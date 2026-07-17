@@ -86,6 +86,13 @@ export const notificationTypeSchema = z.enum([
   'SYSTEM',
 ]);
 
+export const availabilityStatusSchema = z.enum([
+  'IMMEDIATE',
+  'TWO_WEEKS',
+  'ONE_MONTH',
+  'NOT_LOOKING',
+]);
+
 export const applyToJobSchema = z.object({
   jobId: z.string().min(1),
   coverLetter: z.string().trim().max(5000).optional(),

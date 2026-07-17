@@ -59,12 +59,13 @@ export function Sidebar({ brand, items }) {
       </div>
       <nav className="mt-8 space-y-2">
         {items.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(`${item.href}/`));
           const Icon = iconMap[item.icon] || LayoutDashboard;
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={clsx(
                 'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition',
                 active ? 'bg-white text-[#102418]' : 'text-white/72 hover:bg-white/10 hover:text-white',

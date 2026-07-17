@@ -1,4 +1,5 @@
-import { getRecruiterDashboard, getCandidateDashboard } from '../services/dashboardService.js';
+import { getRecruiterDashboard } from '../services/dashboardService.js';
+import { getCandidateDashboard } from '../services/candidateService.js';
 import { sendSuccess } from '../utils/response.js';
 
 export async function recruiterDashboard(req, res, next) {
@@ -12,7 +13,7 @@ export async function recruiterDashboard(req, res, next) {
 
 export async function candidateDashboard(req, res, next) {
   try {
-    const data = await getCandidateDashboard(req.user.candidateProfile.id);
+    const data = await getCandidateDashboard(req.user.candidateProfile.id, req.user.id);
     sendSuccess(res, 200, data);
   } catch (error) {
     next(error);
