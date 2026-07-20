@@ -1,97 +1,149 @@
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { Download, Mail, ShieldCheck } from 'lucide-react';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { recruiterNav } from '@/lib/mock-data';
-import { getCandidateDetail } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
+import { getCurrentOrganisation, getRecruiterCandidatePreview } from '@/lib/api';
+import { decorateResumePreview } from '@/lib/recruiter-resume-search';
 import { saveCandidateAction, unsaveCandidateAction } from '../../actions';
 
 export default async function RecruiterCandidateDetailPage({ params }) {
   const { candidateId } = await params;
 
   let candidate = null;
+  let organisation = null;
   let error = '';
+
   try {
-    candidate = await getCandidateDetail(candidateId);
+    [organisation, candidate] = await Promise.all([
+      getCurrentOrganisation(),
+      getRecruiterCandidatePreview(candidateId).then(decorateResumePreview),
+    ]);
   } catch (caught) {
     error = caught.message;
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
-        <Link href="/recruiter/database" className="text-sm font-semibold text-[var(--brand)]">Back to candidate search</Link>
-        {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
-        {candidate ? (
-          <>
-            <Card className="bg-[var(--surface)]">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h1 className="font-[var(--font-display)] text-3xl font-semibold">{candidate.fullName}</h1>
-                  <p className="mt-2 text-sm text-[var(--muted)]">{candidate.headline || 'Candidate profile'} • {candidate.location || 'Location not shared'}</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">Access reason: {candidate.accessReason}</p>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Careeriz Hire'}
+        title={candidate?.fullName || 'Candidate Profile'}
+        description={candidate?.title || 'Recruiter candidate detail'}
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search', href: '/recruiter/database' }, { label: 'Profile' }]}
+        secondaryActions={[{ label: 'Back to Search', href: '/recruiter/database' }]}
+      />
+
+      {error ? <Card><p className="text-sm text-[var(--color-text-secondary)]">{error}</p></Card> : null}
+
+      {candidate ? (
+        <>
+          <Card className="bg-[var(--surface)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="brand">{candidate.matchScore}% match</Badge>
+                  <Badge variant="neutral">Resume {candidate.resumeScore}</Badge>
+                  <Badge variant="neutral">{candidate.globalHiringStatus}</Badge>
                 </div>
-                <div className="flex gap-2">
-                  {candidate.organisationTags?.map((tag) => <Badge key={tag} tone="brand">{tag}</Badge>)}
+                <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{candidate.location || 'Location not shared'} • {candidate.totalExperienceLabel} • {candidate.noticePeriod}</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {candidate.resumeUrl ? (
+                  <Link href={candidate.resumeUrl} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">
+                    <Download size={16} aria-hidden="true" />
+                    Download Resume
+                  </Link>
+                ) : null}
+                <form action={saveCandidateAction.bind(null, candidate.id)} className="flex gap-2">
+                  <select name="tag" defaultValue="" className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm">
+                    <option value="">Save without tag</option>
+                    <option value="SHORTLISTED">Shortlisted</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="HOLD">Hold</option>
+                  </select>
+                  <button className="rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white">Save candidate</button>
+                </form>
+                <form action={unsaveCandidateAction.bind(null, candidate.id)}>
+                  <button className="rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">Remove saved</button>
+                </form>
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <Card>
+              <h2 className="text-2xl font-semibold text-[var(--color-text)]">AI Summary</h2>
+              <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">{candidate.aiSummary}</p>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-[var(--line)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">Current Company</p>
+                  <p className="mt-2 font-semibold text-[var(--color-text)]">{candidate.currentCompany}</p>
+                </div>
+                <div className="rounded-2xl border border-[var(--line)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">Salary Range</p>
+                  <p className="mt-2 font-semibold text-[var(--color-text)]">{candidate.salaryLabel}</p>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-[var(--color-text)]">Skills</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {candidate.skills.map((skill) => <Badge key={skill} variant="neutral">{skill}</Badge>)}
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-[var(--color-text)]">Timeline</h3>
+                <div className="mt-3 space-y-3">
+                  {candidate.timeline.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-[var(--line)] px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">{item.label}</p>
+                      <p className="mt-1 text-sm text-[var(--color-text)]">{item.value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </Card>
 
-            <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <div className="space-y-6">
               <Card>
-                <h2 className="font-[var(--font-display)] text-2xl font-semibold">Candidate profile</h2>
-                <div className="mt-5 space-y-3 text-sm">
-                  <p><span className="font-semibold">Email:</span> {candidate.user?.email || 'Not available'}</p>
-                  <p><span className="font-semibold">Experience:</span> {candidate.totalExperience} years</p>
-                  <p><span className="font-semibold">Availability:</span> {candidate.availability}</p>
-                  <p><span className="font-semibold">Summary:</span> {candidate.summary || 'No summary provided'}</p>
-                  <p><span className="font-semibold">Skills:</span> {candidate.skills.join(', ')}</p>
-                  <p><span className="font-semibold">Resume:</span> {candidate.resumeDownloadUrl ? <a className="text-[var(--brand)]" href={candidate.resumeDownloadUrl}>Download authenticated resume</a> : 'No private resume uploaded'}</p>
-                </div>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <form action={saveCandidateAction.bind(null, candidate.id)} className="flex gap-2">
-                    <select name="tag" defaultValue="" className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm">
-                      <option value="">Save without tag</option>
-                      <option value="SHORTLISTED">Shortlisted</option>
-                      <option value="REJECTED">Rejected</option>
-                      <option value="HOLD">Hold</option>
-                    </select>
-                    <button className="rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white">Save candidate</button>
-                  </form>
-                  <form action={unsaveCandidateAction.bind(null, candidate.id)}>
-                    <button className="rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">Remove saved</button>
-                  </form>
+                <h2 className="text-xl font-semibold text-[var(--color-text)]">ATS Status</h2>
+                <div className="mt-4 space-y-3">
+                  {candidate.atsPipeline.map((stage) => (
+                    <div key={stage.label} className={`rounded-2xl border px-4 py-3 text-sm ${stage.current ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : stage.active ? 'border-[var(--line)]' : 'border-[var(--line)] text-[var(--color-text-muted)]'}`}>
+                      {stage.label}
+                    </div>
+                  ))}
                 </div>
               </Card>
 
               <Card>
-                <h2 className="font-[var(--font-display)] text-2xl font-semibold">Organisation context</h2>
-                <div className="mt-5 space-y-4">
-                  <div>
-                    <p className="font-semibold">Applications to current organisation</p>
-                    {candidate.organisationApplications?.length ? (
-                      <div className="mt-2 space-y-2 text-sm">
-                        {candidate.organisationApplications.map((application) => (
-                          <div key={application.id} className="rounded-2xl border border-[var(--line)] p-3">
-                            <p className="font-semibold">{application.job.title}</p>
-                            <p className="text-[var(--muted)]">{application.currentStage} • {new Date(application.appliedAt).toLocaleDateString()}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : <p className="mt-2 text-sm text-[var(--muted)]">No organisation applications found.</p>}
+                <h2 className="text-xl font-semibold text-[var(--color-text)]">Contact Information</h2>
+                {candidate.showContactInfo ? (
+                  <div className="mt-4 rounded-2xl border border-[var(--line)] px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+                      <Mail size={16} aria-hidden="true" />
+                      {candidate.contactEmail}
+                    </div>
+                    <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Visible because organisation access rules allow recruiter detail access for this candidate.</p>
                   </div>
-
-                  <div>
-                    <p className="font-semibold">Resume builder preview</p>
-                    <p className="mt-2 text-sm text-[var(--muted)]">Projects: {Array.isArray(candidate.resumeBuilder?.projects) ? candidate.resumeBuilder.projects.length : 0} • Experience entries: {Array.isArray(candidate.resumeBuilder?.experience) ? candidate.resumeBuilder.experience.length : 0}</p>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--color-bg-muted)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+                    <div className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
+                      <ShieldCheck size={16} aria-hidden="true" className="text-[var(--color-primary)]" />
+                      Permission-based contact information
+                    </div>
+                    <p className="mt-2">Direct contact details remain hidden for this recruiter until a permitted access path is available.</p>
                   </div>
-                </div>
+                )}
               </Card>
             </div>
-          </>
-        ) : null}
-      </section>
-    </main>
+          </div>
+        </>
+      ) : null}
+    </WorkspaceShell>
   );
 }

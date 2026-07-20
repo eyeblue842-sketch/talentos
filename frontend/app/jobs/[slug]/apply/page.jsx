@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { getCurrentUser } from '@/lib/auth';
 import { getCandidateResumeAssets, getPublicJobApplyContext } from '@/lib/api';
 import { JobApplicationFlow } from '@/components/sections/job-application-flow';
+import { getHomeRouteForRole } from '@/lib/roles';
 
 export default async function JobApplyPage({ params }) {
   const { slug } = await params;
@@ -13,11 +14,11 @@ export default async function JobApplyPage({ params }) {
   ]);
 
   if (!user) {
-    redirect(`/auth?next=/jobs/${slug}/apply`);
+    redirect(`/auth/candidate/login?next=/jobs/${slug}/apply`);
   }
 
   if (user.role !== 'CANDIDATE') {
-    redirect('/recruiter');
+    redirect(getHomeRouteForRole(user.role));
   }
 
   const resumes = await getCandidateResumeAssets();

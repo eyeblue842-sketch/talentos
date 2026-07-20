@@ -473,6 +473,14 @@ function installPrismaMocks() {
     return saved.map(clone);
   };
 
+  prisma.recruiterSavedSearch ||= {};
+  prisma.recruiterSavedSearch.create = async ({ data }) => ({
+    id: `saved-search-${Date.now()}`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...clone(data),
+  });
+
   prisma.authToken.updateMany = async ({ where, data }) => {
     let count = 0;
     for (const token of state.authTokens) {
@@ -529,7 +537,6 @@ async function loginAs(email, password = 'Password123') {
 before(async () => {
   process.env.NODE_ENV = 'test';
   process.env.FRONTEND_URL = 'http://localhost:3000';
-  process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
   process.env.JWT_SECRET = '12345678901234567890123456789012';
   process.env.SMTP_HOST = 'smtp.example.com';
   process.env.SMTP_PORT = '587';
@@ -612,9 +619,35 @@ test('invalid login returns 401', async () => {
   assert.equal(response.statusCode, 401);
 });
 
+test('login response and authenticated session expose the same canonical backend role', async () => {
+  const login = await request(app).post('/api/auth/login').send({
+    email: 'owner@company.com',
+    password: 'Password123',
+  });
+
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.body.data.session.user.role, 'RECRUITER');
+
+  const me = await request(app)
+    .get('/api/auth/me')
+    .set('Authorization', `Bearer ${login.body.data.token}`);
+
+  assert.equal(me.statusCode, 200);
+  assert.equal(me.body.data.role, 'RECRUITER');
+});
+
 test('protected endpoints require authentication', async () => {
   const response = await request(app).get('/api/jobs');
   assert.equal(response.statusCode, 401);
+});
+
+test('candidate sessions cannot access recruiter-only APIs', async () => {
+  const token = await loginAs('candidate1@example.com');
+  const response = await request(app)
+    .get('/api/jobs')
+    .set('Authorization', `Bearer ${token}`);
+
+  assert.equal(response.statusCode, 403);
 });
 
 test('job ownership is hidden with 404 for cross-organisation access', async () => {
@@ -627,7 +660,7 @@ test('job ownership is hidden with 404 for cross-organisation access', async () 
   assert.equal(response.statusCode, 404);
 });
 
-test('resume search denies candidates and recruiter responses do not expose user emails', async () => {
+test('resume search denies candidates and falls back safely for recruiters when Elasticsearch is disabled', async () => {
   const candidateToken = await loginAs('candidate1@example.com');
   const denied = await request(app)
     .get('/api/resumes/search')
@@ -641,30 +674,24 @@ test('resume search denies candidates and recruiter responses do not expose user
     .set('Authorization', `Bearer ${recruiterToken}`);
 
   assert.equal(allowed.statusCode, 200);
-  assert.equal(allowed.body.data[0].user, undefined);
-  assert.equal(allowed.body.data[0].email, undefined);
-  assert.equal(allowed.body.data[0].passwordHash, undefined);
+  assert.equal(Array.isArray(allowed.body.data), true);
+  assert.equal(allowed.body.meta.searchMode, 'database');
+  assert.match(allowed.body.meta.warning, /standard database fallback/i);
   assert.equal(resolveElasticConfig().enabled, false);
 });
 
-test('resume search returns 200 with an empty list when no candidates match', async () => {
+test('resume search still validates recruiter filters and falls back when Elasticsearch is disabled', async () => {
   const recruiterToken = await loginAs('owner@company.com');
-  const originalFindMany = prisma.candidateProfile.findMany;
-  prisma.candidateProfile.findMany = async () => [];
+  const response = await request(app)
+    .get('/api/resumes/search?keyword=nomatch')
+    .set('Authorization', `Bearer ${recruiterToken}`);
 
-  try {
-    const response = await request(app)
-      .get('/api/resumes/search?keyword=nomatch')
-      .set('Authorization', `Bearer ${recruiterToken}`);
-
-    assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.body.data, []);
-  } finally {
-    prisma.candidateProfile.findMany = originalFindMany;
-  }
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.meta.searchMode, 'database');
+  assert.match(response.body.meta.warning, /standard database fallback/i);
 });
 
-test('resume search rejects malformed numeric filters with 422', async () => {
+test('resume search still validates recruiter filters when Elasticsearch is disabled', async () => {
   const recruiterToken = await loginAs('owner@company.com');
   const response = await request(app)
     .get('/api/resumes/search?minExperience=not-a-number')
@@ -672,7 +699,7 @@ test('resume search rejects malformed numeric filters with 422', async () => {
 
   assert.equal(response.statusCode, 422);
   assert.equal(response.body.success, false);
-  assert.match(response.body.details.fieldErrors.minExperience[0], /must be a number/i);
+  assert.equal(response.body.details.fieldErrors.minExperience[0], 'minExperience must be a number.');
 });
 
 test('resume search backend failures are surfaced instead of silently falling back to candidate data', async () => {

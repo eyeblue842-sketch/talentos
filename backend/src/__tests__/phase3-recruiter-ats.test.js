@@ -390,6 +390,11 @@ function installPrismaMocks() {
     && item.organisationId === where.organisationId
     && item.approvalStatus === where.approvalStatus
   )) || null);
+  prisma.jobRequisition.count = async ({ where = {} } = {}) => state.requisitions.filter((item) => {
+    if (where.organisationId && item.organisationId !== where.organisationId) return false;
+    if (where.status?.in && !where.status.in.includes(item.status)) return false;
+    return true;
+  }).length;
 
   prisma.job.findUnique = async ({ where }) => clone(state.jobs.find((item) => item.id === where.id || item.slug === where.slug) || null);
   prisma.job.findFirst = async ({ where, include = {} }) => {
@@ -559,6 +564,25 @@ function installPrismaMocks() {
     const activity = { id: `activity-${state.activities.length + 1}`, createdAt: now(), updatedAt: now(), ...data };
     state.activities.push(activity);
     return clone(activity);
+  };
+  prisma.jobApplication = {
+    findFirst: async ({ where = {} } = {}) => {
+      const application = state.applications.find((item) => item.id === where.applicationId);
+      return application ? { id: application.id } : null;
+    },
+    update: async ({ where, data }) => {
+      const application = state.applications.find((item) => item.id === where.id);
+      if (!application) return null;
+      Object.assign(application, data, { updatedAt: now() });
+      return clone(application);
+    },
+  };
+  prisma.applicationTimeline = {
+    create: async ({ data }) => ({
+      id: `timeline-${state.activities.length + 1}`,
+      createdAt: now(),
+      ...data,
+    }),
   };
 
   prisma.notification.create = async ({ data }) => {

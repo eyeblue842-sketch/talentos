@@ -126,6 +126,10 @@ async function sendTransactionalEmail({ to, subject, text }) {
   });
 }
 
+export async function sendRecruiterOutreachEmail(to, subject, text) {
+  await sendTransactionalEmail({ to, subject, text });
+}
+
 export function __getSentEmails() {
   return sentEmails.slice();
 }
@@ -157,5 +161,13 @@ export async function sendEmailVerificationEmail(to, token) {
     to,
     subject: 'Verify your Careeriz email',
     text: `Verify your email by visiting: ${verifyUrl.toString()}`,
+  });
+}
+
+export async function sendOrganisationInvitationEmail({ to, organisationName, role, invitationUrl, expiresAt }) {
+  await sendTransactionalEmail({
+    to,
+    subject: `Join ${organisationName} on Careeriz Hire`,
+    text: `You were invited to join ${organisationName} on Careeriz Hire as ${role}. Use this link before ${dayjs(expiresAt).format('DD MMM YYYY, hh:mm A')}: ${invitationUrl}`,
   });
 }

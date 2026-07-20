@@ -11,6 +11,7 @@ export async function createNotification(payload) {
       message: payload.message,
       entityType: payload.entityType || null,
       entityId: payload.entityId || null,
+      metadata: payload.metadata || null,
     },
   });
 

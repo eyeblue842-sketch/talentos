@@ -445,6 +445,12 @@ beforeEach(() => {
     Object.assign(profile, data);
     return clone(profile);
   };
+  prisma.candidateActivity = {
+    create: async () => ({}),
+  };
+  prisma.auditLog = {
+    create: async () => ({}),
+  };
 
   prisma.notification.count = async ({ where = {} } = {}) => state.notifications.filter((item) => item.recipientUserId === where.recipientUserId && (!('readAt' in where) || item.readAt === where.readAt)).length;
   prisma.notification.findMany = async ({ where = {}, skip = 0, take } = {}) => {

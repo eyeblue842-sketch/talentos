@@ -1,10 +1,18 @@
-import clsx from 'clsx';
+import { cn } from '@/lib/utils';
 
-export function Card({ children, className }) {
+const variantStyles = {
+  default: 'border-[var(--color-border)] bg-white shadow-[var(--shadow-md)]',
+  interactive: 'border-[var(--color-border)] bg-white shadow-[var(--shadow-md)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-[var(--shadow-lg)]',
+  muted: 'border-transparent bg-[var(--color-bg-muted)] shadow-none',
+  outlined: 'border-[var(--color-border-strong)] bg-white shadow-none',
+  elevated: 'border-[var(--color-border)] bg-white shadow-[var(--shadow-floating)]',
+};
+
+export function Card({ children, className, variant = 'default', as: Comp = 'div' }) {
   return (
-    <div className={clsx('rounded-[24px] border border-[var(--line)] bg-white p-5 shadow-[0_12px_40px_rgba(16,36,24,0.06)]', className)}>
+    <Comp className={cn('rounded-[var(--radius-card)] border p-5', variantStyles[variant], className)}>
       {children}
-    </div>
+    </Comp>
   );
 }
 

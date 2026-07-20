@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobApplyAction } from '@/components/sections/public-job-apply-action';
+import { CandidateJobViewTracker } from '@/components/sections/candidate-job-view-tracker';
 import { getCurrentUser } from '@/lib/auth';
 import { getPublicJob, getPublicJobApplyContext } from '@/lib/api';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
@@ -62,6 +63,7 @@ export default async function PublicJobDetailPage({ params }) {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-8 lg:px-10">
+      {user?.role === 'CANDIDATE' ? <CandidateJobViewTracker jobId={job.id} /> : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
         <Card className="rounded-[32px] p-7">

@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { RecruiterApplicationDetailView } from '@/components/sections/recruiter-application-detail-view';
-import { recruiterNav } from '@/lib/mock-data';
-import { getOrganisationMembers, getRecruiterApplicationV2 } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
+import { getCurrentOrganisation, getOrganisationMembers, getRecruiterApplicationV2 } from '@/lib/api';
 import {
   addNoteAction,
   cancelInterviewAction,
@@ -26,11 +27,13 @@ export default async function RecruiterApplicationDetailPage({ params }) {
   const { applicationId } = await params;
 
   let application = null;
+  let organisation = null;
   let members = [];
   let error = '';
 
   try {
-    [application, members] = await Promise.all([
+    [organisation, application, members] = await Promise.all([
+      getCurrentOrganisation(),
       getRecruiterApplicationV2(applicationId),
       getOrganisationMembers(),
     ]);
@@ -39,13 +42,16 @@ export default async function RecruiterApplicationDetailPage({ params }) {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
-        <Link href="/recruiter/ats" className="text-sm font-semibold text-[var(--brand)]">Back to ATS pipeline</Link>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title={application?.candidate?.fullName || 'Application detail'}
+        description={application?.job?.title || 'Inspect ATS state, interviews, recruiter notes, and application activity.'}
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'ATS Pipeline', href: '/recruiter/ats' }, { label: application?.publicReference || 'Application' }]}
+        secondaryActions={[{ label: 'Back to ATS pipeline', href: '/recruiter/ats' }]}
+      />
         {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
         {application ? <RecruiterApplicationDetailView application={application} members={members} actions={actions} /> : null}
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

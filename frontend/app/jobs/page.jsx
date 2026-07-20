@@ -37,7 +37,7 @@ export default async function PublicJobsPage({ searchParams }) {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-[var(--muted)]">{result.meta.total} public jobs found</p>
           {!user || user.role !== 'CANDIDATE' ? (
-            <Link href="/auth" className="text-sm font-semibold text-[var(--brand)]">Sign in to save jobs</Link>
+            <Link href="/auth/candidate/login" className="text-sm font-semibold text-[var(--brand)]">Sign in to save jobs</Link>
           ) : null}
         </div>
         {result.items.length ? (

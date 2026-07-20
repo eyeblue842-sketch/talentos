@@ -10,6 +10,11 @@ let approveRequisition;
 let createJob;
 let listRecruiterJobs;
 let getAuthorizedCandidateDetail;
+let createOrganisationInvitation;
+let resendOrganisationInvitation;
+let revokeOrganisationInvitation;
+let getInvitationByToken;
+let acceptOrganisationInvitation;
 let submitInterviewFeedback;
 let listInterviewFeedback;
 let createNotification;
@@ -75,6 +80,7 @@ function seedState() {
       { id: 'rb-1', candidateId: 'candidate-1', template: 'classic', personal: {}, education: {}, experience: [], skills: [], projects: [], completedScore: 80, updatedAt: new Date() },
     ],
     savedCandidates: [],
+    invitations: [],
     requisitions: [],
     jobs: [
       {
@@ -213,6 +219,14 @@ function installPrismaMocks() {
   };
 
   prisma.user.findUnique = async ({ where }) => clone(state.users.find((item) => item.id === where.id) || null);
+  prisma.recruiterProfile.findUnique = async ({ where, include = {} }) => {
+    const profile = state.recruiterProfiles.find((item) => item.userId === where.userId);
+    if (!profile) return null;
+    return {
+      ...clone(profile),
+      organisation: include.organisation ? clone(state.organisations.find((item) => item.id === profile.organisationId) || null) : undefined,
+    };
+  };
   prisma.recruiterProfile.update = async ({ where, data }) => {
     const profile = state.recruiterProfiles.find((item) => item.userId === where.userId);
     Object.assign(profile, data);
@@ -241,6 +255,34 @@ function installPrismaMocks() {
     return { count: where.id.in.length };
   };
 
+  prisma.organisationInvitation.findMany = async ({ where = {}, include = {} }) => state.invitations
+    .filter((item) => (!where.organisationId || item.organisationId === where.organisationId))
+    .map((item) => hydrateInvitation(item, include));
+  prisma.organisationInvitation.findFirst = async ({ where = {}, include = {} }) => {
+    const invitation = state.invitations.find((item) => (
+      (!where.id || item.id === where.id)
+      && (!where.organisationId || item.organisationId === where.organisationId)
+      && (!where.email || item.email === where.email)
+      && (!where.status || item.status === where.status)
+      && (!where.tokenHash || item.tokenHash === where.tokenHash)
+    ));
+    return invitation ? hydrateInvitation(invitation, include) : null;
+  };
+  prisma.organisationInvitation.findUnique = async ({ where, include = {} }) => {
+    const invitation = state.invitations.find((item) => item.tokenHash === where.tokenHash || item.id === where.id);
+    return invitation ? hydrateInvitation(invitation, include) : null;
+  };
+  prisma.organisationInvitation.create = async ({ data, include = {} }) => {
+    const invitation = { id: `invite-${state.invitations.length + 1}`, status: 'PENDING', createdAt: new Date(), updatedAt: new Date(), ...data };
+    state.invitations.push(invitation);
+    return hydrateInvitation(invitation, include);
+  };
+  prisma.organisationInvitation.update = async ({ where, data, include = {} }) => {
+    const invitation = state.invitations.find((item) => item.id === where.id);
+    Object.assign(invitation, data, { updatedAt: new Date() });
+    return hydrateInvitation(invitation, include);
+  };
+
   prisma.jobRequisition.create = async ({ data, include = {} }) => {
     const item = { id: `req-${state.requisitions.length + 1}`, createdAt: new Date(), updatedAt: new Date(), approvedAt: null, approvedById: null, ...data };
     state.requisitions.push(item);
@@ -263,12 +305,22 @@ function installPrismaMocks() {
     return hydrateJob(item, include);
   };
   prisma.job.findUnique = async ({ where }) => clone(state.jobs.find((item) => item.id === where.id || item.slug === where.slug) || null);
+  prisma.job.findFirst = async ({ where = {}, include = {} }) => {
+    const item = state.jobs.find((row) => (
+      (!where.id || row.id === where.id)
+      && (!where.organisationId || row.organisationId === where.organisationId)
+      && (!where.requisitionId || row.requisitionId === where.requisitionId)
+      && (!where.status?.in || where.status.in.includes(row.status))
+    ));
+    return item ? hydrateJob(item, include) : null;
+  };
   prisma.job.findMany = async ({ where = {}, include = {} }) => {
     let rows = [...state.jobs];
     if (where.organisationId) rows = rows.filter((item) => item.organisationId === where.organisationId);
     if (where.status) rows = rows.filter((item) => item.status === where.status);
     return rows.map((item) => hydrateJob(item, include));
   };
+  prisma.job.count = async ({ where = {} } = {}) => (await prisma.job.findMany({ where })).length;
 
   prisma.candidateProfile.findUnique = async ({ where, include = {} }) => {
     const item = state.candidates.find((candidate) => candidate.id === where.id);
@@ -353,12 +405,28 @@ function hydrateRound(round, include = {}) {
   };
 }
 
+function hydrateInvitation(invitation, include = {}) {
+  return {
+    ...invitation,
+    organisation: include.organisation ? clone(state.organisations.find((item) => item.id === invitation.organisationId) || null) : undefined,
+    invitedByUser: include.invitedByUser ? clone(state.users.find((item) => item.id === invitation.invitedByUserId) || null) : undefined,
+    acceptedByUser: include.acceptedByUser ? clone(state.users.find((item) => item.id === invitation.acceptedByUserId) || null) : undefined,
+  };
+}
+
 before(async () => {
   ({ prisma } = await import('../config/db.js'));
   ({ createOrganisationForUser, addOrganisationMember, updateOrganisationMember } = await import('../services/organisationService.js'));
   ({ createRequisition, approveRequisition } = await import('../services/requisitionService.js'));
   ({ createJob, listRecruiterJobs } = await import('../services/jobService.js'));
   ({ getAuthorizedCandidateDetail } = await import('../services/searchService.js'));
+  ({
+    createOrganisationInvitation,
+    resendOrganisationInvitation,
+    revokeOrganisationInvitation,
+    getInvitationByToken,
+    acceptOrganisationInvitation,
+  } = await import('../services/organisationInvitationService.js'));
   ({ submitInterviewFeedback, listInterviewFeedback } = await import('../services/interviewService.js'));
   ({ createNotification, listNotifications } = await import('../services/notificationService.js'));
   ({ recordAuditLog } = await import('../services/auditLogService.js'));
@@ -389,6 +457,64 @@ test('recruiters cannot add organisation members', async () => {
   await assert.rejects(
     () => addOrganisationMember(actor('recruiter-1'), { userId: 'viewer-1', role: 'VIEWER' }, 'org-1'),
     /Insufficient organisation permissions/
+  );
+});
+
+test('organisation invitations are created, resent, revoked, and accepted with single-use behaviour', async () => {
+  const invitation = await createOrganisationInvitation(actor('owner-1'), {
+    email: 'new-recruiter@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+  assert.equal(invitation.status, 'PENDING');
+  assert.equal(state.invitations.length, 1);
+
+  const tokenHashBeforeResend = state.invitations[0].tokenHash;
+  const resent = await resendOrganisationInvitation(actor('owner-1'), invitation.id, 'org-1');
+  assert.equal(resent.status, 'PENDING');
+  assert.notEqual(state.invitations[0].tokenHash, tokenHashBeforeResend);
+
+  const resolved = await getInvitationByToken('mock-token').catch(() => null);
+  assert.equal(resolved, null);
+
+  state.users.push({ id: 'new-recruiter-1', email: 'new-recruiter@acme.com', role: 'RECRUITER', isActive: true });
+  state.recruiterProfiles.push({ id: 'rp-6', userId: 'new-recruiter-1', organisationId: null, companyEmailDomain: 'acme.com', officeLocations: [], profileCompleted: false });
+  const rawAcceptedToken = 'accept-token';
+  state.invitations[0].tokenHash = (await import('crypto')).createHash('sha256').update(rawAcceptedToken).digest('hex');
+
+  const accepted = await acceptOrganisationInvitation(actor('new-recruiter-1'), rawAcceptedToken);
+  assert.equal(accepted.membership.organisationId, 'org-1');
+  assert.equal(state.invitations[0].status, 'ACCEPTED');
+
+  await assert.rejects(
+    () => acceptOrganisationInvitation(actor('new-recruiter-1'), rawAcceptedToken),
+    /already been used/
+  );
+
+  const revokable = await createOrganisationInvitation(actor('owner-1'), {
+    email: 'viewer-2@acme.com',
+    role: 'VIEWER',
+  }, 'org-1');
+  const revoked = await revokeOrganisationInvitation(actor('owner-1'), revokable.id, 'org-1');
+  assert.equal(revoked.status, 'REVOKED');
+});
+
+test('duplicate active invitations are prevented and cross-organisation invite management is denied', async () => {
+  await createOrganisationInvitation(actor('owner-1'), {
+    email: 'duplicate@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+
+  await assert.rejects(
+    () => createOrganisationInvitation(actor('owner-1'), {
+      email: 'duplicate@acme.com',
+      role: 'RECRUITER',
+    }, 'org-1'),
+    /active invitation already exists/
+  );
+
+  await assert.rejects(
+    () => revokeOrganisationInvitation(actor('outsider-1'), state.invitations[0].id, 'org-2'),
+    /Invitation not found/
   );
 });
 
@@ -423,6 +549,39 @@ test('organisation-scoped job access hides other organisation records', async ()
   const betaJobs = await listRecruiterJobs(actor('outsider-1'), 'org-2');
   assert.equal(acmeJobs.length >= 2, true);
   assert.equal(betaJobs.length, 0);
+});
+
+test('duplicate active jobs for the same approved requisition are prevented', async () => {
+  const requisition = await createRequisition(actor('owner-1'), {
+    requisitionCode: 'REQ-200',
+    title: 'Platform Recruiter',
+    department: 'Talent',
+    approvalStatus: 'APPROVED',
+  }, 'org-1');
+  state.requisitions[0].approvalStatus = 'APPROVED';
+
+  await createJob(actor('owner-1'), {
+    title: 'Platform Recruiter',
+    description: 'Build the hiring workflow',
+    skillsRequired: ['Hiring'],
+    experienceMin: 3,
+    experienceMax: 8,
+    location: 'Bengaluru',
+    requisitionId: requisition.id,
+  }, 'org-1');
+
+  await assert.rejects(
+    () => createJob(actor('owner-1'), {
+      title: 'Platform Recruiter Duplicate',
+      description: 'Duplicate role',
+      skillsRequired: ['Hiring'],
+      experienceMin: 3,
+      experienceMax: 8,
+      location: 'Bengaluru',
+      requisitionId: requisition.id,
+    }, 'org-1'),
+    /already exists for this requisition/
+  );
 });
 
 test('candidate search cards stay minimal and candidate detail requires organisation reason', async () => {

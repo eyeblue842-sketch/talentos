@@ -293,6 +293,7 @@ function seedState() {
         message: 'Frontend Engineer has new details.',
         entityType: 'Job',
         entityId: 'job-public-1',
+        metadata: { jobSlug: 'frontend-engineer' },
         readAt: null,
         createdAt: now(),
       },
@@ -304,6 +305,7 @@ function seedState() {
         message: 'Should stay hidden.',
         entityType: 'Job',
         entityId: 'job-public-2',
+        metadata: { jobSlug: 'backend-engineer' },
         readAt: null,
         createdAt: now(),
       },
@@ -434,6 +436,29 @@ beforeEach(() => {
   prisma.savedJob.delete = async ({ where }) => {
     const index = state.savedJobs.findIndex((item) => item.id === where.id);
     state.savedJobs.splice(index, 1);
+  };
+  prisma.candidateActivity = {
+    create: async () => ({}),
+  };
+  prisma.auditLog = {
+    create: async () => ({}),
+  };
+  prisma.candidateJobView = {
+    count: async ({ where = {} } = {}) => state.interviews.filter((item) => item.interviewProcess.application.candidateId === where.candidateId).length,
+    findMany: async ({ where = {}, take, skip = 0 } = {}) => state.interviews
+      .filter((item) => item.interviewProcess.application.candidateId === where.candidateId)
+      .slice(skip, take ? skip + take : undefined)
+      .map((item) => ({
+        id: `view-${item.id}`,
+        candidateId: where.candidateId,
+        jobId: item.interviewProcess.application.jobId,
+        firstViewedAt: now(),
+        lastViewedAt: now(),
+        viewCount: 1,
+        job: attachJob(state.jobs.find((job) => job.id === item.interviewProcess.application.jobId)),
+      })),
+    upsert: async () => ({ id: 'view-1' }),
+    deleteMany: async () => ({ count: 0 }),
   };
 
   prisma.candidateProfile.findUnique = async ({ where, include } = {}) => {
@@ -588,12 +613,36 @@ test('recommendations are deterministic and fall back when the profile is incomp
 test('candidate notifications are recipient-scoped and mark-read updates only owned records', async () => {
   const beforeRows = await listCandidateNotifications('candidate-1', 'user-1', { unreadOnly: true });
   assert.equal(beforeRows.items.length, 1);
+  assert.equal(beforeRows.items[0].link, '/jobs/frontend-engineer');
 
   const updated = await markCandidateNotificationRead('user-1', 'notification-1');
   assert.equal(updated.isUnread, false);
 
   const afterRows = await listCandidateNotifications('candidate-1', 'user-1', { unreadOnly: true });
   assert.equal(afterRows.items.length, 0);
+});
+
+test('candidate notifications never trust malformed legacy destinations', async () => {
+  state.notifications.push({
+    id: 'notification-3',
+    recipientUserId: 'user-1',
+    type: 'SYSTEM',
+    title: 'Legacy payload',
+    message: 'Review your notifications.',
+    entityType: 'Job',
+    entityId: 'job-public-1',
+    metadata: {
+      jobSlug: 'https://evil.example/phish',
+      destinationType: 'javascript:alert(1)',
+      redirectTo: '//evil.example',
+    },
+    readAt: null,
+    createdAt: now(),
+  });
+
+  const rows = await listCandidateNotifications('candidate-1', 'user-1', {});
+  const legacy = rows.items.find((item) => item.id === 'notification-3');
+  assert.equal(legacy.link, '/candidate/saved-jobs');
 });
 
 test('candidate dashboard returns scoped metrics, saved jobs, notifications, and recommendations', async () => {
@@ -605,4 +654,23 @@ test('candidate dashboard returns scoped metrics, saved jobs, notifications, and
   assert.equal(dashboard.savedJobs.length, 2);
   assert.equal(dashboard.notifications.length, 1);
   assert.equal(dashboard.upcomingInterviews.length, 1);
+});
+
+test('best-effort audit failures do not block saved jobs, but required audits still fail profile updates', async () => {
+  prisma.auditLog.create = async () => {
+    const error = new Error('Audit contention');
+    error.code = 'P2002';
+    throw error;
+  };
+
+  const saved = await saveJobForCandidate('candidate-1', 'job-public-2', { actorUserId: 'user-1' });
+  assert.equal(saved.snapshot.slug, 'backend-engineer');
+
+  await assert.rejects(
+    () => updateCandidateSelfProfile('candidate-1', {
+      fullName: 'Aarav Sharma',
+      currentTitle: 'Principal Frontend Engineer',
+    }, { actorUserId: 'user-1' }),
+    /Audit contention/
+  );
 });

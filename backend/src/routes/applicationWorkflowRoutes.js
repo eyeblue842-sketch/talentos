@@ -5,6 +5,8 @@ import { upload } from '../middleware/upload.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { validateSchema } from '../middleware/schema.js';
 import {
+  candidateApplicationListQuerySchema,
+  candidateApplicationWithdrawSchema,
   jobApplicationListQuerySchema,
   jobQuestionAddFromLibrarySchema,
   jobScreeningQuestionReorderSchema,
@@ -22,6 +24,7 @@ import {
   downloadCandidateResumeFile,
   downloadRecruiterAnswerFile,
   downloadRecruiterApplicationResume,
+  getCandidateApplicationWithdrawalV2,
   getCandidateApplicationV2,
   getCandidateApplicationsV2,
   getCandidateResumes,
@@ -44,6 +47,7 @@ import {
   postQuestionTemplateDuplicate,
   submitCandidateApplication,
   validateCandidateApplication,
+  withdrawCandidateApplicationV2,
 } from '../controllers/applicationWorkflowController.js';
 
 export const applicationWorkflowRouter = Router();
@@ -71,8 +75,10 @@ applicationWorkflowRouter.get('/candidate/resumes/:assetId/download', auth(['CAN
 applicationWorkflowRouter.post('/candidate/application-files', auth(['CANDIDATE']), upload.single('file'), postCandidateAnswerFile);
 applicationWorkflowRouter.post('/candidate/applications/validate', auth(['CANDIDATE']), validateSchema(validateJobApplicationAnswersSchema), validateCandidateApplication);
 applicationWorkflowRouter.post('/candidate/applications', createRateLimiter({ keyPrefix: 'candidate-application-submit', limit: 10 }), auth(['CANDIDATE']), validateSchema(submitJobApplicationSchema), submitCandidateApplication);
-applicationWorkflowRouter.get('/candidate/applications', auth(['CANDIDATE']), getCandidateApplicationsV2);
+applicationWorkflowRouter.get('/candidate/applications', auth(['CANDIDATE']), validateSchema(candidateApplicationListQuerySchema.partial(), 'query'), getCandidateApplicationsV2);
 applicationWorkflowRouter.get('/candidate/applications/:applicationId', auth(['CANDIDATE']), getCandidateApplicationV2);
+applicationWorkflowRouter.get('/candidate/applications/:applicationId/withdrawal', auth(['CANDIDATE']), getCandidateApplicationWithdrawalV2);
+applicationWorkflowRouter.post('/candidate/applications/:applicationId/withdraw', auth(['CANDIDATE']), validateSchema(candidateApplicationWithdrawSchema), withdrawCandidateApplicationV2);
 
 applicationWorkflowRouter.get('/ats/applications', auth(['RECRUITER']), validateSchema(jobApplicationListQuerySchema.partial(), 'query'), getRecruiterApplicationsV2);
 applicationWorkflowRouter.get('/ats/applications/:applicationId', auth(['RECRUITER']), getRecruiterApplicationV2);

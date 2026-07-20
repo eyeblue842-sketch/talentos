@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { serializeJob } from '../serializers/index.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
+import { createNotification } from './notificationService.js';
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -56,6 +57,23 @@ async function ensureApprovedRequisition(organisationId, requisitionId) {
   }
 
   return requisition;
+}
+
+async function ensureNoDuplicateRequisitionJob(organisationId, requisitionId) {
+  if (!requisitionId) return;
+  const existing = await prisma.job.findFirst({
+    where: {
+      organisationId,
+      requisitionId,
+      status: { in: ['DRAFT', 'OPEN', 'ON_HOLD', 'CLOSED'] },
+    },
+  });
+
+  if (existing) {
+    const error = new Error('A job already exists for this requisition.');
+    error.statusCode = 409;
+    throw error;
+  }
 }
 
 async function buildUniqueJobSlug(title, existingJobId = null) {
@@ -164,6 +182,7 @@ export async function createJob(actorUser, payload, organisationId = null, reque
   const recruiter = await ensureOrganisationMember(context.organisationId, payload.recruiterId || actorUser.id, assignableJobRoles);
   const hiringManager = await ensureOrganisationMember(context.organisationId, payload.hiringManagerId || null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
   const requisition = await ensureApprovedRequisition(context.organisationId, payload.requisitionId || null);
+  await ensureNoDuplicateRequisitionJob(context.organisationId, requisition?.id || null);
   const status = payload.status || 'DRAFT';
 
   const job = await prisma.job.create({
@@ -192,6 +211,18 @@ export async function createJob(actorUser, payload, organisationId = null, reque
     afterData: job,
     ...requestMeta,
   });
+
+  if (requisition?.createdById && requisition.createdById !== actorUser.id) {
+    await createNotification({
+      organisationId: context.organisationId,
+      recipientUserId: requisition.createdById,
+      type: 'JOB',
+      title: 'Job created from requisition',
+      message: `${job.title} was created from requisition ${requisition.requisitionCode}.`,
+      entityType: 'Job',
+      entityId: job.id,
+    });
+  }
 
   return serializeJob(job, { includeRequisition: true });
 }

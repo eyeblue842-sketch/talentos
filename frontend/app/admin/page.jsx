@@ -1,7 +1,8 @@
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
-import { adminNav } from '@/lib/mock-data';
+import { adminNav } from '@/lib/navigation';
+import { PageHeader } from '@/components/ui/page-header';
 
 const metrics = [
   { label: 'Total users', value: '12.4K', helper: 'Candidates, recruiters, and admins' },
@@ -20,14 +21,18 @@ const modules = [
 
 export default function AdminPage() {
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Admin Control" items={adminNav} />
-      <section className="space-y-6">
+    <WorkspaceShell brand="Admin Control" items={adminNav}>
+      <PageHeader
+        eyebrow="Admin portal"
+        title="Operate Careeriz from one control center"
+        description="This admin workspace covers user management, subscriptions, content, AI monitoring, analytics, and system settings."
+        breadcrumb={[{ label: 'Admin' }, { label: 'Overview' }]}
+      />
         <Card className="bg-[linear-gradient(135deg,#102418_0%,#173c28_58%,#1e5a38_100%)] text-white">
-          <p className="text-sm uppercase tracking-[0.24em] text-emerald-200">Admin portal</p>
-          <h1 className="mt-3 font-[var(--font-display)] text-4xl font-semibold">Operate CareerCraft AI from one control center</h1>
+          <p className="text-sm uppercase tracking-[0.24em] text-emerald-200">AI-Powered Talent Intelligence Platform</p>
+          <h2 className="mt-3 text-3xl font-semibold">Enterprise oversight, AI usage visibility, and platform controls</h2>
           <p className="mt-4 max-w-3xl text-sm leading-7 text-white/76 md:text-base">
-            This admin workspace covers the operational side of the original product brief: user management, subscriptions, content, AI monitoring, analytics, and system settings.
+            Use this workspace to manage the platform side of Careeriz without exposing admin functionality elsewhere.
           </p>
         </Card>
 
@@ -67,7 +72,6 @@ export default function AdminPage() {
             </div>
           </Card>
         </div>
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

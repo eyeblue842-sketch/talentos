@@ -6,6 +6,7 @@ import {
   serializeSavedJob,
 } from '../serializers/index.js';
 import { buildPublicJobWhere } from './publicPortalService.js';
+import { recordAuditLog } from './auditLogService.js';
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
@@ -30,55 +31,152 @@ function clampPage(total, requestedPage, pageSize) {
   return Math.min(Math.max(1, requestedPage), pageCount);
 }
 
-export function calculateProfileCompletion(profile) {
+function maybeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function firstNonEmpty(values = []) {
+  return values.find((value) => value != null && value !== '' && (!Array.isArray(value) || value.length));
+}
+
+const bestEffortPrismaErrorCodes = new Set([
+  'P2002',
+  'P2003',
+  'P2011',
+]);
+
+const deploymentFailureCodes = new Set([
+  'P1001',
+  'P1002',
+  'P1008',
+  'P1017',
+  'P2021',
+  'P2022',
+]);
+
+function logSecondaryFailure(operation, error, metadata = {}) {
+  console.error(JSON.stringify({
+    code: 'CANDIDATE_SECONDARY_OPERATION_FAILED',
+    operation,
+    prismaCode: error?.code || null,
+    message: error?.message || 'Unknown error',
+    metadata,
+  }));
+}
+
+function isDeploymentFailure(error) {
+  return deploymentFailureCodes.has(error?.code);
+}
+
+async function recordCandidateActivity(candidateId, type, metadata = {}) {
+  if (!prisma.candidateActivity?.create) {
+    throw new Error('Prisma candidateActivity delegate is unavailable. Regenerate the Prisma client or update the test mocks.');
+  }
+
+  try {
+    await prisma.candidateActivity.create({
+      data: {
+        candidateId,
+        type,
+        metadata,
+        jobId: metadata.jobId || null,
+        applicationId: metadata.applicationId || null,
+        userId: metadata.userId || null,
+      },
+    });
+  } catch (error) {
+    if (isDeploymentFailure(error)) {
+      throw error;
+    }
+
+    if (bestEffortPrismaErrorCodes.has(error?.code)) {
+      logSecondaryFailure('candidateActivity.create', error, {
+        candidateId,
+        type,
+        jobId: metadata.jobId || null,
+        applicationId: metadata.applicationId || null,
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function recordCandidateAuditLog(payload, options = {}) {
+  try {
+    await recordAuditLog(payload);
+  } catch (error) {
+    if (options.bestEffort && !isDeploymentFailure(error) && bestEffortPrismaErrorCodes.has(error?.code)) {
+      logSecondaryFailure('auditLog.create', error, {
+        action: payload.action,
+        entityType: payload.entityType,
+        entityId: payload.entityId || null,
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function profileCompletionSections(profile) {
   const sections = [
     {
       key: 'basic_details',
       label: 'Basic details',
-      complete: Boolean(profile.fullName && profile.currentTitle),
-    },
-    {
-      key: 'headline',
-      label: 'Professional headline',
-      complete: Boolean(profile.headline),
-    },
-    {
-      key: 'location',
-      label: 'Location',
-      complete: Boolean(profile.location),
-    },
-    {
-      key: 'experience',
-      label: 'Experience',
-      complete: typeof profile.totalExperience === 'number' && profile.totalExperience >= 0,
-    },
-    {
-      key: 'skills',
-      label: 'Skills',
-      complete: (profile.skills || []).length >= 3,
-    },
-    {
-      key: 'preferences',
-      label: 'Preferences',
-      complete: (profile.preferredRoles || []).length > 0
-        && (profile.preferredLocations || []).length > 0
-        && (profile.workplacePreferences || []).length > 0,
-    },
-    {
-      key: 'summary',
-      label: 'Summary',
-      complete: Boolean(profile.summary),
+      weight: 20,
+      complete: Boolean(profile.fullName && profile.currentTitle && profile.location),
     },
     {
       key: 'resume',
       label: 'Resume availability',
-      complete: Boolean(profile.resumeUrl || profile.resumeBuilder),
+      weight: 20,
+      complete: Boolean(profile.resumeUrl || profile.latestResumeAssetId || profile.resumeBuilder),
+    },
+    {
+      key: 'skills',
+      label: 'Skills',
+      weight: 15,
+      complete: maybeArray(profile.skills).length >= 3,
+    },
+    {
+      key: 'experience',
+      label: 'Experience',
+      weight: 15,
+      complete: typeof profile.totalExperience === 'number' && profile.totalExperience >= 0,
+    },
+    {
+      key: 'preferences',
+      label: 'Preferences',
+      weight: 15,
+      complete: maybeArray(profile.preferredRoles).length > 0
+        && maybeArray(profile.preferredLocations).length > 0
+        && maybeArray(profile.workplacePreferences).length > 0
+        && maybeArray(profile.employmentPreferences).length > 0,
+    },
+    {
+      key: 'summary',
+      label: 'Professional summary',
+      weight: 10,
+      complete: Boolean(profile.headline && profile.summary),
+    },
+    {
+      key: 'links',
+      label: 'Professional links',
+      weight: 5,
+      complete: Boolean(firstNonEmpty([profile.linkedInUrl, profile.portfolioUrl, profile.githubUrl])),
     },
   ];
 
+  return sections;
+}
+
+export function calculateProfileCompletion(profile) {
+  const sections = profileCompletionSections(profile);
   const completed = sections.filter((section) => section.complete);
   const missing = sections.filter((section) => !section.complete);
-  const percentage = Math.round((completed.length / sections.length) * 100);
+  const percentage = Math.round(completed.reduce((total, section) => total + section.weight, 0));
 
   return {
     percentage,
@@ -87,14 +185,123 @@ export function calculateProfileCompletion(profile) {
     recommendedNextAction: missing[0]
       ? `Complete ${missing[0].label.toLowerCase()}.`
       : 'Keep your profile current as your job search evolves.',
+    updatedAt: profile.updatedAt?.toISOString?.() || profile.updatedAt || null,
+    sections: sections.map((section) => ({
+      key: section.key,
+      label: section.label,
+      weight: section.weight,
+      complete: section.complete,
+    })),
+  };
+}
+
+function buildSavedJobWhere(candidateId, filters = {}) {
+  const filter = String(filters.filter || 'ALL').toUpperCase();
+
+  if (filter === 'OPEN') {
+    return {
+      candidateId,
+      job: buildPublicJobWhere(),
+    };
+  }
+
+  if (filter === 'CLOSING_SOON') {
+    const soon = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
+    return {
+      candidateId,
+      job: {
+        ...buildPublicJobWhere(),
+        OR: [
+          { applicationClosesAt: { lte: soon, gte: new Date() } },
+          { applicationDeadline: { lte: soon, gte: new Date() } },
+        ],
+      },
+    };
+  }
+
+  if (filter === 'CLOSED') {
+    return {
+      candidateId,
+      OR: [
+        { job: null },
+        {
+          job: {
+            OR: [
+              { status: { not: 'OPEN' } },
+              { archivedAt: { not: null } },
+              { applicationClosesAt: { lt: new Date() } },
+              { applicationDeadline: { lt: new Date() } },
+            ],
+          },
+        },
+      ],
+    };
+  }
+
+  if (filter === 'APPLIED') {
+    return {
+      candidateId,
+      job: {
+        applications: {
+          some: { candidateId },
+        },
+      },
+    };
+  }
+
+  return { candidateId };
+}
+
+function buildSavedJobOrderBy(sort = 'recently_saved') {
+  switch (String(sort).toLowerCase()) {
+    case 'closing_soon':
+      return [{ job: { applicationClosesAt: 'asc' } }, { createdAt: 'desc' }];
+    case 'recently_posted':
+      return [{ job: { createdAt: 'desc' } }, { createdAt: 'desc' }];
+    case 'job_title':
+      return [{ jobTitleSnapshot: 'asc' }, { createdAt: 'desc' }];
+    case 'recently_saved':
+    default:
+      return [{ createdAt: 'desc' }, { id: 'asc' }];
+  }
+}
+
+function buildSettingsResponse(profile) {
+  return {
+    profileVisibility: profile.profileVisibility,
+    recommendationEnabled: profile.recommendationEnabled,
+    preferredRoles: profile.preferredRoles,
+    preferredIndustries: profile.preferredIndustries || [],
+    preferredCompanySizes: profile.preferredCompanySizes || [],
+    preferredLocations: profile.preferredLocations,
+    willingToRelocate: profile.willingToRelocate,
+    workplacePreferences: profile.workplacePreferences,
+    employmentPreferences: profile.employmentPreferences,
+    minExpectedSalary: profile.minExpectedSalary,
+    preferredCurrency: profile.preferredCurrency,
+    availability: profile.availability,
+    noticePeriodDays: profile.noticePeriodDays,
+    workAuthorization: profile.workAuthorization,
+    requiresVisaSponsorship: profile.requiresVisaSponsorship,
+    travelWillingness: profile.travelWillingness,
+    jobAlertEnabled: profile.jobAlertEnabled,
+    jobAlertFrequency: profile.jobAlertFrequency,
+    notifyForSavedJobUpdates: profile.notifyForSavedJobUpdates,
+    notifyForApplicationUpdates: profile.notifyForApplicationUpdates,
+    notifyForRecommendations: profile.notifyForRecommendations,
+    notifyForInterviews: profile.notifyForInterviews,
+    notifyForOffers: profile.notifyForOffers,
+    notifyForProfileReminders: profile.notifyForProfileReminders,
+    notifyForMarketing: profile.notifyForMarketing,
   };
 }
 
 function scoreRecommendedJob(profile, job) {
-  const profileSkills = new Set((profile.skills || []).map(normalize));
-  const jobSkills = (job.skillsRequired || []).map(normalize);
-  const preferredLocations = (profile.preferredLocations || []).map(normalize);
-  const preferredRoles = (profile.preferredRoles || []).map(normalize);
+  const profileSkills = new Set(maybeArray(profile.skills).map(normalize));
+  const jobSkills = maybeArray(job.skillsRequired).map(normalize);
+  const preferredLocations = maybeArray(profile.preferredLocations).map(normalize);
+  const preferredRoles = maybeArray(profile.preferredRoles).map(normalize);
+  const preferredIndustries = maybeArray(profile.preferredIndustries).map(normalize);
 
   const skillOverlap = jobSkills.filter((skill) => profileSkills.has(skill)).length;
   const title = normalize(job.title);
@@ -102,18 +309,47 @@ function scoreRecommendedJob(profile, job) {
   const employmentType = normalize(job.employmentType);
   const workplaceType = normalize(job.workplaceType);
 
-  let score = skillOverlap * 18;
-  if (preferredLocations.includes(location)) score += 15;
-  if (preferredLocations.includes('remote') && location.includes('remote')) score += 12;
-  if ((profile.workplacePreferences || []).map(normalize).includes(workplaceType)) score += 10;
-  if ((profile.employmentPreferences || []).map(normalize).includes(employmentType)) score += 8;
-  if (preferredRoles.some((role) => title.includes(role))) score += 15;
-  if (typeof profile.totalExperience === 'number' && profile.totalExperience >= job.experienceMin && profile.totalExperience <= job.experienceMax) score += 12;
+  let score = 0;
+  const reasons = [];
+
+  if (skillOverlap > 0) {
+    score += skillOverlap * 18;
+    reasons.push('Matches your skills');
+  }
+  if (preferredLocations.includes(location)) {
+    score += 16;
+    reasons.push('Matches your preferred location');
+  } else if (preferredLocations.includes('remote') && location.includes('remote')) {
+    score += 12;
+    reasons.push('Remote role');
+  }
+  if (maybeArray(profile.workplacePreferences).map(normalize).includes(workplaceType)) {
+    score += 10;
+    reasons.push('Matches your work mode');
+  }
+  if (maybeArray(profile.employmentPreferences).map(normalize).includes(employmentType)) {
+    score += 8;
+    reasons.push('Matches your employment type');
+  }
+  if (preferredRoles.some((role) => title.includes(role))) {
+    score += 14;
+    reasons.push('Similar to your preferred roles');
+  }
+  if (preferredIndustries.includes(normalize(job.organisation?.industry))) {
+    score += 6;
+    reasons.push('Fits your preferred industry');
+  }
+  if (typeof profile.totalExperience === 'number' && profile.totalExperience >= job.experienceMin && profile.totalExperience <= job.experienceMax) {
+    score += 10;
+  }
 
   const ageInDays = Math.max(0, Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000));
-  score += Math.max(0, 10 - ageInDays);
+  score += Math.max(0, 8 - ageInDays);
 
-  return score;
+  return {
+    score,
+    reasons: [...new Set(reasons)].slice(0, 3),
+  };
 }
 
 export async function getCandidateSelfProfile(candidateId) {
@@ -134,7 +370,7 @@ export async function getCandidateSelfProfile(candidateId) {
   };
 }
 
-export async function updateCandidateSelfProfile(candidateId, payload) {
+export async function updateCandidateSelfProfile(candidateId, payload, requestMeta = {}) {
   const profile = await prisma.candidateProfile.update({
     where: { id: candidateId },
     data: {
@@ -150,39 +386,73 @@ export async function updateCandidateSelfProfile(candidateId, payload) {
     include: { resumeBuilder: true },
   });
 
+  await recordCandidateActivity(candidateId, 'PROFILE_UPDATED');
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.profile.update',
+      entityType: 'CandidateProfile',
+      entityId: candidateId,
+      metadata: { candidateId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+  }
+
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
     completion: calculateProfileCompletion(profile),
   };
 }
 
-export async function updateCandidateSettings(candidateId, payload) {
+export async function updateCandidateSettings(candidateId, payload, requestMeta = {}) {
   const profile = await prisma.candidateProfile.update({
     where: { id: candidateId },
     data: {
       profileVisibility: payload.profileVisibility,
       recommendationEnabled: payload.recommendationEnabled,
+      preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
+      preferredIndustries: payload.preferredIndustries ? normalizeStringArray(payload.preferredIndustries) : undefined,
+      preferredCompanySizes: payload.preferredCompanySizes ? normalizeStringArray(payload.preferredCompanySizes) : undefined,
       preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+      willingToRelocate: payload.willingToRelocate,
       workplacePreferences: payload.workplacePreferences,
       employmentPreferences: payload.employmentPreferences,
+      minExpectedSalary: payload.minExpectedSalary ?? undefined,
+      preferredCurrency: payload.preferredCurrency || null,
+      availability: payload.availability,
+      noticePeriodDays: payload.noticePeriodDays ?? undefined,
+      workAuthorization: payload.workAuthorization || null,
+      requiresVisaSponsorship: payload.requiresVisaSponsorship,
+      travelWillingness: payload.travelWillingness || null,
+      jobAlertEnabled: payload.jobAlertEnabled,
+      jobAlertFrequency: payload.jobAlertFrequency,
       notifyForSavedJobUpdates: payload.notifyForSavedJobUpdates,
+      notifyForApplicationUpdates: payload.notifyForApplicationUpdates,
       notifyForRecommendations: payload.notifyForRecommendations,
       notifyForInterviews: payload.notifyForInterviews,
+      notifyForOffers: payload.notifyForOffers,
+      notifyForProfileReminders: payload.notifyForProfileReminders,
+      notifyForMarketing: payload.notifyForMarketing,
     },
     include: { resumeBuilder: true },
   });
 
+  await recordCandidateActivity(candidateId, 'PREFERENCES_UPDATED');
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.settings.update',
+      entityType: 'CandidateProfile',
+      entityId: candidateId,
+      metadata: { candidateId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+  }
+
   return {
-    settings: {
-      profileVisibility: profile.profileVisibility,
-      recommendationEnabled: profile.recommendationEnabled,
-      preferredLocations: profile.preferredLocations,
-      workplacePreferences: profile.workplacePreferences,
-      employmentPreferences: profile.employmentPreferences,
-      notifyForSavedJobUpdates: profile.notifyForSavedJobUpdates,
-      notifyForRecommendations: profile.notifyForRecommendations,
-      notifyForInterviews: profile.notifyForInterviews,
-    },
+    settings: buildSettingsResponse(profile),
     completion: calculateProfileCompletion(profile),
   };
 }
@@ -200,16 +470,7 @@ export async function getCandidateSettings(candidateId) {
   }
 
   return {
-    settings: {
-      profileVisibility: profile.profileVisibility,
-      recommendationEnabled: profile.recommendationEnabled,
-      preferredLocations: profile.preferredLocations,
-      workplacePreferences: profile.workplacePreferences,
-      employmentPreferences: profile.employmentPreferences,
-      notifyForSavedJobUpdates: profile.notifyForSavedJobUpdates,
-      notifyForRecommendations: profile.notifyForRecommendations,
-      notifyForInterviews: profile.notifyForInterviews,
-    },
+    settings: buildSettingsResponse(profile),
     completion: calculateProfileCompletion(profile),
   };
 }
@@ -217,14 +478,14 @@ export async function getCandidateSettings(candidateId) {
 export async function listSavedJobs(candidateId, filters = {}) {
   const requestedPage = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
-  const where = { candidateId };
+  const where = buildSavedJobWhere(candidateId, filters);
 
   const total = await prisma.savedJob.count({ where });
   const page = clampPage(total, requestedPage, pageSize);
   const rows = await prisma.savedJob.findMany({
     where,
-    include: { job: { include: { organisation: true } } },
-    orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    include: { job: { include: { organisation: true, applications: true } } },
+    orderBy: buildSavedJobOrderBy(filters.sort),
     skip: (page - 1) * pageSize,
     take: pageSize,
   });
@@ -235,7 +496,7 @@ export async function listSavedJobs(candidateId, filters = {}) {
   };
 }
 
-export async function saveJobForCandidate(candidateId, jobId) {
+export async function saveJobForCandidate(candidateId, jobId, requestMeta = {}) {
   const job = await prisma.job.findFirst({
     where: {
       id: jobId,
@@ -274,10 +535,23 @@ export async function saveJobForCandidate(candidateId, jobId) {
     include: { job: { include: { organisation: true } } },
   });
 
+  await recordCandidateActivity(candidateId, 'JOB_SAVED', { jobId });
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.saved-job.create',
+      entityType: 'SavedJob',
+      entityId: savedJob.id,
+      metadata: { candidateId, jobId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    }, { bestEffort: true });
+  }
+
   return serializeSavedJob(savedJob, { saved: true });
 }
 
-export async function removeSavedJob(candidateId, jobId) {
+export async function removeSavedJob(candidateId, jobId, requestMeta = {}) {
   const savedJob = await prisma.savedJob.findFirst({
     where: {
       candidateId,
@@ -292,10 +566,110 @@ export async function removeSavedJob(candidateId, jobId) {
   }
 
   await prisma.savedJob.delete({ where: { id: savedJob.id } });
+  await recordCandidateActivity(candidateId, 'JOB_UNSAVED', { jobId });
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.saved-job.delete',
+      entityType: 'SavedJob',
+      entityId: savedJob.id,
+      metadata: { candidateId, jobId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    }, { bestEffort: true });
+  }
   return { deleted: true };
 }
 
-export async function getCandidateRecommendations(candidateId, { excludeSaved = false } = {}) {
+export async function recordCandidateJobView(candidateId, jobId, payload = {}) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      ...buildPublicJobWhere(),
+    },
+  });
+
+  if (!job) {
+    const error = new Error('Job not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await prisma.candidateJobView.upsert({
+    where: {
+      candidateId_jobId: {
+        candidateId,
+        jobId,
+      },
+    },
+    update: {
+      lastViewedAt: new Date(),
+      viewCount: { increment: 1 },
+      source: payload.source || undefined,
+      referrerClassification: payload.referrerClassification || undefined,
+    },
+    create: {
+      candidateId,
+      jobId,
+      source: payload.source || null,
+      referrerClassification: payload.referrerClassification || null,
+    },
+  });
+
+  await recordCandidateActivity(candidateId, 'JOB_VIEWED', { jobId });
+  return { recorded: true };
+}
+
+export async function listCandidateJobViews(candidateId, filters = {}) {
+  const requestedPage = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 8));
+  const where = { candidateId };
+  const total = await prisma.candidateJobView.count({ where });
+  const page = clampPage(total, requestedPage, pageSize);
+  const rows = await prisma.candidateJobView.findMany({
+    where,
+    include: { job: { include: { organisation: true } } },
+    orderBy: [{ lastViewedAt: 'desc' }, { id: 'asc' }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+
+  return {
+    items: rows
+      .filter((row) => row.job)
+      .map((row) => ({
+        id: row.id,
+        viewedAt: row.lastViewedAt?.toISOString?.() || row.lastViewedAt,
+        viewCount: row.viewCount,
+        job: serializePublicJob(row.job),
+      })),
+    meta: buildMeta(total, page, pageSize),
+  };
+}
+
+export const getCandidateJobViews = listCandidateJobViews;
+
+export async function clearCandidateJobViews(candidateId, requestMeta = {}) {
+  await prisma.candidateJobView.deleteMany({ where: { candidateId } });
+  await recordCandidateActivity(candidateId, 'RECENT_HISTORY_CLEARED');
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.recent-jobs.clear',
+      entityType: 'CandidateJobView',
+      metadata: { candidateId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+  }
+  return { deleted: true };
+}
+
+export async function getCandidateRecommendations(candidateId, options = {}) {
+  const requestedPage = Math.max(1, Number(options.page) || 1);
+  const pageSize = Math.min(24, Math.max(1, Number(options.pageSize) || 6));
+  const excludeSaved = Boolean(options.excludeSaved);
+
   const profile = await prisma.candidateProfile.findUnique({
     where: { id: candidateId },
     include: { resumeBuilder: true },
@@ -315,7 +689,7 @@ export async function getCandidateRecommendations(candidateId, { excludeSaved = 
       where: buildPublicJobWhere(),
       include: { organisation: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      take: 40,
+      take: 60,
     }),
   ]);
 
@@ -324,34 +698,47 @@ export async function getCandidateRecommendations(candidateId, { excludeSaved = 
     ...appliedJobs.map((row) => row.jobId),
   ].filter(Boolean));
 
-  const hasStrongSignals = (profile.skills || []).length >= 3
-    || (profile.preferredRoles || []).length > 0
-    || (profile.preferredLocations || []).length > 0;
+  const hasStrongSignals = maybeArray(profile.skills).length >= 3
+    || maybeArray(profile.preferredRoles).length > 0
+    || maybeArray(profile.preferredLocations).length > 0
+    || maybeArray(profile.preferredIndustries).length > 0;
 
-  const ranked = hasStrongSignals && profile.recommendationEnabled
+  const scoredRows = hasStrongSignals && profile.recommendationEnabled
     ? openJobs
-        .filter((job) => !excludedJobIds.has(job.id))
-        .map((job) => ({ job, score: scoreRecommendedJob(profile, job) }))
-        .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score || b.job.createdAt - a.job.createdAt || a.job.id.localeCompare(b.job.id))
-        .slice(0, 6)
-        .map((item) => serializePublicJob(item.job))
+      .filter((job) => !excludedJobIds.has(job.id))
+      .map((job) => ({ job, ...scoreRecommendedJob(profile, job) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || b.job.createdAt - a.job.createdAt || a.job.id.localeCompare(b.job.id))
     : [];
 
-  const fallbackJobs = ranked.length
+  const fallbackRows = scoredRows.length
     ? []
     : openJobs
-        .filter((job) => !excludedJobIds.has(job.id))
-        .slice(0, 6)
-        .map((job) => serializePublicJob(job));
+      .filter((job) => !excludedJobIds.has(job.id))
+      .slice(0, 24)
+      .map((job) => ({
+        job,
+        score: 0,
+        reasons: ['Recently posted'],
+      }));
+
+  const rows = scoredRows.length ? scoredRows : fallbackRows;
+  const total = rows.length;
+  const page = clampPage(total, requestedPage, pageSize);
+  const paged = rows.slice((page - 1) * pageSize, ((page - 1) * pageSize) + pageSize);
 
   return {
     completion,
-    isFallback: ranked.length === 0,
-    prompt: ranked.length === 0
+    isFallback: scoredRows.length === 0,
+    prompt: scoredRows.length === 0
       ? 'Add your skills, preferred roles, and locations for sharper recommendations.'
       : null,
-    recommendedJobs: ranked.length ? ranked : fallbackJobs,
+    recommendedJobs: paged.map((item) => ({
+      ...serializePublicJob(item.job),
+      recommendationScore: item.score,
+      reasons: item.reasons,
+    })),
+    meta: buildMeta(total, page, pageSize),
   };
 }
 
@@ -426,7 +813,10 @@ export async function getCandidateDashboard(candidateId, userId) {
   }
 
   const completion = calculateProfileCompletion(profile);
-  const [savedJobsCount, applicationsCount, savedJobs, applications, unreadNotificationsCount, notifications, interviews, recommendations] = await Promise.all([
+  const recentViewsPromise = listCandidateJobViews(candidateId, { page: 1, pageSize: 4 });
+  const recommendationPromise = getCandidateRecommendations(candidateId, { excludeSaved: true, page: 1, pageSize: 4 });
+
+  const [savedJobsCount, applicationsCount, savedJobs, applications, unreadNotificationsCount, notifications, interviews, recentViews, recommendations] = await Promise.all([
     prisma.savedJob.count({ where: { candidateId } }),
     prisma.application.count({ where: { candidateId } }),
     prisma.savedJob.findMany({
@@ -471,13 +861,15 @@ export async function getCandidateDashboard(candidateId, userId) {
       orderBy: { scheduledStartAt: 'asc' },
       take: 5,
     }),
-    getCandidateRecommendations(candidateId, { excludeSaved: true }),
+    recentViewsPromise,
+    recommendationPromise,
   ]);
 
-  const statusCounts = applications.reduce((accumulator, application) => {
-    accumulator[application.statusLabel] = (accumulator[application.statusLabel] || 0) + 1;
-    return accumulator;
-  }, {});
+  const activeApplicationsCount = applications.filter((item) => !['Rejected', 'Withdrawn', 'Selected'].includes(item.statusLabel)).length;
+  const interviewApplicationsCount = applications.filter((item) => item.currentStage === 'INTERVIEW_SCHEDULED').length;
+  const offersCount = 0;
+  const withdrawnApplicationsCount = applications.filter((item) => item.statusLabel === 'Withdrawn').length;
+  const closedApplicationsCount = applications.filter((item) => ['Rejected', 'Selected'].includes(item.statusLabel)).length;
 
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
@@ -487,6 +879,11 @@ export async function getCandidateDashboard(candidateId, userId) {
       applicationsCount,
       unreadNotificationsCount,
       profileViews: profile.profileViews,
+      activeApplicationsCount,
+      interviewApplicationsCount,
+      offersCount,
+      closedApplicationsCount,
+      withdrawnApplicationsCount,
     },
     savedJobs: savedJobs.map((row) => serializeSavedJob(row, { saved: true })),
     recentApplications: applications.map((application) => ({
@@ -495,7 +892,8 @@ export async function getCandidateDashboard(candidateId, userId) {
       appliedAt: application.appliedAt.toISOString(),
       job: serializePublicJob(application.job),
     })),
-    applicationStatusCounts: statusCounts,
+    recentUpdates: notifications.slice(0, 4).map((row) => serializeCandidateNotification(row)),
+    recentJobs: recentViews.items,
     upcomingInterviews: interviews.map((row) => ({
       id: row.id,
       roundName: row.roundName,
@@ -505,5 +903,12 @@ export async function getCandidateDashboard(candidateId, userId) {
     })),
     notifications: notifications.map((row) => serializeCandidateNotification(row)),
     recommendations,
+    quickActions: [
+      { label: 'Browse Jobs', href: '/candidate/jobs' },
+      { label: 'Update Profile', href: '/candidate/profile' },
+      { label: 'Upload Resume', href: '/candidate/profile' },
+      { label: 'View Applications', href: '/candidate/applications' },
+      { label: 'Manage Preferences', href: '/candidate/settings' },
+    ],
   };
 }

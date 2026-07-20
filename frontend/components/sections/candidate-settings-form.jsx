@@ -2,6 +2,12 @@
 
 import { useActionState, useEffect, useRef } from 'react';
 import { submitCandidateSettingsFormAction } from '@/app/candidate/actions';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { FormActions, FormSection } from '@/components/ui/form-layout';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 
 const initialState = {
   status: 'idle',
@@ -13,7 +19,6 @@ function fieldState(state, name) {
   const error = state.fieldErrors?.[name]?.[0];
   return {
     error,
-    describedBy: error ? `${name}-error` : undefined,
   };
 }
 
@@ -31,67 +36,101 @@ export function CandidateSettingsForm({ settings }) {
   const preferredLocations = fieldState(state, 'preferredLocations');
 
   return (
-    <form action={formAction} className="grid gap-5" noValidate>
+    <form action={formAction} className="grid gap-6" noValidate>
       {state.status !== 'idle' ? (
-        <div
+        <Alert
           ref={summaryRef}
+          tone={state.status === 'error' ? 'danger' : 'success'}
+          title={state.status === 'error' ? 'Settings could not be saved' : 'Settings saved'}
           tabIndex={-1}
-          role={state.status === 'error' ? 'alert' : 'status'}
-          className={state.status === 'error'
-            ? 'rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800'
-            : 'rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800'}
         >
           {state.message}
-        </div>
+        </Alert>
       ) : null}
-      <label className="grid gap-2 text-sm font-medium text-[var(--text)]">
-        <span>Profile visibility</span>
-        <select name="profileVisibility" defaultValue={settings.profileVisibility || 'PRIVATE'} aria-invalid={Boolean(profileVisibility.error)} aria-describedby={profileVisibility.describedBy} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-          <option value="PRIVATE">Private profile</option>
-          <option value="RECRUITERS_ONLY">Recruiters only</option>
-          <option value="PUBLIC">Public profile</option>
-        </select>
-        {profileVisibility.error ? <span id="profileVisibility-error" className="text-sm text-rose-700">{profileVisibility.error}</span> : null}
-      </label>
-      <label className="grid gap-2 text-sm font-medium text-[var(--text)]">
-        <span>Preferred job locations</span>
-        <input name="preferredLocations" defaultValue={(settings.preferredLocations || []).join(', ')} aria-invalid={Boolean(preferredLocations.error)} aria-describedby={preferredLocations.describedBy} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-        {preferredLocations.error ? <span id="preferredLocations-error" className="text-sm text-rose-700">{preferredLocations.error}</span> : null}
-      </label>
-      <fieldset className="grid gap-3">
-        <legend className="font-semibold">Preferred workplace types</legend>
-        <div className="flex flex-wrap gap-4">
-          {['REMOTE', 'HYBRID', 'ONSITE'].map((value) => (
-            <label key={value} className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" name="workplacePreferences" value={value} defaultChecked={(settings.workplacePreferences || []).includes(value)} className="h-4 w-4 accent-[var(--brand)]" />
-              {value.replaceAll('_', ' ')}
-            </label>
-          ))}
+
+      <FormSection title="Role preferences" description="Tell Careeriz which roles and employers fit your search.">
+        <Input name="preferredRoles" label="Preferred job titles" defaultValue={(settings.preferredRoles || []).join(', ')} />
+        <Input name="preferredIndustries" label="Preferred industries" defaultValue={(settings.preferredIndustries || []).join(', ')} />
+        <Input name="preferredCompanySizes" label="Preferred company sizes" defaultValue={(settings.preferredCompanySizes || []).join(', ')} />
+      </FormSection>
+
+      <FormSection title="Location and work mode" description="Control where and how you want to work.">
+        <Input name="preferredLocations" label="Preferred job locations" defaultValue={(settings.preferredLocations || []).join(', ')} error={preferredLocations.error} />
+        <Checkbox name="willingToRelocate" defaultChecked={settings.willingToRelocate} label="Open to relocation" />
+        <fieldset className="grid gap-3">
+          <legend className="text-sm font-semibold text-[var(--color-text)]">Preferred workplace types</legend>
+          <div className="flex flex-wrap gap-4">
+            {['REMOTE', 'HYBRID', 'ONSITE'].map((value) => (
+              <Checkbox key={value} name="workplacePreferences" value={value} defaultChecked={(settings.workplacePreferences || []).includes(value)} label={value.replaceAll('_', ' ')} />
+            ))}
+          </div>
+        </fieldset>
+        <fieldset className="grid gap-3">
+          <legend className="text-sm font-semibold text-[var(--color-text)]">Preferred employment types</legend>
+          <div className="flex flex-wrap gap-4">
+            {['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'].map((value) => (
+              <Checkbox key={value} name="employmentPreferences" value={value} defaultChecked={(settings.employmentPreferences || []).includes(value)} label={value.replaceAll('_', ' ')} />
+            ))}
+          </div>
+        </fieldset>
+      </FormSection>
+
+      <FormSection title="Compensation and availability">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Input name="minExpectedSalary" label="Minimum expected salary" type="number" defaultValue={settings.minExpectedSalary || ''} />
+          <Input name="preferredCurrency" label="Preferred currency" defaultValue={settings.preferredCurrency || ''} />
+          <Select name="availability" label="Availability" defaultValue={settings.availability || 'IMMEDIATE'}>
+            <option value="IMMEDIATE">Immediate</option>
+            <option value="TWO_WEEKS">Two weeks</option>
+            <option value="ONE_MONTH">One month</option>
+            <option value="NOT_LOOKING">Not looking</option>
+          </Select>
+          <Input name="noticePeriodDays" label="Notice period in days" type="number" defaultValue={settings.noticePeriodDays || ''} />
         </div>
-      </fieldset>
-      <fieldset className="grid gap-3">
-        <legend className="font-semibold">Preferred employment types</legend>
-        <div className="flex flex-wrap gap-4">
-          {['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'].map((value) => (
-            <label key={value} className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" name="employmentPreferences" value={value} defaultChecked={(settings.employmentPreferences || []).includes(value)} className="h-4 w-4 accent-[var(--brand)]" />
-              {value.replaceAll('_', ' ')}
-            </label>
-          ))}
+      </FormSection>
+
+      <FormSection title="Work authorization">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Input name="workAuthorization" label="Work authorization" defaultValue={settings.workAuthorization || ''} />
+          <Input name="travelWillingness" label="Travel willingness" defaultValue={settings.travelWillingness || ''} />
         </div>
-      </fieldset>
-      <div className="grid gap-3">
-        <label className="inline-flex items-center gap-3 text-sm"><input name="recommendationEnabled" type="checkbox" defaultChecked={settings.recommendationEnabled} className="h-4 w-4 accent-[var(--brand)]" /> Enable recommendations</label>
-        <label className="inline-flex items-center gap-3 text-sm"><input name="notifyForSavedJobUpdates" type="checkbox" defaultChecked={settings.notifyForSavedJobUpdates} className="h-4 w-4 accent-[var(--brand)]" /> Notify me when saved jobs change</label>
-        <label className="inline-flex items-center gap-3 text-sm"><input name="notifyForRecommendations" type="checkbox" defaultChecked={settings.notifyForRecommendations} className="h-4 w-4 accent-[var(--brand)]" /> Notify me about recommendation refreshes</label>
-        <label className="inline-flex items-center gap-3 text-sm"><input name="notifyForInterviews" type="checkbox" defaultChecked={settings.notifyForInterviews} className="h-4 w-4 accent-[var(--brand)]" /> Notify me about interviews</label>
-      </div>
-      <div className="rounded-[24px] border border-dashed border-[var(--line)] p-4 text-sm text-[var(--muted)]">
+        <Checkbox name="requiresVisaSponsorship" defaultChecked={settings.requiresVisaSponsorship} label="Requires visa sponsorship" />
+      </FormSection>
+
+      <FormSection title="Alerts and notifications" description="Control which candidate updates appear in-app.">
+        <Select name="profileVisibility" label="Profile visibility" defaultValue={settings.profileVisibility || 'PRIVATE'} error={profileVisibility.error}>
+            <option value="PRIVATE">Private profile</option>
+            <option value="RECRUITERS_ONLY">Recruiters only</option>
+            <option value="PUBLIC">Public profile</option>
+        </Select>
+        <Checkbox name="recommendationEnabled" defaultChecked={settings.recommendationEnabled} label="Enable recommendations" />
+        <Checkbox name="jobAlertEnabled" defaultChecked={settings.jobAlertEnabled} label="Enable job alerts" />
+        <Select name="jobAlertFrequency" label="Job alert frequency" defaultValue={settings.jobAlertFrequency || 'WEEKLY'}>
+            <option value="IMMEDIATE">Immediate</option>
+            <option value="DAILY">Daily</option>
+            <option value="WEEKLY">Weekly</option>
+            <option value="DISABLED">Disabled</option>
+        </Select>
+        <div className="grid gap-3">
+          <Checkbox name="notifyForApplicationUpdates" defaultChecked={settings.notifyForApplicationUpdates} label="Application updates" />
+          <Checkbox name="notifyForInterviews" defaultChecked={settings.notifyForInterviews} label="Interview updates" />
+          <Checkbox name="notifyForOffers" defaultChecked={settings.notifyForOffers} label="Offer updates" />
+          <Checkbox name="notifyForSavedJobUpdates" defaultChecked={settings.notifyForSavedJobUpdates} label="Saved-job updates" />
+          <Checkbox name="notifyForRecommendations" defaultChecked={settings.notifyForRecommendations} label="Recommendation refreshes" />
+          <Checkbox name="notifyForProfileReminders" defaultChecked={settings.notifyForProfileReminders} label="Profile reminders" />
+          <Checkbox name="notifyForMarketing" defaultChecked={settings.notifyForMarketing} label="Product updates" />
+        </div>
+      </FormSection>
+
+      <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-strong)] p-4 text-sm text-[var(--color-text-muted)]">
         Account deletion is not available in this phase. Contact support for a reviewed deletion request workflow.
       </div>
-      <button type="submit" disabled={pending} className="rounded-2xl bg-[var(--brand)] px-5 py-3 font-semibold text-white disabled:opacity-60">
-        {pending ? 'Saving settings...' : 'Save settings'}
-      </button>
+
+      <FormActions>
+        <Button type="submit" disabled={pending} loading={pending}>
+          {pending ? 'Saving settings...' : 'Save preferences'}
+        </Button>
+      </FormActions>
     </form>
   );
 }

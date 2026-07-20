@@ -73,6 +73,14 @@ Base URL: `http://localhost:5000/api`
 - `GET /resumes/search`
   - Recruiter resume search
   - Query: `keyword`, `location`, `minExperience`, `availability`
+  - Returns `503` with:
+    ```json
+    {
+      "error": "RESUME_SEARCH_UNAVAILABLE",
+      "message": "Resume search is temporarily unavailable."
+    }
+    ```
+    when `ELASTICSEARCH_ENABLED=false`
 - `GET /resumes/saved`
 - `POST /resumes/saved/:candidateId`
   - Body: `{ "tag": "SHORTLISTED" }`

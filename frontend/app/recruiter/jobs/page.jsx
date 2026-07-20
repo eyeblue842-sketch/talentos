@@ -1,8 +1,9 @@
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { JobsTable } from '@/components/sections/jobs-table';
 import { Card } from '@/components/ui/card';
-import { recruiterNav } from '@/lib/mock-data';
-import { getApprovedRequisitions, getOrganisationMembers, getRecruiterJobsPage } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
+import { getApprovedRequisitions, getCurrentOrganisation, getOrganisationMembers, getRecruiterJobsPage } from '@/lib/api';
 import { createJobAction } from '../actions';
 
 function EmptyState() {
@@ -30,13 +31,15 @@ export default async function RecruiterJobsPage({ searchParams }) {
   if (params?.status) query.set('status', params.status);
   if (params?.page) query.set('page', params.page);
 
+  let organisation = null;
   let jobsResult = { items: [], meta: null };
   let members = [];
   let requisitions = [];
   let error = '';
 
   try {
-    [jobsResult, members, requisitions] = await Promise.all([
+    [organisation, jobsResult, members, requisitions] = await Promise.all([
+      getCurrentOrganisation(),
       getRecruiterJobsPage(query.toString()),
       getOrganisationMembers(),
       getApprovedRequisitions(),
@@ -48,14 +51,18 @@ export default async function RecruiterJobsPage({ searchParams }) {
   const assignees = members.filter((member) => ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(member.role));
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title="Job management"
+        description="Create, publish, hold, close, and archive organisation jobs with requisition linkage and ATS visibility."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Jobs' }]}
+      />
         <Card className="bg-[var(--surface)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="font-[var(--font-display)] text-3xl font-semibold">Job management</h1>
-              <p className="mt-2 text-sm text-[var(--muted)]">Create, publish, hold, close, and archive organisation jobs with requisition linkage and ATS visibility.</p>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Filter jobs</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">Review organisation jobs by title and status before opening a detail workflow.</p>
             </div>
             {params?.notice ? <p className="rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-[var(--brand)]">{params.notice}</p> : null}
           </div>
@@ -76,10 +83,10 @@ export default async function RecruiterJobsPage({ searchParams }) {
         <Card>
           <h2 className="font-[var(--font-display)] text-2xl font-semibold">Create job</h2>
           <form action={createJobAction} className="mt-5 grid gap-3 md:grid-cols-2">
-            <input name="title" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Job title" required />
-            <input name="location" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Location" required />
+            <input name="title" defaultValue={params?.title || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Job title" required />
+            <input name="location" defaultValue={params?.location || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Location" required />
             <input name="skillsRequired" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Skills, comma separated" required />
-            <select name="employmentType" className="rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue="FULL_TIME">
+            <select name="employmentType" className="rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue={params?.employmentType || 'FULL_TIME'}>
               <option value="FULL_TIME">Full time</option>
               <option value="PART_TIME">Part time</option>
               <option value="CONTRACT">Contract</option>
@@ -99,7 +106,7 @@ export default async function RecruiterJobsPage({ searchParams }) {
               <option value="">Hiring manager</option>
               {assignees.map((member) => <option key={member.id} value={member.userId}>{member.user?.email}</option>)}
             </select>
-            <select name="requisitionId" className="rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue="">
+            <select name="requisitionId" className="rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue={params?.fromRequisition || ''}>
               <option value="">Approved requisition</option>
               {requisitions.map((requisition) => <option key={requisition.id} value={requisition.id}>{requisition.requisitionCode} - {requisition.title}</option>)}
             </select>
@@ -108,9 +115,9 @@ export default async function RecruiterJobsPage({ searchParams }) {
             <input name="salaryMin" type="number" min="0" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Min salary" />
             <input name="salaryMax" type="number" min="0" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Max salary" />
             <input name="currency" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Currency, e.g. INR" />
-            <input name="numberOfOpenings" type="number" min="1" defaultValue="1" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Openings" />
-            <input name="department" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Department" />
-            <input name="businessUnit" className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Business unit" />
+            <input name="numberOfOpenings" type="number" min="1" defaultValue={params?.numberOfOpenings || '1'} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Openings" />
+            <input name="department" defaultValue={params?.department || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Department" />
+            <input name="businessUnit" defaultValue={params?.businessUnit || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Business unit" />
             <input name="applicationDeadline" type="datetime-local" className="rounded-2xl border border-[var(--line)] px-4 py-3" />
             <select name="status" className="rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue="DRAFT">
               <option value="DRAFT">Draft</option>
@@ -125,7 +132,6 @@ export default async function RecruiterJobsPage({ searchParams }) {
         {error ? <ErrorState message={error} /> : null}
         {!error && jobsResult.items.length === 0 ? <EmptyState /> : null}
         {!error && jobsResult.items.length > 0 ? <JobsTable jobs={jobsResult.items} /> : null}
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

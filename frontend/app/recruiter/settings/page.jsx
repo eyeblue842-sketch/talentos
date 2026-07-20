@@ -1,6 +1,7 @@
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
-import { recruiterNav } from '@/lib/mock-data';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation } from '@/lib/api';
 
 export default async function RecruiterSettingsPage() {
@@ -14,11 +15,15 @@ export default async function RecruiterSettingsPage() {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title="Organisation settings"
+        description="Review the currently active recruiter workspace identity and high-level workspace configuration."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Settings' }]}
+      />
         <Card>
-          <h1 className="font-[var(--font-display)] text-3xl font-semibold">Organisation settings</h1>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Workspace configuration</h2>
           {error ? <p className="mt-3 text-sm text-[var(--muted)]">{error}</p> : null}
           {!error && !organisation ? <p className="mt-3 text-sm text-[var(--muted)]">Loading organisation context.</p> : null}
           {organisation ? (
@@ -42,7 +47,6 @@ export default async function RecruiterSettingsPage() {
             </div>
           ) : null}
         </Card>
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

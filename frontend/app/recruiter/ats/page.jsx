@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { recruiterNav } from '@/lib/mock-data';
-import { getRecruiterApplicationsV2 } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
+import { getCurrentOrganisation, getRecruiterApplicationsV2 } from '@/lib/api';
 import { moveApplicationStageAction } from '../actions';
 
 const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED'];
@@ -15,21 +16,29 @@ export default async function RecruiterAtsPage({ searchParams }) {
   if (params?.stage) query.set('stage', params.stage);
 
   let pipeline = { items: [], meta: {} };
+  let organisation = null;
   let error = '';
 
   try {
-    pipeline = await getRecruiterApplicationsV2(query.toString());
+    [organisation, pipeline] = await Promise.all([
+      getCurrentOrganisation(),
+      getRecruiterApplicationsV2(query.toString()),
+    ]);
   } catch (caught) {
     error = caught.message;
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title="ATS pipeline"
+        description="Organisation-scoped applications grouped by stage with explicit backend stage transitions."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'ATS Pipeline' }]}
+      />
         <Card className="bg-[var(--surface)]">
-          <h1 className="font-[var(--font-display)] text-3xl font-semibold">ATS pipeline</h1>
-          <p className="mt-2 text-sm text-[var(--muted)]">Organisation-scoped applications grouped by stage with real backend transitions. This phase uses explicit stage controls instead of drag-and-drop to reduce workflow risk.</p>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Pipeline overview</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">This workspace keeps stage changes explicit instead of drag-and-drop to reduce workflow risk during stabilization.</p>
         </Card>
 
         {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
@@ -68,7 +77,6 @@ export default async function RecruiterAtsPage({ searchParams }) {
             })}
           </div>
         ) : null}
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

@@ -1,7 +1,8 @@
+import crypto from 'crypto';
 import dayjs from 'dayjs';
 import { prisma } from '../config/db.js';
 import { buildKeywordMatch } from './matchService.js';
-import { sendPipelineEmail } from './emailService.js';
+import { sendPipelineEmail, sendRecruiterOutreachEmail } from './emailService.js';
 import { serializeApplication, serializeAtsNote } from '../serializers/index.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
@@ -24,7 +25,207 @@ const stageLabelMap = {
   INTERVIEW_SCHEDULED: 'Interview',
   SELECTED: 'Selected',
   REJECTED: 'Rejected',
+  WITHDRAWN: 'Withdrawn',
 };
+
+const recruiterResumeDbSourceName = 'Resume Database';
+
+const candidateVisibleStatusMap = {
+  APPLIED: 'Application Received',
+  SHORTLISTED: 'Under Review',
+  INTERVIEW_SCHEDULED: 'Interview Stage',
+  SELECTED: 'Selected',
+  REJECTED: 'Application Closed',
+  WITHDRAWN: 'Application Withdrawn',
+};
+
+function generatePublicReference() {
+  return crypto.randomBytes(10).toString('hex').slice(0, 10).toUpperCase();
+}
+
+async function getWritableOrganisationContext(actorUser, organisationId = null) {
+  return requireOrganisationRole(actorUser, writableRoles, organisationId);
+}
+
+async function ensureRequirementJob(context, jobId, requisitionId = null) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      organisationId: context.organisationId,
+      requisitionId: requisitionId || undefined,
+    },
+    include: {
+      requisition: true,
+    },
+  });
+
+  if (!job) {
+    const error = new Error('Job not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return job;
+}
+
+async function ensureResumeCandidate(candidateId) {
+  const candidate = await prisma.candidateProfile.findUnique({
+    where: { id: candidateId },
+    include: {
+      user: true,
+    },
+  });
+
+  if (!candidate) {
+    const error = new Error('Candidate not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return candidate;
+}
+
+async function buildResumeWorkflowApplication(tx, { organisationId, actorUser, candidate, job, stage, requestMeta = {} }) {
+  const existing = await tx.application.findUnique({
+    where: {
+      jobId_candidateId: {
+        jobId: job.id,
+        candidateId: candidate.id,
+      },
+    },
+    include: {
+      candidate: { include: { user: true, resumeBuilder: true } },
+      job: { include: { requisition: true, recruiter: true, hiringManager: true } },
+      submittedApplication: true,
+      activities: { include: { actorUser: true }, orderBy: { createdAt: 'desc' } },
+      notes: {
+        include: { author: { include: { recruiterProfile: { include: { organisation: true } }, candidateProfile: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+      interviewProcesses: {
+        include: {
+          createdBy: true,
+          rounds: {
+            include: {
+              panelMembers: { include: { user: true } },
+              feedbacks: { include: { interviewer: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (existing) {
+    return { application: existing, duplicate: true, created: false };
+  }
+
+  const matchScore = buildKeywordMatch(job.skillsRequired || [], candidate.skills || []);
+  const nextStage = stage || 'APPLIED';
+  const statusLabel = stageLabelMap[nextStage] || stageLabelMap.APPLIED;
+  const candidateStatusMessage = nextStage === 'SHORTLISTED'
+    ? candidateVisibleStatusMap.SHORTLISTED
+    : candidateVisibleStatusMap.APPLIED;
+
+  const application = await tx.application.create({
+    data: {
+      organisationId,
+      jobId: job.id,
+      candidateId: candidate.id,
+      currentStage: nextStage,
+      statusLabel,
+      recruiterTag: nextStage === 'SHORTLISTED' ? 'SHORTLISTED' : null,
+      matchScore,
+    },
+  });
+
+  const jobApplication = await tx.jobApplication.create({
+    data: {
+      publicReference: generatePublicReference(),
+      organisationId,
+      jobId: job.id,
+      candidateId: candidate.id,
+      applicationId: application.id,
+      sourceType: 'API',
+      sourceName: recruiterResumeDbSourceName,
+      candidateStatusUpdatedAt: new Date(),
+    },
+  });
+
+  await tx.applicationActivity.create({
+    data: {
+      organisationId,
+      applicationId: application.id,
+      actorUserId: actorUser.id,
+      eventType: nextStage === 'SHORTLISTED' ? 'SHORTLISTED_FROM_RESUME_SEARCH' : 'ADDED_FROM_RESUME_SEARCH',
+      message: nextStage === 'SHORTLISTED'
+        ? 'Candidate shortlisted from resume database.'
+        : 'Candidate added to ATS from resume database.',
+      metadata: {
+        sourceName: recruiterResumeDbSourceName,
+      },
+    },
+  });
+
+  await tx.applicationTimeline.create({
+    data: {
+      organisationId,
+      applicationId: jobApplication.id,
+      actorUserId: actorUser.id,
+      eventType: nextStage,
+      message: `${candidateStatusMessage} for ${job.title}.`,
+      metadata: {
+        sourceName: recruiterResumeDbSourceName,
+      },
+      isCandidateVisible: true,
+    },
+  });
+
+  await tx.auditLog.create({
+    data: {
+      organisationId,
+      actorUserId: actorUser.id,
+      action: nextStage === 'SHORTLISTED' ? 'resume-search.shortlist' : 'resume-search.add-to-ats',
+      entityType: 'Application',
+      entityId: application.id,
+      afterData: {
+        jobId: job.id,
+        candidateId: candidate.id,
+        currentStage: nextStage,
+        sourceName: recruiterResumeDbSourceName,
+      },
+      ipAddress: requestMeta.ipAddress || null,
+      userAgent: requestMeta.userAgent || null,
+    },
+  });
+
+  const fullApplication = await tx.application.findUnique({
+    where: { id: application.id },
+    include: {
+      candidate: { include: { user: true, resumeBuilder: true } },
+      job: { include: { requisition: true, recruiter: true, hiringManager: true } },
+      submittedApplication: true,
+      activities: { include: { actorUser: true }, orderBy: { createdAt: 'desc' } },
+      notes: {
+        include: { author: { include: { recruiterProfile: { include: { organisation: true } }, candidateProfile: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
+      interviewProcesses: {
+        include: {
+          createdBy: true,
+          rounds: {
+            include: {
+              panelMembers: { include: { user: true } },
+              feedbacks: { include: { interviewer: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return { application: fullApplication, duplicate: false, created: true };
+}
 
 async function createActivity(organisationId, applicationId, payload) {
   return prisma.applicationActivity.create({
@@ -35,6 +236,50 @@ async function createActivity(organisationId, applicationId, payload) {
       eventType: payload.eventType || null,
       message: payload.message,
       metadata: payload.metadata || null,
+    },
+  });
+}
+
+async function createCandidateTimeline(jobApplicationId, organisationId, actorUserId, eventType, message, metadata = {}) {
+  const jobApplication = await prisma.jobApplication.findFirst({
+    where: { applicationId: jobApplicationId },
+    select: { id: true },
+  });
+
+  if (!jobApplication) return;
+
+  await prisma.applicationTimeline.create({
+    data: {
+      organisationId,
+      applicationId: jobApplication.id,
+      actorUserId: actorUserId || null,
+      eventType,
+      message,
+      metadata,
+      isCandidateVisible: true,
+    },
+  });
+
+  await prisma.jobApplication.update({
+    where: { id: jobApplication.id },
+    data: {
+      candidateStatusUpdatedAt: new Date(),
+    },
+  });
+}
+
+async function createCandidateNotification(application, title, message, entityType = 'Application') {
+  if (!application?.candidate?.user?.id) return;
+  await createNotification({
+    organisationId: application.organisationId,
+    recipientUserId: application.candidate.user.id,
+    type: 'APPLICATION',
+    title,
+    message,
+    entityType,
+    entityId: application.submittedApplication?.id || application.id,
+    metadata: {
+      applicationId: application.submittedApplication?.id || application.id,
     },
   });
 }
@@ -51,6 +296,7 @@ async function getApplicationWithRelations(organisationId, applicationId) {
           hiringManager: true,
         },
       },
+      submittedApplication: true,
       notes: {
         include: {
           author: {
@@ -197,7 +443,7 @@ export async function getRecruiterPipeline(actorUser, filters = {}, organisation
     orderBy: { updatedAt: 'desc' },
   });
 
-  const stageGroups = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED'].map((stage) => ({
+  const stageGroups = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED', 'WITHDRAWN'].map((stage) => ({
     stage,
     count: applications.filter((application) => application.currentStage === stage).length,
   }));
@@ -235,6 +481,7 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
     include: {
       candidate: { include: { user: true, resumeBuilder: true } },
       job: { include: { requisition: true, recruiter: true, hiringManager: true } },
+      submittedApplication: true,
       activities: { include: { actorUser: true }, orderBy: { createdAt: 'desc' } },
       notes: {
         include: { author: { include: { recruiterProfile: { include: { organisation: true } }, candidateProfile: true } } },
@@ -261,6 +508,14 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
       message: `Moved to ${stageLabelMap[stage]}.`,
       metadata: { fromStage: application.currentStage, toStage: stage },
     }),
+    createCandidateTimeline(
+      application.submittedApplication?.id || application.id,
+      context.organisationId,
+      actorUser.id,
+      stage,
+      `${candidateVisibleStatusMap[stage]} for ${updated.job.title}.`,
+      { fromStage: application.currentStage, toStage: stage },
+    ),
     createNotification({
       organisationId: context.organisationId,
       recipientUserId: updated.job.recruiterId,
@@ -270,6 +525,7 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
       entityType: 'Application',
       entityId: applicationId,
     }),
+    createCandidateNotification(updated, candidateVisibleStatusMap[stage], `${candidateVisibleStatusMap[stage]} for ${updated.job.title}.`),
     sendPipelineEmail(application.candidate.user.email, stage, application.job.title),
     recordAuditLog({
       organisationId: context.organisationId,
@@ -364,6 +620,19 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
         panelUserIds: payload.panelUserIds,
       },
     }),
+    createCandidateTimeline(
+      application.submittedApplication?.id || application.id,
+      context.organisationId,
+      actorUser.id,
+      priorRound?.scheduledStartAt ? 'INTERVIEW_RESCHEDULED' : 'INTERVIEW_SCHEDULED',
+      `Interview scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
+      { roundId: round.id },
+    ),
+    createCandidateNotification(
+      application,
+      priorRound?.scheduledStartAt ? 'Interview rescheduled' : 'Interview scheduled',
+      `${round.roundName} is scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
+    ),
     ...payload.panelUserIds.map((userId) => createNotification({
       organisationId: context.organisationId,
       recipientUserId: userId,
@@ -396,7 +665,7 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
 }
 
 export async function cancelInterview(applicationId, actorUser, payload, organisationId = null, requestMeta = {}) {
-  const { context } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
+  const { context, application } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
   if (!writableRoles.includes(context.activeMembership.role)) {
     const error = new Error('You are not allowed to cancel interviews for this application.');
     error.statusCode = 403;
@@ -425,6 +694,19 @@ export async function cancelInterview(applicationId, actorUser, payload, organis
       message: `Interview cancelled for ${round.roundName}.`,
       metadata: { roundId: round.id, cancelReason: payload.cancelReason },
     }),
+    createCandidateTimeline(
+      applicationId,
+      context.organisationId,
+      actorUser.id,
+      'INTERVIEW_CANCELLED',
+      `Interview update for ${round.roundName}: this round was cancelled.`,
+      { roundId: round.id },
+    ),
+    createCandidateNotification(
+      application,
+      'Interview cancelled',
+      `${round.roundName} has been cancelled.`,
+    ),
     ...round.panelMembers.map((member) => createNotification({
       organisationId: context.organisationId,
       recipientUserId: member.userId,
@@ -596,4 +878,232 @@ export async function getCandidateApplications(candidateId) {
   });
 
   return applications.map((application) => serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true }));
+}
+
+export async function addCandidatesToAts(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const job = await ensureRequirementJob(context, payload.jobId, payload.requisitionId || null);
+  const items = [];
+
+  for (const candidateId of payload.candidateIds) {
+    try {
+      const candidate = await ensureResumeCandidate(candidateId);
+      const result = await prisma.$transaction((tx) => buildResumeWorkflowApplication(tx, {
+        organisationId: context.organisationId,
+        actorUser,
+        candidate,
+        job,
+        stage: 'APPLIED',
+        requestMeta,
+      }));
+
+      items.push({
+        candidateId,
+        success: !result.duplicate,
+        duplicate: result.duplicate,
+        application: serializeApplication(result.application, { includeCoverLetter: true, includeCandidatePrivate: true }),
+      });
+
+      if (!result.duplicate && job.recruiterId && job.recruiterId !== actorUser.id) {
+        await createNotification({
+          organisationId: context.organisationId,
+          recipientUserId: job.recruiterId,
+          type: 'APPLICATION',
+          title: 'Candidate added to ATS',
+          message: `${candidate.fullName} was added to ${job.title} from the resume database.`,
+          entityType: 'Application',
+          entityId: result.application.id,
+        });
+      }
+    } catch (error) {
+      items.push({
+        candidateId,
+        success: false,
+        duplicate: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    job: { id: job.id, title: job.title, requisitionId: job.requisitionId || null },
+    items,
+  };
+}
+
+export async function shortlistCandidatesFromResumeSearch(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const job = await ensureRequirementJob(context, payload.jobId, payload.requisitionId || null);
+  const items = [];
+
+  for (const candidateId of payload.candidateIds) {
+    try {
+      const candidate = await ensureResumeCandidate(candidateId);
+      const existing = await prisma.application.findUnique({
+        where: {
+          jobId_candidateId: {
+            jobId: job.id,
+            candidateId,
+          },
+        },
+      });
+
+      if (!existing) {
+        const created = await prisma.$transaction((tx) => buildResumeWorkflowApplication(tx, {
+          organisationId: context.organisationId,
+          actorUser,
+          candidate,
+          job,
+          stage: 'SHORTLISTED',
+          requestMeta,
+        }));
+        items.push({
+          candidateId,
+          success: true,
+          duplicate: false,
+          application: serializeApplication(created.application, { includeCoverLetter: true, includeCandidatePrivate: true }),
+        });
+        if (job.recruiterId && job.recruiterId !== actorUser.id) {
+          await createNotification({
+            organisationId: context.organisationId,
+            recipientUserId: job.recruiterId,
+            type: 'APPLICATION',
+            title: 'Candidate shortlisted',
+            message: `${candidate.fullName} was shortlisted for ${job.title} from the resume database.`,
+            entityType: 'Application',
+            entityId: created.application.id,
+          });
+        }
+        continue;
+      }
+
+      if (existing.currentStage === 'SHORTLISTED') {
+        const current = await getApplicationDetail(actorUser, existing.id, context.organisationId);
+        items.push({
+          candidateId,
+          success: false,
+          duplicate: true,
+          application: current,
+        });
+        continue;
+      }
+
+      const updated = await updatePipelineStage(existing.id, actorUser, 'SHORTLISTED', context.organisationId, requestMeta);
+      items.push({
+        candidateId,
+        success: true,
+        duplicate: false,
+        application: updated,
+      });
+      if (job.recruiterId && job.recruiterId !== actorUser.id) {
+        await createNotification({
+          organisationId: context.organisationId,
+          recipientUserId: job.recruiterId,
+          type: 'APPLICATION',
+          title: 'Candidate shortlisted',
+          message: `${candidate.fullName} was shortlisted for ${job.title}.`,
+          entityType: 'Application',
+          entityId: updated.id,
+        });
+      }
+    } catch (error) {
+      items.push({
+        candidateId,
+        success: false,
+        duplicate: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    job: { id: job.id, title: job.title, requisitionId: job.requisitionId || null },
+    items,
+  };
+}
+
+export async function tagCandidatesFromResumeSearch(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const items = [];
+
+  for (const candidateId of payload.candidateIds) {
+    try {
+      await ensureResumeCandidate(candidateId);
+      const savedCandidate = await prisma.savedCandidate.upsert({
+        where: {
+          recruiterId_candidateId: {
+            recruiterId: actorUser.recruiterProfile.id,
+            candidateId,
+          },
+        },
+        update: {
+          organisationId: context.organisationId,
+          tag: payload.tag,
+        },
+        create: {
+          organisationId: context.organisationId,
+          recruiterId: actorUser.recruiterProfile.id,
+          candidateId,
+          tag: payload.tag,
+        },
+      });
+
+      await recordAuditLog({
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: 'resume-search.tag',
+        entityType: 'SavedCandidate',
+        entityId: savedCandidate.id,
+        afterData: { tag: payload.tag, candidateId },
+        ...requestMeta,
+      });
+
+      items.push({ candidateId, success: true, tag: payload.tag });
+    } catch (error) {
+      items.push({ candidateId, success: false, error: error.message });
+    }
+  }
+
+  return { items };
+}
+
+export async function emailCandidatesFromResumeSearch(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const job = payload.jobId ? await ensureRequirementJob(context, payload.jobId, null) : null;
+  const items = [];
+
+  for (const candidateId of payload.candidateIds) {
+    try {
+      const candidate = await ensureResumeCandidate(candidateId);
+      if (!candidate.user?.email) {
+        items.push({ candidateId, success: false, error: 'Candidate email unavailable.' });
+        continue;
+      }
+
+      const body = job
+        ? `${payload.body}\n\nContext: ${job.title}`
+        : payload.body;
+      await sendRecruiterOutreachEmail(candidate.user.email, payload.subject, body);
+      await recordAuditLog({
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: 'resume-search.email',
+        entityType: 'CandidateProfile',
+        entityId: candidateId,
+        metadata: {
+          jobId: job?.id || null,
+          subject: payload.subject,
+        },
+        ...requestMeta,
+      });
+      items.push({ candidateId, success: true });
+    } catch (error) {
+      items.push({ candidateId, success: false, error: error.message });
+    }
+  }
+
+  return {
+    job: job ? { id: job.id, title: job.title } : null,
+    items,
+  };
 }

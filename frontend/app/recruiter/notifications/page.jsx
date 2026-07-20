@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { recruiterNav } from '@/lib/mock-data';
-import { getNotifications } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
+import { recruiterNav } from '@/lib/navigation';
+import { getCurrentOrganisation, getNotifications } from '@/lib/api';
 import { markNotificationReadAction } from '../actions';
 
 function entityLink(notification) {
@@ -17,21 +18,29 @@ function entityLink(notification) {
 }
 
 export default async function RecruiterNotificationsPage() {
+  let organisation = null;
   let notifications = [];
   let error = '';
 
   try {
-    notifications = await getNotifications();
+    [organisation, notifications] = await Promise.all([
+      getCurrentOrganisation(),
+      getNotifications(),
+    ]);
   } catch (caught) {
     error = caught.message;
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title="Notifications"
+        description="Track organisation-scoped job, application, interview, and membership events."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Notifications' }]}
+      />
         <Card>
-          <h1 className="font-[var(--font-display)] text-3xl font-semibold">Notifications</h1>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Inbox</h2>
           {error ? <p className="mt-3 text-sm text-[var(--muted)]">{error}</p> : null}
           {!error && notifications.length === 0 ? <p className="mt-3 text-sm text-[var(--muted)]">No in-app notifications for this organisation context.</p> : null}
           {!error && notifications.length > 0 ? (
@@ -59,7 +68,6 @@ export default async function RecruiterNotificationsPage() {
             </div>
           ) : null}
         </Card>
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

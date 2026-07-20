@@ -13,6 +13,13 @@ export const profileVisibilitySchema = z.enum([
   'PUBLIC',
 ]);
 
+export const jobAlertFrequencySchema = z.enum([
+  'IMMEDIATE',
+  'DAILY',
+  'WEEKLY',
+  'DISABLED',
+]);
+
 const stringArrayField = (maxItems = 20, maxLength = 80) =>
   z.preprocess((value) => {
     if (Array.isArray(value)) {
@@ -68,12 +75,29 @@ export const candidateProfileUpdateSchema = z.object({
 export const candidateSettingsUpdateSchema = z.object({
   profileVisibility: profileVisibilitySchema.optional(),
   recommendationEnabled: z.boolean().optional(),
+  preferredRoles: stringArrayField(20, 120).optional(),
+  preferredIndustries: stringArrayField(20, 120).optional(),
+  preferredCompanySizes: stringArrayField(10, 80).optional(),
   preferredLocations: stringArrayField(20, 160).optional(),
+  willingToRelocate: z.boolean().optional(),
   workplacePreferences: z.array(workplaceTypeSchema).max(3).optional(),
   employmentPreferences: z.array(employmentTypeSchema).max(4).optional(),
+  minExpectedSalary: z.coerce.number().int().min(0).max(1000000).optional().nullable(),
+  preferredCurrency: z.string().trim().min(3).max(10).optional().nullable().or(z.literal('')),
+  noticePeriodDays: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  availability: availabilityStatusSchema.optional(),
+  workAuthorization: z.string().trim().max(160).optional().nullable().or(z.literal('')),
+  requiresVisaSponsorship: z.boolean().optional(),
+  travelWillingness: z.string().trim().max(120).optional().nullable().or(z.literal('')),
+  jobAlertEnabled: z.boolean().optional(),
+  jobAlertFrequency: jobAlertFrequencySchema.optional(),
   notifyForSavedJobUpdates: z.boolean().optional(),
+  notifyForApplicationUpdates: z.boolean().optional(),
   notifyForRecommendations: z.boolean().optional(),
   notifyForInterviews: z.boolean().optional(),
+  notifyForOffers: z.boolean().optional(),
+  notifyForProfileReminders: z.boolean().optional(),
+  notifyForMarketing: z.boolean().optional(),
 });
 
 export const publicJobSearchQuerySchema = z.object({
@@ -109,6 +133,60 @@ export const notificationPageQuerySchema = z.object({
 
 export const candidateNotificationReadSchema = z.object({
   notificationId: z.string().min(1),
+});
+
+export const candidateApplicationFilterSchema = z.enum([
+  'ACTIVE',
+  'INTERVIEW',
+  'OFFER',
+  'CLOSED',
+  'WITHDRAWN',
+  'ALL',
+]);
+
+export const candidateApplicationSortSchema = z.enum([
+  'recently_updated',
+  'recently_applied',
+  'oldest',
+  'job_title',
+]);
+
+export const candidateApplicationListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(1000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(50).optional(),
+  filter: candidateApplicationFilterSchema.optional(),
+  sort: candidateApplicationSortSchema.optional(),
+});
+
+export const candidateApplicationWithdrawSchema = z.object({
+  reason: z.enum([
+    'ACCEPTED_ANOTHER_OFFER',
+    'NO_LONGER_INTERESTED',
+    'LOCATION_CONCERN',
+    'COMPENSATION_CONCERN',
+    'ROLE_MISMATCH',
+    'PERSONAL_REASON',
+    'OTHER',
+  ]).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable().or(z.literal('')),
+});
+
+export const candidateSavedJobListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(1000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(50).optional(),
+  filter: z.enum(['OPEN', 'CLOSING_SOON', 'CLOSED', 'APPLIED', 'ALL']).optional(),
+  sort: z.enum(['recently_saved', 'closing_soon', 'recently_posted', 'job_title']).optional(),
+});
+
+export const candidateJobViewCreateSchema = z.object({
+  jobId: z.string().min(1),
+  source: z.string().trim().max(120).optional(),
+  referrerClassification: z.string().trim().max(120).optional(),
+});
+
+export const candidateRecentJobListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(1000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(50).optional(),
 });
 
 export const screeningQuestionTypeSchema = z.enum([

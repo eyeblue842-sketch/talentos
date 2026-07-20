@@ -9,9 +9,13 @@
     "build": "node -e \"console.log('backend build ready')\"",
     "lint": "eslint .",
     "test": "node --import ./env-bootstrap.js --test",
+    "test:integration": "node ./scripts/run-with-test-db.js node --import ./env-bootstrap.js --test",
     "type-check": "tsc --project tsconfig.json --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "db:test:status": "node ./scripts/run-with-test-db.js npx prisma migrate status --schema prisma/schema.prisma",
+    "db:test:migrate": "node ./scripts/run-with-test-db.js npx prisma migrate deploy --schema prisma/schema.prisma",
+    "db:test:reset": "node ./scripts/run-with-test-db.js npx prisma migrate reset --force --skip-generate --skip-seed --schema prisma/schema.prisma",
     "seed": "node prisma/seed.js"
   },
   "dependencies": {

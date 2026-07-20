@@ -16,6 +16,9 @@ export function serializeOrganisation(organisation) {
     status: organisation.status,
     website: organisation.website,
     logoUrl: organisation.logoUrl,
+    industry: organisation.industry,
+    organisationSize: organisation.organisationSize,
+    headquarters: organisation.headquarters,
     createdAt: iso(organisation.createdAt),
     updatedAt: iso(organisation.updatedAt),
   };
@@ -61,6 +64,29 @@ export function serializeOrganisationMembership(membership) {
   };
 }
 
+export function serializeOrganisationInvitation(invitation) {
+  if (!invitation) return null;
+  return {
+    id: invitation.id,
+    organisationId: invitation.organisationId,
+    email: invitation.email,
+    role: invitation.role,
+    status: invitation.status,
+    expiresAt: iso(invitation.expiresAt),
+    acceptedAt: iso(invitation.acceptedAt),
+    revokedAt: iso(invitation.revokedAt),
+    createdAt: iso(invitation.createdAt),
+    updatedAt: iso(invitation.updatedAt),
+    organisation: serializeOrganisation(invitation.organisation),
+    invitedByUser: invitation.invitedByUser
+      ? { id: invitation.invitedByUser.id, email: invitation.invitedByUser.email, role: invitation.invitedByUser.role }
+      : undefined,
+    acceptedByUser: invitation.acceptedByUser
+      ? { id: invitation.acceptedByUser.id, email: invitation.acceptedByUser.email, role: invitation.acceptedByUser.role }
+      : undefined,
+  };
+}
+
 export function serializeRecruiterProfile(profile) {
   if (!profile) return null;
   return {
@@ -101,6 +127,7 @@ export function serializeCandidateProfile(profile, options = {}) {
     workplacePreferences: profile.workplacePreferences,
     employmentPreferences: profile.employmentPreferences,
     availability: profile.availability,
+    willingToRelocate: includePrivate ? profile.willingToRelocate : undefined,
     noticePeriodDays: includePrivate ? profile.noticePeriodDays : undefined,
     skills: profile.skills,
     summary: profile.summary,
@@ -111,10 +138,23 @@ export function serializeCandidateProfile(profile, options = {}) {
     profileVisibility: includePrivate ? profile.profileVisibility : undefined,
     recommendationEnabled: includePrivate ? profile.recommendationEnabled : undefined,
     notifyForSavedJobUpdates: includePrivate ? profile.notifyForSavedJobUpdates : undefined,
+    notifyForApplicationUpdates: includePrivate ? profile.notifyForApplicationUpdates : undefined,
     notifyForRecommendations: includePrivate ? profile.notifyForRecommendations : undefined,
     notifyForInterviews: includePrivate ? profile.notifyForInterviews : undefined,
+    notifyForOffers: includePrivate ? profile.notifyForOffers : undefined,
+    notifyForProfileReminders: includePrivate ? profile.notifyForProfileReminders : undefined,
+    notifyForMarketing: includePrivate ? profile.notifyForMarketing : undefined,
     currentCtcLpa: includePrivate ? profile.currentCtcLpa : undefined,
     expectedCtcLpa: includePrivate ? profile.expectedCtcLpa : undefined,
+    minExpectedSalary: includePrivate ? profile.minExpectedSalary : undefined,
+    preferredCurrency: includePrivate ? profile.preferredCurrency : undefined,
+    workAuthorization: includePrivate ? profile.workAuthorization : undefined,
+    requiresVisaSponsorship: includePrivate ? profile.requiresVisaSponsorship : undefined,
+    preferredIndustries: includePrivate ? profile.preferredIndustries : undefined,
+    preferredCompanySizes: includePrivate ? profile.preferredCompanySizes : undefined,
+    travelWillingness: includePrivate ? profile.travelWillingness : undefined,
+    jobAlertEnabled: includePrivate ? profile.jobAlertEnabled : undefined,
+    jobAlertFrequency: includePrivate ? profile.jobAlertFrequency : undefined,
     resumeUrl: includePrivate ? resumeDownloadUrl(profile) : undefined,
     sharedResumeSlug: profile.sharedResumeSlug,
     profileViews: includePrivate ? profile.profileViews : undefined,
@@ -505,6 +545,44 @@ export function serializeNotification(notification) {
   };
 }
 
+function sanitizePathSegment(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(trimmed) ? trimmed : null;
+}
+
+function resolveCandidateNotificationLink(notification) {
+  const applicationId = sanitizePathSegment(notification.metadata?.applicationId || notification.entityId);
+  const jobSlug = sanitizePathSegment(notification.metadata?.jobSlug);
+  const destination = sanitizePathSegment(notification.metadata?.destinationType);
+
+  if (notification.entityType === 'Application' && applicationId) {
+    return `/candidate/applications/${applicationId}`;
+  }
+
+  if (notification.entityType === 'InterviewRound') {
+    return applicationId ? `/candidate/applications/${applicationId}` : '/candidate/applications';
+  }
+
+  if (notification.entityType === 'Job') {
+    return jobSlug ? `/jobs/${jobSlug}` : '/candidate/saved-jobs';
+  }
+
+  if (destination === 'SAVED_JOBS') {
+    return '/candidate/saved-jobs';
+  }
+
+  if (destination === 'PROFILE') {
+    return '/candidate/profile';
+  }
+
+  if (destination === 'PREFERENCES') {
+    return '/candidate/settings';
+  }
+
+  return '/candidate/notifications';
+}
+
 export function serializeCandidateNotification(notification) {
   if (!notification) return null;
   return {
@@ -517,14 +595,7 @@ export function serializeCandidateNotification(notification) {
     readAt: iso(notification.readAt),
     createdAt: iso(notification.createdAt),
     isUnread: !notification.readAt,
-    link:
-      notification.entityType === 'Job' && notification.entityId
-        ? `/jobs/${notification.entityId}`
-        : notification.entityType === 'Application' && notification.entityId
-          ? `/candidate/applications`
-          : notification.entityType === 'InterviewRound' && notification.entityId
-            ? `/candidate/applications`
-            : '/candidate/notifications',
+    link: resolveCandidateNotificationLink(notification),
   };
 }
 
@@ -541,6 +612,8 @@ export function serializeSavedJob(savedJob, options = {}) {
     },
     status: savedJob.job?.status || 'REMOVED',
     isActive: Boolean(savedJob.job && savedJob.job.status === 'OPEN' && !savedJob.job.archivedAt),
+    savedAt: iso(savedJob.createdAt),
+    closingAt: iso(savedJob.job?.applicationClosesAt || savedJob.job?.applicationDeadline),
   };
 }
 

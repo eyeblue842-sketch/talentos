@@ -1,6 +1,8 @@
 import {
+  addCandidatesToAts,
   applyToJob,
   cancelInterview,
+  emailCandidatesFromResumeSearch,
   getApplicationDetail,
   getRecruiterPipeline,
   updatePipelineStage,
@@ -9,6 +11,8 @@ import {
   updateAtsNote,
   deleteAtsNote,
   getCandidateApplications,
+  shortlistCandidatesFromResumeSearch,
+  tagCandidatesFromResumeSearch,
 } from '../services/atsService.js';
 import { sendSuccess } from '../utils/response.js';
 
@@ -134,6 +138,62 @@ export async function getCandidateApplicationList(req, res, next) {
   try {
     const applications = await getCandidateApplications(req.user.candidateProfile.id);
     sendSuccess(res, 200, applications);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function addResumeSearchCandidatesToAts(req, res, next) {
+  try {
+    const result = await addCandidatesToAts(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function shortlistResumeSearchCandidates(req, res, next) {
+  try {
+    const result = await shortlistCandidatesFromResumeSearch(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function emailResumeSearchCandidates(req, res, next) {
+  try {
+    const result = await emailCandidatesFromResumeSearch(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function tagResumeSearchCandidates(req, res, next) {
+  try {
+    const result = await tagCandidatesFromResumeSearch(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

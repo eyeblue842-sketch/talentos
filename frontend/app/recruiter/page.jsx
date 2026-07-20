@@ -1,31 +1,53 @@
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
+import Link from 'next/link';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
 import { JobsTable } from '@/components/sections/jobs-table';
-import { recruiterNav } from '@/lib/mock-data';
-import { getCurrentOrganisation, getRecruiterDashboard, getRecruiterJobs } from '@/lib/api';
+import { recruiterNav } from '@/lib/navigation';
+import { getCurrentOrganisation, getOrganisationInvitations, getRecruiterDashboard, getRecruiterJobs } from '@/lib/api';
+import { PageHeader } from '@/components/ui/page-header';
 
 export default async function RecruiterDashboardPage() {
-  const [organisation, dashboard, jobs] = await Promise.all([
+  const [organisation, dashboard, jobs, invitations] = await Promise.all([
     getCurrentOrganisation(),
     getRecruiterDashboard(),
     getRecruiterJobs(),
+    getOrganisationInvitations(),
   ]);
+  const draftJobsCount = jobs.filter((job) => job.status === 'DRAFT').length;
+  const pendingInvitationsCount = invitations.filter((invitation) => invitation.status === 'PENDING').length;
+  const showEmptyState = dashboard.jobsCount === 0 && dashboard.openRequisitions === 0;
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand={organisation.name} items={recruiterNav} />
-      <section className="space-y-6">
-        <div>
-          <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">{organisation.slug}</p>
-          <h1 className="mt-2 font-[var(--font-display)] text-4xl font-semibold">Operations command center</h1>
-          <p className="mt-2 text-[var(--muted)]">Manage organisation roles, requisitions, candidate flow, and hiring execution inside Careeriz.</p>
-        </div>
+    <WorkspaceShell brand={organisation.name} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation.slug}
+        title="Operations command center"
+        description="Manage organisation roles, requisitions, candidate flow, and hiring execution inside Careeriz."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Dashboard' }]}
+      />
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Active jobs" value={dashboard.activeJobsCount} helper={`Total jobs: ${dashboard.jobsCount}`} />
-          <StatCard label="Total applicants" value={dashboard.applicantsCount} helper="Across all open jobs" />
-          <StatCard label="Saved candidates" value={dashboard.savedCandidatesCount} helper={`Open requisitions: ${dashboard.openRequisitions}`} />
+          <StatCard label="Draft jobs" value={draftJobsCount} helper={`Open requisitions: ${dashboard.openRequisitions}`} />
+          <StatCard label="Candidates in ATS" value={dashboard.applicantsCount} helper={`Pending invitations: ${pendingInvitationsCount}`} />
         </div>
+        <Card>
+          <h3 className="font-[var(--font-display)] text-xl font-semibold">Continue workflow</h3>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/recruiter/onboarding" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Complete workspace setup</Link>
+            <Link href="/recruiter/requisitions" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Create requisition</Link>
+            <Link href="/recruiter/jobs" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Create job</Link>
+            <Link href="/recruiter/database" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Search resumes</Link>
+            <Link href="/recruiter/ats" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Open ATS</Link>
+            <Link href="/recruiter/members" className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold">Invite team member</Link>
+          </div>
+        </Card>
+        {showEmptyState ? (
+          <Card>
+            <h3 className="font-[var(--font-display)] text-xl font-semibold">Start this workspace</h3>
+            <p className="mt-2 text-sm text-[var(--muted)]">Complete onboarding, open a requisition, create the first job, and then move into Resume Search and ATS from the links above.</p>
+          </Card>
+        ) : null}
         <JobsTable jobs={jobs.map((job) => ({ ...job, applicants: job.applicationsCount || 0 }))} />
         <Card>
           <h3 className="font-[var(--font-display)] text-xl font-semibold">Recent applications</h3>
@@ -67,8 +89,7 @@ export default async function RecruiterDashboardPage() {
             </div>
           </Card>
         </div>
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }
 

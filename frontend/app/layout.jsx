@@ -1,18 +1,20 @@
-import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
+import { Inter } from 'next/font/google';
+import { AppProviders } from '@/components/providers/app-providers';
 import './globals.css';
 
-const display = Outfit({ subsets: ['latin'], variable: '--font-display' });
-const body = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-body' });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export const metadata = {
-  title: 'CareerCraft AI | AI Career Platform',
-  description: 'AI-powered resume building, cover letters, ATS scoring, job tracking, and admin operations.',
+  title: 'Careeriz | AI-Powered Talent Intelligence Platform',
+  description: 'Careeriz is an AI-powered talent intelligence platform for hiring teams and candidates.',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
-      <body className="font-[var(--font-body)] text-[var(--text)]">{children}</body>
+    <html lang="en" className={inter.variable}>
+      <body className="font-[var(--font-body)] text-[var(--text)]">
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }

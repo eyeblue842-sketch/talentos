@@ -24,9 +24,69 @@ export async function getCurrentOrganisation() {
   return response.data;
 }
 
+export async function getRecruiterOnboardingState() {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/current/onboarding', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function completeRecruiterOnboarding(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/current/onboarding', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
 export async function getOrganisationMembers() {
   const token = await requireToken();
   const response = await requestBackend('/organisations/members', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getOrganisationInvitations() {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/invitations', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function createOrganisationInvitation(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/invitations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function resendOrganisationInvitation(invitationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/organisations/invitations/${invitationId}/resend`, {
+    method: 'POST',
+  }, token);
+  return response.data;
+}
+
+export async function revokeOrganisationInvitation(invitationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/organisations/invitations/${invitationId}/revoke`, {
+    method: 'POST',
+  }, token);
+  return response.data;
+}
+
+export async function getInvitationTokenDetail(tokenValue) {
+  const response = await requestBackend(`/organisations/invitations/token/${tokenValue}`, { method: 'GET' });
+  return response.data;
+}
+
+export async function acceptOrganisationInvitation(tokenValue) {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/invitations/accept', {
+    method: 'POST',
+    body: JSON.stringify({ token: tokenValue }),
+  }, token);
   return response.data;
 }
 
@@ -52,7 +112,7 @@ export async function searchCandidates(query = '') {
   const response = await requestBackend(`/resumes/search${query ? `?${query}` : ''}`, { method: 'GET' }, token);
   return {
     items: response.data,
-    meta: response.meta,
+    meta: response.meta || {},
   };
 }
 
@@ -183,9 +243,9 @@ export async function markAllCandidateNotificationsRead() {
   return response.data;
 }
 
-export async function getCandidateRecommendations() {
+export async function getCandidateRecommendations(filters = {}) {
   const token = await requireToken();
-  const response = await requestBackend('/candidate/recommendations', { method: 'GET' }, token);
+  const response = await requestBackend(`/candidate/recommendations${buildQueryString(filters)}`, { method: 'GET' }, token);
   return response.data;
 }
 
@@ -216,6 +276,12 @@ export async function getCandidateDetail(candidateId) {
   return response.data;
 }
 
+export async function getRecruiterCandidatePreview(candidateId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resumes/preview/${candidateId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function getSavedCandidates(query = '') {
   const token = await requireToken();
   const response = await requestBackend(`/resumes/saved${query ? `?${query}` : ''}`, { method: 'GET' }, token);
@@ -223,6 +289,75 @@ export async function getSavedCandidates(query = '') {
     items: response.data,
     meta: response.meta,
   };
+}
+
+export async function getRecruiterSavedSearches() {
+  const token = await requireToken();
+  const response = await requestBackend('/resumes/saved-searches', { method: 'GET' }, token);
+  return {
+    items: response.data,
+    recent: response.meta?.recent || [],
+  };
+}
+
+export async function getRecruiterTalentPools() {
+  const token = await requireToken();
+  const response = await requestBackend('/resumes/talent-pools', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function addResumeSearchCandidatesToAts(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/resume-search/add', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function shortlistResumeSearchCandidates(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/resume-search/shortlist', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function emailResumeSearchCandidates(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/resume-search/email', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function tagResumeSearchCandidates(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/resume-search/tag', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function createRecruiterTalentPool(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/resumes/talent-pools', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function addCandidatesToTalentPool(payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resumes/talent-pools/${payload.poolId}/candidates`, {
+    method: 'POST',
+    body: JSON.stringify({ candidateIds: payload.candidateIds }),
+  }, token);
+  return response.data;
 }
 
 export async function getRecruiterPipeline() {
@@ -249,10 +384,13 @@ export async function getRecruiterApplication(applicationId) {
   return response.data;
 }
 
-export async function getCandidateApplications() {
+export async function getCandidateApplications(filters = {}) {
   const token = await requireToken();
-  const response = await requestBackend('/candidate/applications', { method: 'GET' }, token);
-  return response.data;
+  const response = await requestBackend(`/candidate/applications${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
 }
 
 export async function getCandidateApplication(applicationId) {
@@ -261,9 +399,50 @@ export async function getCandidateApplication(applicationId) {
   return response.data;
 }
 
+export async function getCandidateApplicationWithdrawal(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/applications/${applicationId}/withdrawal`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function withdrawCandidateApplication(applicationId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/applications/${applicationId}/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
 export async function getCandidateResumeAssets() {
   const token = await requireToken();
   const response = await requestBackend('/candidate/resumes', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateRecentJobs(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/recent-jobs${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function recordCandidateRecentJob(jobId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/recent-jobs', {
+    method: 'POST',
+    body: JSON.stringify({ jobId, ...payload }),
+  }, token);
+  return response.data;
+}
+
+export async function clearCandidateRecentJobs() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/recent-jobs', {
+    method: 'DELETE',
+  }, token);
   return response.data;
 }
 

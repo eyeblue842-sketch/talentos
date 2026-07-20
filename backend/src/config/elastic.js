@@ -1,16 +1,19 @@
 import { Client } from '@elastic/elasticsearch';
 import { env } from './env.js';
 
+const resumeSearchUnavailableMessage = 'Resume search is temporarily unavailable.';
+
+export function isElasticsearchEnabled() {
+  return env.elasticsearchEnabled;
+}
+
 export function __resolveElasticConfig(config = {}) {
-  const inferredTestMode = process.env.NODE_ENV === 'test'
-    || process.argv.some((arg) => arg.includes('node:test') || arg === '--test')
-    || process.execArgv.includes('--test');
-  const isTest = config.isTest ?? (env.isTest || inferredTestMode);
+  const enabled = config.elasticsearchEnabled ?? isElasticsearchEnabled();
   const elasticsearchUrl = config.elasticsearchUrl ?? env.elasticsearchUrl;
 
   return {
-    enabled: !isTest && Boolean(elasticsearchUrl),
-    node: !isTest && elasticsearchUrl ? elasticsearchUrl : null,
+    enabled,
+    node: enabled ? elasticsearchUrl : null,
   };
 }
 
@@ -20,8 +23,15 @@ export const elastic = elasticConfig.enabled
   ? new Client({ node: elasticConfig.node })
   : null;
 
+export function createResumeSearchUnavailableError() {
+  const error = new Error(resumeSearchUnavailableMessage);
+  error.statusCode = 503;
+  error.code = 'RESUME_SEARCH_UNAVAILABLE';
+  return error;
+}
+
 export async function ensureResumeIndex() {
-  if (!elastic) return;
+  if (!isElasticsearchEnabled()) return;
   const exists = await elastic.indices.exists({ index: env.elasticsearchIndex });
   if (exists) return;
 

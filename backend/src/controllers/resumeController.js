@@ -7,7 +7,18 @@ import {
   generateResumePdf,
   getCandidateResumeDownload,
 } from '../services/resumeService.js';
-import { getAuthorizedCandidateDetail, searchCandidates } from '../services/searchService.js';
+import {
+  addCandidatesToTalentPool,
+  createRecruiterSavedSearch,
+  createTalentPool,
+  deleteRecruiterSavedSearch,
+  getAuthorizedCandidateDetail,
+  getRecruiterCandidatePreview,
+  listRecruiterRecentSearches,
+  listRecruiterSavedSearches,
+  listTalentPools,
+  searchCandidates,
+} from '../services/searchService.js';
 import { prisma } from '../config/db.js';
 import { getCandidateRecommendations } from '../services/candidateService.js';
 import { apiError, sendSuccess } from '../utils/response.js';
@@ -32,16 +43,31 @@ export async function searchResumeDatabase(req, res, next) {
     const filters = {
       keyword: req.query.keyword,
       skill: req.query.skill,
+      skills: req.query.skills,
+      booleanQuery: req.query.booleanQuery,
       location: req.query.location,
       minExperience,
       maxExperience,
       fresher: req.query.fresher,
       availability: req.query.availability,
       tag: req.query.tag,
+      currentCompany: req.query.currentCompany,
+      previousCompany: req.query.previousCompany,
+      designation: req.query.designation,
+      industry: req.query.industry,
+      education: req.query.education,
+      noticePeriod: req.query.noticePeriod,
+      currentSalary: req.query.currentSalary,
+      expectedSalary: req.query.expectedSalary,
+      workAuthorization: req.query.workAuthorization,
+      resumeFreshness: req.query.resumeFreshness,
+      lastActive: req.query.lastActive,
+      resumeAttachment: req.query.resumeAttachment,
+      sortBy: req.query.sortBy,
       page: req.query.page,
       pageSize: req.query.pageSize,
     };
-    const result = await searchCandidates(filters, req.user.activeMembership?.organisationId);
+    const result = await searchCandidates(filters, req.user.activeMembership?.organisationId, req.user);
     sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);
@@ -58,6 +84,24 @@ export async function getCandidateDetail(req, res, next) {
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
       }
+    );
+    sendSuccess(res, 200, candidate);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidatePreview(req, res, next) {
+  try {
+    const candidate = await getRecruiterCandidatePreview(
+      req.user,
+      req.params.candidateId,
+      req.user.activeMembership?.organisationId,
+      {
+        actorUserId: req.user.id,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      },
     );
     sendSuccess(res, 200, candidate);
   } catch (error) {
@@ -102,6 +146,84 @@ export async function listSavedCandidates(req, res, next) {
   try {
     const result = await getSavedCandidates(req.user, req.query, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, result.items, result.meta);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listSavedSearches(req, res, next) {
+  try {
+    const [saved, recent] = await Promise.all([
+      listRecruiterSavedSearches(req.user, req.user.activeMembership?.organisationId),
+      listRecruiterRecentSearches(req.user, req.user.activeMembership?.organisationId),
+    ]);
+    sendSuccess(res, 200, saved, { recent });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createSavedSearch(req, res, next) {
+  try {
+    const saved = await createRecruiterSavedSearch(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 201, saved);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteSavedSearch(req, res, next) {
+  try {
+    const result = await deleteRecruiterSavedSearch(
+      req.user,
+      req.params.searchId,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getTalentPools(req, res, next) {
+  try {
+    const pools = await listTalentPools(req.user, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, pools);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postTalentPool(req, res, next) {
+  try {
+    const pool = await createTalentPool(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 201, pool);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postTalentPoolCandidates(req, res, next) {
+  try {
+    const result = await addCandidatesToTalentPool(
+      req.user,
+      req.params.poolId,
+      req.body.candidateIds,
+      req.user.activeMembership?.organisationId,
+      { actorUserId: req.user.id, ipAddress: req.ip, userAgent: req.get('user-agent') },
+    );
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

@@ -1,17 +1,41 @@
 import { app } from './app.js';
 import { env } from './config/env.js';
-import { ensureResumeIndex } from './config/elastic.js';
+import { ensureResumeIndex, isElasticsearchEnabled } from './config/elastic.js';
+import { pathToFileURL } from 'url';
 
-const start = async () => {
-  try {
-    await ensureResumeIndex();
-    app.listen(env.port, () => {
-      console.log(`Careeriz API running on port ${env.port}`);
-    });
-  } catch (error) {
-    console.error('Failed to start server', error);
-    process.exit(1);
-  }
-};
+export function createServerStarter({
+  application = app,
+  runtimeEnv = env,
+  ensureResumeIndexFn = ensureResumeIndex,
+  elasticsearchEnabled = isElasticsearchEnabled,
+  logger = console,
+  exit = (code) => process.exit(code),
+} = {}) {
+  return async function start() {
+    try {
+      if (elasticsearchEnabled()) {
+        await ensureResumeIndexFn();
+      } else {
+        logger.warn('Elasticsearch is disabled. Resume search functionality is unavailable.');
+      }
 
-start();
+      return application.listen(runtimeEnv.port, () => {
+        logger.log(`Careeriz API running on port ${runtimeEnv.port}`);
+      });
+    } catch (error) {
+      logger.error('Failed to start server', error);
+      exit(1);
+      return null;
+    }
+  };
+}
+
+export const start = createServerStarter();
+
+const isDirectExecution = process.argv[1]
+  ? pathToFileURL(process.argv[1]).href === import.meta.url
+  : false;
+
+if (isDirectExecution) {
+  start();
+}

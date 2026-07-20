@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
 import { ScreeningQuestionBuilder } from '@/components/sections/screening-question-builder';
-import { recruiterNav } from '@/lib/mock-data';
-import { getApprovedRequisitions, getOrganisationMembers, getRecruiterJob, getRecruiterScreeningTemplates } from '@/lib/api';
+import { recruiterNav } from '@/lib/navigation';
+import { getApprovedRequisitions, getCurrentOrganisation, getOrganisationMembers, getRecruiterJob, getRecruiterScreeningTemplates } from '@/lib/api';
 import {
   addJobQuestionAction,
   addJobQuestionFromLibraryAction,
@@ -30,13 +31,15 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   const query = await searchParams;
 
   let job = null;
+  let organisation = null;
   let members = [];
   let requisitions = [];
   let templates = [];
   let error = '';
 
   try {
-    [job, members, requisitions, templates] = await Promise.all([
+    [organisation, job, members, requisitions, templates] = await Promise.all([
+      getCurrentOrganisation(),
       getRecruiterJob(jobId),
       getOrganisationMembers(),
       getApprovedRequisitions(),
@@ -49,10 +52,14 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   const assignees = members.filter((member) => ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(member.role));
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Hiring Ops" items={recruiterNav} />
-      <section className="space-y-6">
-        <Link href="/recruiter/jobs" className="text-sm font-semibold text-[var(--brand)]">Back to jobs</Link>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <PageHeader
+        eyebrow={organisation?.slug || 'Recruiter'}
+        title={job?.title || 'Job detail'}
+        description={job ? 'Review ownership, pipeline summary, and screening setup for this organisation job.' : 'Recruiter job detail workspace.'}
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Jobs', href: '/recruiter/jobs' }, { label: job?.title || 'Detail' }]}
+        secondaryActions={[{ label: 'Back to jobs', href: '/recruiter/jobs' }]}
+      />
         {query?.notice ? <p className="text-sm font-semibold text-[var(--brand)]">{query.notice}</p> : null}
         {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
         {job ? (
@@ -181,7 +188,6 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
             />
           </>
         ) : null}
-      </section>
-    </main>
+    </WorkspaceShell>
   );
 }

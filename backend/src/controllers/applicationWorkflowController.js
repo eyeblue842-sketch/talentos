@@ -5,6 +5,7 @@ import {
   createScreeningTemplate,
   duplicateJobScreeningQuestion,
   duplicateScreeningTemplate,
+  getCandidateApplicationWithdrawalEligibility,
   getCandidateApplicationDetail,
   getOwnedResumeDownload,
   getPublicJobApplyContext,
@@ -24,6 +25,7 @@ import {
   updateScreeningTemplate,
   uploadCandidateResumeAsset,
   validateApplicationAnswers,
+  withdrawCandidateApplication,
 } from '../services/applicationWorkflowService.js';
 import { sendSuccess } from '../utils/response.js';
 
@@ -240,8 +242,8 @@ export async function submitCandidateApplication(req, res, next) {
 
 export async function getCandidateApplicationsV2(req, res, next) {
   try {
-    const result = await listCandidateJobApplications(req.user);
-    sendSuccess(res, 200, result);
+    const result = await listCandidateJobApplications(req.user, req.query);
+    sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);
   }
@@ -250,6 +252,28 @@ export async function getCandidateApplicationsV2(req, res, next) {
 export async function getCandidateApplicationV2(req, res, next) {
   try {
     const result = await getCandidateApplicationDetail(req.user, req.params.applicationId);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidateApplicationWithdrawalV2(req, res, next) {
+  try {
+    const result = await getCandidateApplicationWithdrawalEligibility(req.user, req.params.applicationId);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function withdrawCandidateApplicationV2(req, res, next) {
+  try {
+    const result = await withdrawCandidateApplication(req.user, req.params.applicationId, req.body, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

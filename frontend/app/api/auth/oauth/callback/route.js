@@ -1,14 +1,11 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { requestBackend, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
-
-function safeInternalPath(path, fallback = '/candidate') {
-  return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') ? path : fallback;
-}
+import { resolvePostAuthRoute, safeInternalPath } from '@/lib/roles';
 
 export async function GET(request) {
   const code = request.nextUrl.searchParams.get('code');
-  const next = safeInternalPath(request.nextUrl.searchParams.get('next'));
+  const next = safeInternalPath(request.nextUrl.searchParams.get('next'), '/auth');
 
   if (!code) {
     const redirectUrl = new URL('/auth', request.nextUrl.origin);
@@ -24,7 +21,8 @@ export async function GET(request) {
 
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE, response.data.token, sessionCookieOptions());
-    return NextResponse.redirect(new URL(next, request.nextUrl.origin));
+    const target = resolvePostAuthRoute(response.data.session.user.role, next);
+    return NextResponse.redirect(new URL(target, request.nextUrl.origin));
   } catch (error) {
     const redirectUrl = new URL('/auth', request.nextUrl.origin);
     redirectUrl.searchParams.set('oauthError', error.message || 'OAuth sign-in failed.');

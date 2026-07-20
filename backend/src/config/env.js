@@ -9,8 +9,10 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url(),
   BACKEND_URL: z.string().url().optional(),
   DATABASE_URL: z.string().min(1),
+  DIRECT_URL: z.string().min(1).optional(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters.'),
   JWT_EXPIRES_IN: z.string().default('12h'),
+  ELASTICSEARCH_ENABLED: z.enum(['true', 'false']).default('false'),
   ELASTICSEARCH_URL: z.string().url().optional(),
   ELASTICSEARCH_INDEX: z.string().default('resumes'),
   STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -33,9 +35,21 @@ const envSchema = z.object({
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
   LINKEDIN_REDIRECT_URI: z.string().url().optional(),
+}).superRefine((data, context) => {
+  if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ELASTICSEARCH_URL'],
+      message: 'ELASTICSEARCH_URL is required when ELASTICSEARCH_ENABLED=true.',
+    });
+  }
 });
 
-const parsed = envSchema.safeParse(process.env);
+export function parseEnv(rawEnv) {
+  return envSchema.safeParse(rawEnv);
+}
+
+const parsed = parseEnv(process.env);
 
 if (!parsed.success) {
   const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
@@ -52,8 +66,10 @@ export const env = {
   frontendUrl: parsed.data.FRONTEND_URL,
   backendUrl: parsed.data.BACKEND_URL || `http://localhost:${parsed.data.PORT}`,
   databaseUrl: parsed.data.DATABASE_URL,
+  directUrl: parsed.data.DIRECT_URL || parsed.data.DATABASE_URL,
   jwtSecret: parsed.data.JWT_SECRET,
   jwtExpiresIn: parsed.data.JWT_EXPIRES_IN,
+  elasticsearchEnabled: parsed.data.ELASTICSEARCH_ENABLED === 'true',
   elasticsearchUrl: parsed.data.ELASTICSEARCH_URL,
   elasticsearchIndex: parsed.data.ELASTICSEARCH_INDEX,
   storageProvider: parsed.data.STORAGE_PROVIDER,

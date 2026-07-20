@@ -1,8 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getSessionToken, requestBackend } from '@/lib/auth';
+import { getSessionToken, ORGANISATION_COOKIE, requestBackend } from '@/lib/auth';
 
 function splitCommaList(value) {
   return String(value || '')
@@ -18,6 +19,18 @@ async function recruiterRequest(path, options = {}) {
   }
 
   return requestBackend(path, options, token);
+}
+
+async function setActiveOrganisationCookie(organisationId) {
+  if (!organisationId) return;
+  const cookieStore = await cookies();
+  cookieStore.set(ORGANISATION_COOKIE, organisationId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30,
+  });
 }
 
 function asNullableString(value) {
@@ -111,6 +124,62 @@ export async function createJobAction(formData) {
   revalidatePath('/recruiter');
   revalidatePath('/recruiter/jobs');
   redirect('/recruiter/jobs?notice=job-created');
+}
+
+export async function completeRecruiterOnboardingAction(formData) {
+  const payload = {
+    organisationName: String(formData.get('organisationName') || '').trim(),
+    workspaceSlug: String(formData.get('workspaceSlug') || '').trim(),
+    companyWebsite: asNullableString(formData.get('companyWebsite')),
+    industry: String(formData.get('industry') || '').trim(),
+    companySize: String(formData.get('companySize') || '').trim(),
+    location: String(formData.get('location') || '').trim(),
+    designation: String(formData.get('designation') || '').trim(),
+    teamInvitationEmail: asNullableString(formData.get('teamInvitationEmail')),
+    teamInvitationRole: asNullableString(formData.get('teamInvitationRole')),
+  };
+
+  const response = await recruiterRequest('/organisations/current/onboarding', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (payload.teamInvitationEmail && payload.teamInvitationRole) {
+    await recruiterRequest('/organisations/invitations', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: payload.teamInvitationEmail,
+        role: payload.teamInvitationRole,
+      }),
+    });
+  }
+
+  await setActiveOrganisationCookie(response.data.organisation?.id);
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/onboarding');
+  redirect('/recruiter?notice=workspace-ready');
+}
+
+export async function inviteOrganisationMemberAction(formData) {
+  await recruiterRequest('/organisations/invitations', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: String(formData.get('email') || '').trim(),
+      role: String(formData.get('role') || '').trim(),
+    }),
+  });
+  revalidatePath('/recruiter/members');
+  redirect('/recruiter/members?notice=invitation-sent');
+}
+
+export async function resendOrganisationInvitationAction(invitationId) {
+  await recruiterRequest(`/organisations/invitations/${invitationId}/resend`, { method: 'POST' });
+  revalidatePath('/recruiter/members');
+}
+
+export async function revokeOrganisationInvitationAction(invitationId) {
+  await recruiterRequest(`/organisations/invitations/${invitationId}/revoke`, { method: 'POST' });
+  revalidatePath('/recruiter/members');
 }
 
 export async function updateJobAction(jobId, formData) {

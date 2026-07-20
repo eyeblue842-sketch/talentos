@@ -290,5 +290,5 @@ test('application submission creates answer snapshots and review flags without t
 
   assert.equal(state.createdAnswers.length, 1);
   assert.equal(state.createdFlags.length, 1);
-  assert.equal(result.stage, 'APPLIED');
+  assert.equal(result.stage, 'APPLICATION_RECEIVED');
 });

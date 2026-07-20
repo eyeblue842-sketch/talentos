@@ -12,6 +12,15 @@ const PUBLIC_REFERENCE_LENGTH = 10;
 const DEFAULT_ALLOWED_UPLOAD_EXTENSIONS = ['pdf', 'doc', 'docx'];
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const ANSWER_FILE_MAX_BYTES = 5 * 1024 * 1024;
+const candidateWithdrawalAllowedStages = ['APPLIED', 'SHORTLISTED'];
+const candidateVisibleStatusMap = {
+  APPLIED: { code: 'APPLICATION_RECEIVED', label: 'Application Received', group: 'ACTIVE' },
+  SHORTLISTED: { code: 'UNDER_REVIEW', label: 'Under Review', group: 'ACTIVE' },
+  INTERVIEW_SCHEDULED: { code: 'INTERVIEW_STAGE', label: 'Interview Stage', group: 'INTERVIEW' },
+  SELECTED: { code: 'SELECTED', label: 'Selected', group: 'CLOSED' },
+  REJECTED: { code: 'APPLICATION_CLOSED', label: 'Application Closed', group: 'CLOSED' },
+  WITHDRAWN: { code: 'APPLICATION_WITHDRAWN', label: 'Application Withdrawn', group: 'WITHDRAWN' },
+};
 
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value;
@@ -29,6 +38,48 @@ function buildMeta(total, page, pageSize) {
 function clampPage(page, pageSize, total) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return Math.min(Math.max(1, page), pageCount);
+}
+
+function getCandidateVisibleStatus(stage) {
+  return candidateVisibleStatusMap[stage] || candidateVisibleStatusMap.APPLIED;
+}
+
+function getCandidateTimelineMessage(stage, jobTitle) {
+  switch (stage) {
+    case 'SHORTLISTED':
+      return `Your application for ${jobTitle} is under review.`;
+    case 'INTERVIEW_SCHEDULED':
+      return `Your application for ${jobTitle} has moved to the interview stage.`;
+    case 'SELECTED':
+      return `You have been selected for ${jobTitle}.`;
+    case 'REJECTED':
+      return `Your application for ${jobTitle} has been closed.`;
+    case 'WITHDRAWN':
+      return `Your application for ${jobTitle} was withdrawn.`;
+    case 'APPLIED':
+    default:
+      return `Your application for ${jobTitle} was received.`;
+  }
+}
+
+function buildCandidateSafeTimelineItem(item) {
+  return {
+    id: item.id,
+    eventType: item.eventType,
+    message: item.message,
+    metadata: item.metadata,
+    isCandidateVisible: item.isCandidateVisible,
+    createdAt: iso(item.createdAt),
+  };
+}
+
+function buildCandidateApplicationStatus(application) {
+  const visible = getCandidateVisibleStatus(application.application?.currentStage || 'APPLIED');
+  return {
+    candidateStatus: visible.code,
+    candidateStatusLabel: visible.label,
+    candidateStatusGroup: visible.group,
+  };
 }
 
 function sanitizeText(value, max = SOURCE_VALUE_MAX) {
@@ -483,6 +534,9 @@ async function createApplicationNotifications(tx, payload) {
       message: `${payload.candidateName} applied to ${payload.jobTitle}.`,
       entityType: 'JobApplication',
       entityId: payload.jobApplicationId,
+      metadata: {
+        applicationId: payload.jobApplicationId,
+      },
     },
   }));
 
@@ -493,8 +547,11 @@ async function createApplicationNotifications(tx, payload) {
       type: 'APPLICATION',
       title: 'Application submitted',
       message: `Your application for ${payload.jobTitle} was submitted successfully.`,
-      entityType: 'JobApplication',
+      entityType: 'Application',
       entityId: payload.jobApplicationId,
+      metadata: {
+        applicationId: payload.jobApplicationId,
+      },
     },
   }));
 
@@ -1071,6 +1128,7 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
           jobId: freshJob.id,
           candidateId: candidateProfile.id,
           applicationId: application.id,
+          candidateStatusUpdatedAt: new Date(),
           sourceType: source.sourceType,
           sourceName: source.sourceName,
           sourceCampaign: source.sourceCampaign,
@@ -1224,6 +1282,7 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
 }
 
 function serializeJobApplicationDetail(application) {
+  const candidateStatus = buildCandidateApplicationStatus(application);
   return {
     id: application.id,
     applicationId: application.applicationId,
@@ -1243,13 +1302,20 @@ function serializeJobApplicationDetail(application) {
       directLinkIdentifier: application.directLinkIdentifier,
     },
     screeningSummary: application.screeningSummary || {},
-    status: application.application?.statusLabel || 'Applied',
-    stage: application.application?.currentStage || 'APPLIED',
+    status: candidateStatus.candidateStatusLabel,
+    stage: candidateStatus.candidateStatus,
+    statusGroup: candidateStatus.candidateStatusGroup,
+    canWithdraw: candidateWithdrawalAllowedStages.includes(application.application?.currentStage)
+      && !application.withdrawnAt,
+    withdrawnAt: iso(application.withdrawnAt),
+    withdrawalReason: application.withdrawalReason,
     job: application.job ? {
       id: application.job.id,
       title: application.job.title,
       slug: application.job.slug,
       location: application.job.location,
+      employmentType: application.job.employmentType,
+      workplaceType: application.job.workplaceType,
       organisation: application.job.organisation ? {
         id: application.job.organisation.id,
         name: application.job.organisation.name,
@@ -1306,14 +1372,7 @@ function serializeJobApplicationDetail(application) {
       createdAt: iso(flag.createdAt),
       resolvedAt: iso(flag.resolvedAt),
     })),
-    timeline: (application.timeline || []).map((item) => ({
-      id: item.id,
-      eventType: item.eventType,
-      message: item.message,
-      metadata: item.metadata,
-      isCandidateVisible: item.isCandidateVisible,
-      createdAt: iso(item.createdAt),
-    })),
+    timeline: (application.timeline || []).map(buildCandidateSafeTimelineItem),
     notes: (application.application?.notes || []).map((note) => ({
       id: note.id,
       content: note.content,
@@ -1495,48 +1554,265 @@ export async function getCandidateApplicationDetail(candidateUser, jobApplicatio
     throw error;
   }
 
+  const detail = serializeJobApplicationDetail(application);
   return {
-    ...serializeJobApplicationDetail(application),
+    ...detail,
     flags: undefined,
+    notes: undefined,
+    activities: undefined,
+    interviewProcesses: undefined,
+    answers: (detail.answers || []).map((answer) => ({
+      ...answer,
+      screeningOutcome: undefined,
+      file: answer.file ? { id: answer.file.id, filename: answer.file.filename } : null,
+    })),
+    resume: detail.resume ? {
+      id: detail.resume.id,
+      filename: detail.resume.filename,
+      mimeType: detail.resume.mimeType,
+      sizeBytes: detail.resume.sizeBytes,
+    } : null,
   };
 }
 
-export async function listCandidateJobApplications(candidateUser) {
+export async function listCandidateJobApplications(candidateUser, filters = {}) {
+  const candidateId = candidateUser.candidateProfile.id;
+  const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
+  const requestedPage = Math.max(1, Number(filters.page) || 1);
+  const filter = String(filters.filter || 'ALL').toUpperCase();
+  const stageGroups = {
+    ACTIVE: ['APPLIED', 'SHORTLISTED'],
+    INTERVIEW: ['INTERVIEW_SCHEDULED'],
+    OFFER: [],
+    CLOSED: ['SELECTED', 'REJECTED'],
+    WITHDRAWN: ['WITHDRAWN'],
+  };
+  const where = {
+    candidateId,
+    ...(filter !== 'ALL' ? { application: { currentStage: { in: stageGroups[filter] || [] } } } : {}),
+  };
+  const orderBy = (() => {
+    switch (String(filters.sort || 'recently_updated')) {
+      case 'recently_applied':
+        return [{ submittedAt: 'desc' }, { id: 'asc' }];
+      case 'oldest':
+        return [{ submittedAt: 'asc' }, { id: 'asc' }];
+      case 'job_title':
+        return [{ job: { title: 'asc' } }, { submittedAt: 'desc' }];
+      case 'recently_updated':
+      default:
+        return [{ updatedAt: 'desc' }, { submittedAt: 'desc' }];
+    }
+  })();
+
+  const total = await prisma.jobApplication.count({ where });
+  const page = clampPage(requestedPage, pageSize, total);
   const rows = await prisma.jobApplication.findMany({
-    where: { candidateId: candidateUser.candidateProfile.id },
+    where,
     include: {
       job: { include: { organisation: true } },
       application: true,
       resumeSnapshot: true,
       timeline: { where: { isCandidateVisible: true }, orderBy: { createdAt: 'desc' }, take: 5 },
     },
-    orderBy: { submittedAt: 'desc' },
+    orderBy,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   });
-  return rows.map((row) => ({
-    id: row.id,
-    publicReference: row.publicReference,
-    submittedAt: iso(row.submittedAt),
-    status: row.application?.statusLabel || 'Applied',
-    stage: row.application?.currentStage || 'APPLIED',
-    job: row.job ? {
-      id: row.job.id,
-      title: row.job.title,
-      slug: row.job.slug,
-      organisation: row.job.organisation ? {
-        name: row.job.organisation.name,
-        slug: row.job.organisation.slug,
-      } : null,
-    } : null,
-    resume: row.resumeSnapshot ? {
-      filename: row.resumeSnapshot.filename,
-    } : null,
-    timeline: row.timeline.map((item) => ({
-      id: item.id,
-      eventType: item.eventType,
-      message: item.message,
-      createdAt: iso(item.createdAt),
-    })),
-  }));
+  return {
+    items: rows.map((row) => {
+      const candidateStatus = buildCandidateApplicationStatus(row);
+      return {
+        id: row.id,
+        publicReference: row.publicReference,
+        submittedAt: iso(row.submittedAt),
+        updatedAt: iso(row.updatedAt),
+        status: candidateStatus.candidateStatusLabel,
+        stage: candidateStatus.candidateStatus,
+        statusGroup: candidateStatus.candidateStatusGroup,
+        canWithdraw: candidateWithdrawalAllowedStages.includes(row.application?.currentStage) && !row.withdrawnAt,
+        job: row.job ? {
+          id: row.job.id,
+          title: row.job.title,
+          slug: row.job.slug,
+          location: row.job.location,
+          employmentType: row.job.employmentType,
+          workplaceType: row.job.workplaceType,
+          organisation: row.job.organisation ? {
+            name: row.job.organisation.name,
+            slug: row.job.organisation.slug,
+          } : null,
+        } : null,
+        resume: row.resumeSnapshot ? {
+          filename: row.resumeSnapshot.filename,
+        } : null,
+        timeline: row.timeline.map(buildCandidateSafeTimelineItem),
+        latestUpdate: row.timeline[0]?.message || null,
+      };
+    }),
+    meta: buildMeta(total, page, pageSize),
+  };
+}
+
+export async function getCandidateApplicationWithdrawalEligibility(candidateUser, jobApplicationId) {
+  const application = await prisma.jobApplication.findFirst({
+    where: {
+      id: jobApplicationId,
+      candidateId: candidateUser.candidateProfile.id,
+    },
+    include: {
+      application: true,
+      job: true,
+    },
+  });
+
+  if (!application) {
+    const error = new Error('Application not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const canWithdraw = candidateWithdrawalAllowedStages.includes(application.application?.currentStage)
+    && !application.withdrawnAt;
+
+  return {
+    canWithdraw,
+    reasonCode: canWithdraw ? null : application.withdrawnAt ? 'ALREADY_WITHDRAWN' : 'STATUS_NOT_WITHDRAWABLE',
+    status: buildCandidateApplicationStatus(application).candidateStatusLabel,
+  };
+}
+
+export async function withdrawCandidateApplication(candidateUser, jobApplicationId, payload = {}, requestMeta = {}) {
+  const existing = await prisma.jobApplication.findFirst({
+    where: {
+      id: jobApplicationId,
+      candidateId: candidateUser.candidateProfile.id,
+    },
+    include: {
+      application: true,
+      job: true,
+      candidate: { include: { user: true } },
+    },
+  });
+
+  if (!existing) {
+    const error = new Error('Application not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (existing.withdrawnAt) {
+    const error = new Error('This application has already been withdrawn.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (!candidateWithdrawalAllowedStages.includes(existing.application?.currentStage)) {
+    const error = new Error('This application can no longer be withdrawn.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.application.update({
+      where: { id: existing.application.id },
+      data: {
+        currentStage: 'WITHDRAWN',
+        statusLabel: 'Withdrawn',
+      },
+    });
+
+    await tx.jobApplication.update({
+      where: { id: existing.id },
+      data: {
+        withdrawnAt: new Date(),
+        withdrawalReason: payload.reason || null,
+        withdrawalNote: payload.note || null,
+        withdrawnByUserId: candidateUser.id,
+        candidateStatusUpdatedAt: new Date(),
+      },
+    });
+
+    await tx.applicationTimeline.create({
+      data: {
+        organisationId: existing.organisationId,
+        applicationId: existing.id,
+        actorUserId: candidateUser.id,
+        eventType: 'APPLICATION_WITHDRAWN',
+        message: getCandidateTimelineMessage('WITHDRAWN', existing.job.title),
+        metadata: {
+          reason: payload.reason || null,
+        },
+        isCandidateVisible: true,
+      },
+    });
+
+    await tx.applicationActivity.create({
+      data: {
+        organisationId: existing.organisationId,
+        applicationId: existing.application.id,
+        actorUserId: candidateUser.id,
+        eventType: 'APPLICATION_WITHDRAWN',
+        message: 'Candidate withdrew the application.',
+        metadata: {
+          reason: payload.reason || null,
+        },
+      },
+    });
+
+    const recruiterIds = await tx.organisationMembership.findMany({
+      where: {
+        organisationId: existing.organisationId,
+        status: 'ACTIVE',
+        role: { in: ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'] },
+      },
+      select: { userId: true },
+    });
+
+    await Promise.all(recruiterIds.map((row) => tx.notification.create({
+      data: {
+        organisationId: existing.organisationId,
+        recipientUserId: row.userId,
+        type: 'APPLICATION',
+        title: 'Application withdrawn',
+        message: `${existing.candidate.fullName} withdrew their application for ${existing.job.title}.`,
+        entityType: 'JobApplication',
+        entityId: existing.id,
+        metadata: {
+          applicationId: existing.id,
+        },
+      },
+    })));
+
+    await tx.notification.create({
+      data: {
+        organisationId: existing.organisationId,
+        recipientUserId: candidateUser.id,
+        type: 'APPLICATION',
+        title: 'Application withdrawn',
+        message: `You withdrew your application for ${existing.job.title}.`,
+        entityType: 'Application',
+        entityId: existing.id,
+        metadata: {
+          applicationId: existing.id,
+        },
+      },
+    });
+  });
+
+  await recordAuditLog({
+    organisationId: existing.organisationId,
+    actorUserId: candidateUser.id,
+    action: 'application.withdraw',
+    entityType: 'JobApplication',
+    entityId: existing.id,
+    metadata: {
+      reason: payload.reason || null,
+    },
+    ...requestMeta,
+  });
+
+  return getCandidateApplicationDetail(candidateUser, jobApplicationId);
 }
 
 export async function getOwnedResumeDownload(candidateUser, assetId) {

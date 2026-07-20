@@ -32,6 +32,13 @@ enum MembershipStatus {
   INACTIVE
 }
 
+enum OrganisationInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 enum JobStatus {
   DRAFT
   OPEN
@@ -65,6 +72,7 @@ enum PipelineStage {
   INTERVIEW_SCHEDULED
   SELECTED
   REJECTED
+  WITHDRAWN
 }
 
 enum AvailabilityStatus {
@@ -206,6 +214,31 @@ enum ResumeAssetKind {
   SCREENING_FILE
 }
 
+enum JobAlertFrequency {
+  IMMEDIATE
+  DAILY
+  WEEKLY
+  DISABLED
+}
+
+enum CandidateActivityType {
+  PROFILE_UPDATED
+  RESUME_UPLOADED
+  JOB_VIEWED
+  JOB_SAVED
+  JOB_UNSAVED
+  APPLICATION_SUBMITTED
+  APPLICATION_WITHDRAWN
+  NOTIFICATION_OPENED
+  RECENT_HISTORY_CLEARED
+  PREFERENCES_UPDATED
+}
+
+enum RecruiterSavedSearchType {
+  SAVED
+  RECENT
+}
+
 model User {
   id                         String                      @id @default(cuid())
   email                      String                      @unique
@@ -236,6 +269,8 @@ model User {
   screeningQuestionTemplates ScreeningQuestionTemplate[] @relation("ScreeningQuestionTemplateAuthor")
   jobScreeningQuestions      JobScreeningQuestion[]      @relation("JobScreeningQuestionAuthor")
   resumeAssets               ResumeAsset[]               @relation("ResumeAssetOwner")
+  sentOrganisationInvites    OrganisationInvitation[]    @relation("OrganisationInvitationInvitedBy")
+  acceptedOrganisationInvites OrganisationInvitation[]   @relation("OrganisationInvitationAcceptedBy")
 }
 
 model Organisation {
@@ -262,6 +297,8 @@ model Organisation {
   notes                      AtsNote[]
   activities                 ApplicationActivity[]
   savedCandidates            SavedCandidate[]
+  recruiterSavedSearches     RecruiterSavedSearch[]
+  talentPools                TalentPool[]
   requisitions               JobRequisition[]
   interviewPlans             InterviewProcess[]
   interviewRounds            InterviewRound[]
@@ -276,6 +313,7 @@ model Organisation {
   applicationAnswers         ApplicationScreeningAnswer[]
   applicationResumeSnapshots ApplicationResumeSnapshot[]
   applicationTimelines       ApplicationTimeline[]
+  invitations                OrganisationInvitation[]
 
   @@index([status])
 }
@@ -295,6 +333,29 @@ model OrganisationMembership {
   @@unique([organisationId, userId])
   @@index([userId, status])
   @@index([organisationId, role, status])
+}
+
+model OrganisationInvitation {
+  id               String                       @id @default(cuid())
+  organisationId   String
+  email            String
+  role             OrganisationRole
+  tokenHash        String                       @unique
+  status           OrganisationInvitationStatus @default(PENDING)
+  expiresAt        DateTime
+  invitedByUserId  String
+  acceptedByUserId String?
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  organisation     Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  invitedByUser    User                         @relation("OrganisationInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedByUser   User?                        @relation("OrganisationInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, expiresAt])
+  @@index([email, status, expiresAt])
+  @@index([organisationId, email])
 }
 
 model RecruiterProfile {
@@ -320,51 +381,70 @@ model RecruiterProfile {
   user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   organisation         Organisation?    @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   savedProfiles        SavedCandidate[]
+  savedSearches        RecruiterSavedSearch[]
+  createdTalentPools   TalentPool[]
 
   @@index([organisationId])
 }
 
 model CandidateProfile {
-  id                       String             @id @default(cuid())
-  userId                   String             @unique
-  fullName                 String
-  headline                 String?
-  currentTitle             String?
-  location                 String?
-  preferredLocations       String[]
-  preferredRoles           String[]           @default([])
-  totalExperience          Int                @default(0)
-  workplacePreferences     WorkplaceType[]    @default([])
-  employmentPreferences    EmploymentType[]   @default([])
-  currentCtcLpa            Int?
-  expectedCtcLpa           Int?
-  availability             AvailabilityStatus @default(IMMEDIATE)
-  noticePeriodDays         Int?
-  skills                   String[]
-  summary                  String?
-  resumeUrl                String?
-  latestResumeAssetId      String?
-  profileImageUrl          String?
-  portfolioUrl             String?
-  linkedInUrl              String?
-  githubUrl                String?
-  profileVisibility        ProfileVisibility  @default(PRIVATE)
-  recommendationEnabled    Boolean            @default(true)
-  notifyForSavedJobUpdates Boolean            @default(true)
-  notifyForRecommendations Boolean            @default(true)
-  notifyForInterviews      Boolean            @default(true)
-  sharedResumeSlug         String?            @unique
-  profileViews             Int                @default(0)
-  lastActiveAt             DateTime?
-  updatedAt                DateTime           @updatedAt
-  user                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  applications             Application[]
-  submittedApplications    JobApplication[]
-  resumeBuilder            ResumeBuilder?
-  savedByRecruiters        SavedCandidate[]
-  savedJobs                SavedJob[]
-  resumeAssets             ResumeAsset[]      @relation("CandidateResumeAssets")
-  latestResumeAsset        ResumeAsset?       @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  id                          String              @id @default(cuid())
+  userId                      String              @unique
+  fullName                    String
+  headline                    String?
+  currentTitle                String?
+  location                    String?
+  preferredLocations          String[]
+  preferredRoles              String[]            @default([])
+  totalExperience             Int                 @default(0)
+  workplacePreferences        WorkplaceType[]     @default([])
+  employmentPreferences       EmploymentType[]    @default([])
+  currentCtcLpa               Int?
+  expectedCtcLpa              Int?
+  availability                AvailabilityStatus  @default(IMMEDIATE)
+  noticePeriodDays            Int?
+  skills                      String[]
+  summary                     String?
+  resumeUrl                   String?
+  latestResumeAssetId         String?
+  profileImageUrl             String?
+  portfolioUrl                String?
+  linkedInUrl                 String?
+  githubUrl                   String?
+  profileVisibility           ProfileVisibility   @default(PRIVATE)
+  recommendationEnabled       Boolean             @default(true)
+  notifyForSavedJobUpdates    Boolean             @default(true)
+  notifyForRecommendations    Boolean             @default(true)
+  notifyForInterviews         Boolean             @default(true)
+  notifyForApplicationUpdates Boolean             @default(true)
+  notifyForOffers             Boolean             @default(true)
+  notifyForProfileReminders   Boolean             @default(true)
+  notifyForMarketing          Boolean             @default(false)
+  willingToRelocate           Boolean             @default(false)
+  minExpectedSalary           Int?
+  preferredCurrency           String?
+  workAuthorization           String?
+  requiresVisaSponsorship     Boolean             @default(false)
+  preferredIndustries         String[]            @default([])
+  preferredCompanySizes       String[]            @default([])
+  travelWillingness           String?
+  jobAlertEnabled             Boolean             @default(true)
+  jobAlertFrequency           JobAlertFrequency   @default(WEEKLY)
+  sharedResumeSlug            String?             @unique
+  profileViews                Int                 @default(0)
+  lastActiveAt                DateTime?
+  updatedAt                   DateTime            @updatedAt
+  user                        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications                Application[]
+  submittedApplications       JobApplication[]
+  resumeBuilder               ResumeBuilder?
+  savedByRecruiters           SavedCandidate[]
+  talentPoolMemberships       TalentPoolCandidate[]
+  savedJobs                   SavedJob[]
+  jobViews                    CandidateJobView[]
+  activities                  CandidateActivity[]
+  resumeAssets                ResumeAsset[]       @relation("CandidateResumeAssets")
+  latestResumeAsset           ResumeAsset?        @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
 
   @@index([recommendationEnabled, updatedAt])
 }
@@ -413,6 +493,7 @@ model Job {
   requisition           JobRequisition?        @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   applications          Application[]
   savedJobs             SavedJob[]
+  candidateViews        CandidateJobView[]
   screeningQuestions    JobScreeningQuestion[]
   submittedApplications JobApplication[]
 
@@ -549,40 +630,47 @@ model ResumeAsset {
 }
 
 model JobApplication {
-  id                   String                       @id @default(cuid())
-  publicReference      String                       @unique
-  organisationId       String
-  jobId                String
-  candidateId          String
-  applicationId        String?                      @unique
-  resumeSnapshotId     String?
-  sourceType           ApplicationSourceType        @default(UNKNOWN)
-  sourceName           String?
-  sourceCampaign       String?
-  utmSource            String?
-  utmMedium            String?
-  utmCampaign          String?
-  utmTerm              String?
-  utmContent           String?
-  referrer             String?
-  directLinkIdentifier String?
-  screeningSummary     Json?
-  submittedAt          DateTime                     @default(now())
-  createdAt            DateTime                     @default(now())
-  updatedAt            DateTime                     @updatedAt
-  organisation         Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Restrict)
-  job                  Job                          @relation(fields: [jobId], references: [id], onDelete: Restrict)
-  candidate            CandidateProfile             @relation(fields: [candidateId], references: [id], onDelete: Restrict)
-  application          Application?                 @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  resumeSnapshot       ApplicationResumeSnapshot?
-  answers              ApplicationScreeningAnswer[]
-  flags                ApplicationFlag[]
-  timeline             ApplicationTimeline[]
+  id                       String                       @id @default(cuid())
+  publicReference          String                       @unique
+  organisationId           String
+  jobId                    String
+  candidateId              String
+  applicationId            String?                      @unique
+  resumeSnapshotId         String?
+  sourceType               ApplicationSourceType        @default(UNKNOWN)
+  sourceName               String?
+  sourceCampaign           String?
+  utmSource                String?
+  utmMedium                String?
+  utmCampaign              String?
+  utmTerm                  String?
+  utmContent               String?
+  referrer                 String?
+  directLinkIdentifier     String?
+  screeningSummary         Json?
+  candidateStatusUpdatedAt DateTime?
+  withdrawnAt              DateTime?
+  withdrawalReason         String?
+  withdrawalNote           String?
+  withdrawnByUserId        String?
+  submittedAt              DateTime                     @default(now())
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  organisation             Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  job                      Job                          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  candidate                CandidateProfile             @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  application              Application?                 @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  resumeSnapshot           ApplicationResumeSnapshot?
+  answers                  ApplicationScreeningAnswer[]
+  flags                    ApplicationFlag[]
+  timeline                 ApplicationTimeline[]
 
   @@unique([jobId, candidateId])
   @@index([organisationId, submittedAt])
   @@index([organisationId, jobId, submittedAt])
   @@index([candidateId, submittedAt])
+  @@index([candidateId, updatedAt])
+  @@index([candidateId, withdrawnAt])
 }
 
 model ApplicationResumeSnapshot {
@@ -663,6 +751,39 @@ model ApplicationTimeline {
   application        JobApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
 
   @@index([organisationId, applicationId, createdAt])
+  @@index([applicationId, isCandidateVisible, createdAt])
+}
+
+model CandidateJobView {
+  id                     String           @id @default(cuid())
+  candidateId            String
+  jobId                  String
+  source                 String?
+  referrerClassification String?
+  firstViewedAt          DateTime         @default(now())
+  lastViewedAt           DateTime         @default(now())
+  viewCount              Int              @default(1)
+  candidate              CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job                    Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jobId])
+  @@index([candidateId, lastViewedAt])
+  @@index([jobId])
+}
+
+model CandidateActivity {
+  id            String                @id @default(cuid())
+  candidateId   String
+  userId        String?
+  applicationId String?
+  jobId         String?
+  type          CandidateActivityType
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+  candidate     CandidateProfile      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, createdAt])
+  @@index([type, createdAt])
 }
 
 model AtsNote {
@@ -725,6 +846,50 @@ model SavedCandidate {
 
   @@unique([recruiterId, candidateId])
   @@index([organisationId, candidateId])
+}
+
+model RecruiterSavedSearch {
+  id             String                   @id @default(cuid())
+  organisationId String
+  recruiterId    String
+  label          String
+  query          Json
+  type           RecruiterSavedSearchType @default(SAVED)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organisation   Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  recruiter      RecruiterProfile         @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, type, updatedAt])
+  @@index([recruiterId, type, updatedAt])
+}
+
+model TalentPool {
+  id                  String                @id @default(cuid())
+  organisationId      String
+  createdByRecruiterId String
+  name                String
+  description         String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  organisation        Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByRecruiter  RecruiterProfile      @relation(fields: [createdByRecruiterId], references: [id], onDelete: Cascade)
+  candidates          TalentPoolCandidate[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId, updatedAt])
+}
+
+model TalentPoolCandidate {
+  id            String           @id @default(cuid())
+  talentPoolId  String
+  candidateId   String
+  createdAt     DateTime         @default(now())
+  talentPool    TalentPool       @relation(fields: [talentPoolId], references: [id], onDelete: Cascade)
+  candidate     CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([talentPoolId, candidateId])
+  @@index([candidateId, createdAt])
 }
 
 model JobRequisition {
@@ -852,6 +1017,7 @@ model Notification {
   message         String
   entityType      String?
   entityId        String?
+  metadata        Json?
   readAt          DateTime?
   createdAt       DateTime         @default(now())
   organisation    Organisation?    @relation(fields: [organisationId], references: [id], onDelete: SetNull)

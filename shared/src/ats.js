@@ -19,6 +19,7 @@ export const organisationRoleSchema = z.enum([
 
 export const membershipStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 export const organisationStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
+export const organisationInvitationStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED']);
 
 export const employmentTypeSchema = z.enum([
   'FULL_TIME',
@@ -35,6 +36,7 @@ export const workplaceTypeSchema = z.enum([
 
 export const candidateTagSchema = z.enum(['SHORTLISTED', 'REJECTED', 'HOLD']);
 export const jobVisibilitySchema = z.enum(['EXTERNAL', 'INTERNAL', 'BOTH']);
+export const recruiterSavedSearchTypeSchema = z.enum(['SAVED', 'RECENT']);
 
 export const requisitionPrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 export const requisitionStatusSchema = z.enum([
@@ -216,6 +218,40 @@ export const atsNoteSchema = z.object({
 
 export const atsNoteUpdateSchema = atsNoteSchema;
 
+export const recruiterResumeSearchSaveSchema = z.object({
+  label: z.string().trim().min(2).max(120),
+  query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  type: recruiterSavedSearchTypeSchema.optional(),
+});
+
+export const recruiterTalentPoolCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(500).optional().nullable(),
+});
+
+export const recruiterTalentPoolCandidateSchema = z.object({
+  candidateIds: z.array(z.string().min(1)).min(1).max(100),
+});
+
+export const recruiterResumeWorkflowActionSchema = z.object({
+  candidateIds: z.array(z.string().min(1)).min(1).max(100),
+  jobId: z.string().min(1),
+  requisitionId: z.string().min(1).optional().nullable(),
+  action: z.enum(['ADD_TO_ATS', 'SHORTLIST']),
+});
+
+export const recruiterResumeEmailActionSchema = z.object({
+  candidateIds: z.array(z.string().min(1)).min(1).max(100),
+  jobId: z.string().min(1).optional().nullable(),
+  subject: z.string().trim().min(3).max(160),
+  body: z.string().trim().min(10).max(5000),
+});
+
+export const recruiterResumeTagActionSchema = z.object({
+  candidateIds: z.array(z.string().min(1)).min(1).max(100),
+  tag: candidateTagSchema,
+});
+
 export const organisationCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
   slug: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
@@ -233,6 +269,29 @@ export const organisationMemberUpdateSchema = z.object({
   status: membershipStatusSchema.optional(),
 }).refine((value) => value.role || value.status, {
   message: 'At least one field must be provided.',
+});
+
+export const recruiterOnboardingSchema = z.object({
+  organisationName: z.string().trim().min(2).max(120),
+  workspaceSlug: z.string().trim().min(2).max(80).regex(/^[a-z0-9-]+$/),
+  companyWebsite: z.string().trim().url().optional().or(z.literal('')).nullable(),
+  industry: z.string().trim().min(2).max(120),
+  companySize: z.string().trim().min(1).max(80),
+  location: z.string().trim().min(2).max(160),
+  designation: z.string().trim().min(2).max(120),
+  teamInvitationEmail: z.string().email().optional().or(z.literal('')).nullable(),
+  teamInvitationRole: organisationRoleSchema.optional().nullable(),
+});
+
+export const organisationInvitationCreateSchema = z.object({
+  email: z.string().email(),
+  role: organisationRoleSchema.refine((value) => value !== 'OWNER', {
+    message: 'Invitation role is not allowed.',
+  }),
+});
+
+export const organisationInvitationTokenSchema = z.object({
+  token: z.string().min(32),
 });
 
 export const requisitionBaseSchema = z.object({

@@ -269,7 +269,7 @@ export function ResumeBuilderStudio({ initialContext, compact = false }) {
           </div>
           {!compact ? (
             <div className="mt-5">
-              <Link href="/auth?role=candidate" className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold text-[var(--text)]">
+              <Link href="/auth/candidate/login" className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-3 text-sm font-semibold text-[var(--text)]">
                 <FilePenLine size={16} />
                 Open auth flow
               </Link>

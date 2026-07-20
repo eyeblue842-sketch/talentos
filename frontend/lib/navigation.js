@@ -10,13 +10,24 @@ export const recruiterNav = [
 ];
 
 export const candidateNav = [
-  { label: 'Dashboard', href: '/candidate', icon: 'LayoutDashboard' },
-  { label: 'Browse Jobs', href: '/candidate/jobs', icon: 'Search' },
+  { label: 'Dashboard', href: '/candidate/dashboard', icon: 'LayoutDashboard' },
+  { label: 'Jobs', href: '/candidate/jobs', icon: 'Search' },
   { label: 'Saved Jobs', href: '/candidate/saved-jobs', icon: 'BriefcaseBusiness' },
   { label: 'Applications', href: '/candidate/applications', icon: 'ClipboardList' },
   { label: 'Notifications', href: '/candidate/notifications', icon: 'BarChart3' },
+  { label: 'AI Tools', href: '/candidate/tools', icon: 'Sparkles' },
+  { label: 'Resume', href: '/candidate/resume-builder', icon: 'FilePenLine' },
   { label: 'Profile', href: '/candidate/profile', icon: 'Users' },
   { label: 'Settings', href: '/candidate/settings', icon: 'Settings2' },
-  { label: 'Resume Builder', href: '/candidate/resume-builder', icon: 'FilePenLine' },
 ];
 
+export const adminNav = [
+  { label: 'Overview', href: '/admin', icon: 'LayoutDashboard' },
+];
+
+export function getNavigationForRole(role) {
+  if (role === 'CANDIDATE') return candidateNav;
+  if (role === 'RECRUITER') return recruiterNav;
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN') return adminNav;
+  return [];
+}

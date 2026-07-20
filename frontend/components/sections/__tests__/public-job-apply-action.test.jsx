@@ -10,7 +10,7 @@ describe('PublicJobApplyAction', () => {
   test('renders login state for anonymous users when login is required', () => {
     render(<PublicJobApplyAction user={null} eligibility={{ requiresLogin: true }} slug="frontend-engineer" />);
 
-    expect(screen.getByRole('link', { name: 'Login to Apply' })).toHaveAttribute('href', '/auth?next=/jobs/frontend-engineer/apply');
+    expect(screen.getByRole('link', { name: 'Login to Apply' })).toHaveAttribute('href', '/auth/candidate/login?next=/jobs/frontend-engineer/apply');
   });
 
   test('renders closed or duplicate states without navigation', () => {

@@ -12,7 +12,7 @@ export function getApplyStateLabel(user, eligibility) {
 }
 
 export function getApplyHref(user, eligibility, slug) {
-  if (!user) return `/auth?next=/jobs/${slug}/apply`;
+  if (!user) return `/auth/candidate/login?next=/jobs/${slug}/apply`;
   if (eligibility?.canApply || ['RESUME_REQUIRED', 'PROFILE_REQUIREMENTS_INCOMPLETE'].includes(eligibility?.reasonCode)) {
     return `/jobs/${slug}/apply`;
   }
