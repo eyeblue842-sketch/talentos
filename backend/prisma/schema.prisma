@@ -125,9 +125,14 @@ enum InterviewType {
   SCREENING
   TECHNICAL
   MANAGERIAL
+  MANAGER
+  DIRECTOR
+  CLIENT
+  BEHAVIORAL
   HR
   PANEL
   TAKE_HOME
+  CUSTOM
   OTHER
 }
 
@@ -140,12 +145,29 @@ enum InterviewStatus {
   RESCHEDULE_REQUIRED
 }
 
+enum MeetingMode {
+  VIRTUAL
+  ONSITE
+  HYBRID
+  PHONE
+  OTHER
+}
+
 enum FeedbackRecommendation {
   STRONG_HIRE
   HIRE
   HOLD
   NO_HIRE
   STRONG_NO_HIRE
+}
+
+enum InterviewDecision {
+  MOVE_NEXT_ROUND
+  REJECT
+  HOLD
+  CANCEL
+  COMPLETE
+  READY_FOR_OFFER
 }
 
 enum NotificationType {
@@ -262,6 +284,7 @@ model User {
   recruitedRequisitions      JobRequisition[]            @relation("RequisitionRecruiter")
   managedJobs                Job[]                       @relation("JobHiringManager")
   interviewPlanCreators      InterviewProcess[]          @relation("InterviewPlanCreatedBy")
+  ownedInterviewRounds       InterviewRound[]            @relation("InterviewRoundOwner")
   interviewPanelMemberships  InterviewPanelMember[]
   interviewFeedbacks         InterviewFeedback[]         @relation("InterviewFeedbackAuthor")
   notifications              Notification[]              @relation("NotificationRecipient")
@@ -955,22 +978,39 @@ model InterviewRound {
   sequence           Int
   interviewType      InterviewType
   status             InterviewStatus        @default(PLANNED)
+  durationMinutes    Int?
+  ownerUserId        String?
+  timezone           String?
+  meetingMode        MeetingMode?
   scheduledStartAt   DateTime?
   scheduledEndAt     DateTime?
   meetingLocation    String?
   meetingLink        String?
+  officeAddress      String?
+  candidateInstructions String?
+  instructions       String?
+  internalNotes      String?
   cancelReason       String?
   scorecardCriteria  Json?
   feedbackLockedAt   DateTime?
+  decision           InterviewDecision?
+  decisionReason     String?
+  completedAt        DateTime?
+  calendarProvider   String?                @default("ICS")
+  rescheduleCount    Int                    @default(0)
+  lastRescheduledAt  DateTime?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   organisation       Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   interviewProcess   InterviewProcess       @relation(fields: [interviewProcessId], references: [id], onDelete: Cascade)
+  owner              User?                  @relation("InterviewRoundOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   panelMembers       InterviewPanelMember[]
   feedbacks          InterviewFeedback[]
 
   @@unique([interviewProcessId, sequence])
   @@index([organisationId, status])
+  @@index([organisationId, ownerUserId])
+  @@index([organisationId, scheduledStartAt])
 }
 
 model InterviewPanelMember {
@@ -978,6 +1018,9 @@ model InterviewPanelMember {
   organisationId   String
   interviewRoundId String
   userId           String
+  isLead           Boolean        @default(false)
+  isObserver       Boolean        @default(false)
+  feedbackRequired Boolean        @default(true)
   createdAt        DateTime       @default(now())
   organisation     Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   interviewRound   InterviewRound @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
@@ -995,6 +1038,13 @@ model InterviewFeedback {
   submittedAt      DateTime?
   recommendation   FeedbackRecommendation?
   overallScore     Int?
+  technicalRating  Int?
+  communicationRating Int?
+  problemSolvingRating Int?
+  cultureFitRating Int?
+  strengths        String?
+  weaknesses       String?
+  detailedNotes    String?
   comments         String?
   criteriaScores   Json?
   finalizedAt      DateTime?

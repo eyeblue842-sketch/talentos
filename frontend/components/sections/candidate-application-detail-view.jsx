@@ -36,6 +36,9 @@ function renderAnswerValue(answer) {
 
 export function CandidateApplicationDetailView({ application }) {
   const stageIndex = getStageIndex(application.stage);
+  const interviewRounds = (application.interviewProcesses || []).flatMap((process) => process.rounds || []);
+  const upcomingRounds = interviewRounds.filter((round) => round.status === 'SCHEDULED' && round.scheduledStartAt && new Date(round.scheduledStartAt) >= new Date());
+  const pastRounds = interviewRounds.filter((round) => round.status !== 'SCHEDULED' || (round.scheduledStartAt && new Date(round.scheduledStartAt) < new Date()));
 
   return (
     <div className="space-y-6">
@@ -93,6 +96,43 @@ export function CandidateApplicationDetailView({ application }) {
               </div>
             ))}
             {!application.timeline?.length ? <p className="text-sm text-[var(--muted)]">No candidate-visible updates have been added yet.</p> : null}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <Card>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Upcoming interviews</h2>
+          <div className="mt-5 space-y-3">
+            {upcomingRounds.map((round) => (
+              <div key={round.id} className="rounded-2xl border border-[var(--line)] p-4 text-sm">
+                <p className="font-semibold">{round.roundName}</p>
+                <p className="mt-1 text-[var(--muted)]">{formatStageLabel(round.interviewType)} | {round.status}</p>
+                <p className="mt-2"><span className="font-semibold">When:</span> {formatDateTime(round.scheduledStartAt)}</p>
+                <p><span className="font-semibold">Mode:</span> {round.meetingMode ? formatStageLabel(round.meetingMode) : 'Not shared'}</p>
+                <p><span className="font-semibold">Instructions:</span> {round.candidateInstructions || 'No special instructions shared yet.'}</p>
+                <p><span className="font-semibold">Panel:</span> {(round.panelMembers || []).map((member) => member.user?.email || 'Panel member').join(', ') || 'To be announced'}</p>
+                {round.meetingLink ? <a href={round.meetingLink} className="mt-3 inline-flex rounded-2xl bg-[var(--brand)] px-4 py-2 font-semibold text-white">Join meeting</a> : null}
+              </div>
+            ))}
+            {!upcomingRounds.length ? <p className="text-sm text-[var(--muted)]">No upcoming interviews are scheduled yet.</p> : null}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Interview history</h2>
+          <div className="mt-5 space-y-3">
+            {pastRounds.map((round) => (
+              <div key={round.id} className="rounded-2xl border border-[var(--line)] p-4 text-sm">
+                <p className="font-semibold">{round.roundName}</p>
+                <p className="mt-1 text-[var(--muted)]">{formatStageLabel(round.interviewType)} | {round.status}</p>
+                <p className="mt-2"><span className="font-semibold">Scheduled:</span> {formatDateTime(round.scheduledStartAt)}</p>
+                <p><span className="font-semibold">Reschedules:</span> {round.rescheduleCount || 0}</p>
+                {round.cancelReason ? <p><span className="font-semibold">Cancellation reason:</span> {round.cancelReason}</p> : null}
+                {round.decision ? <p><span className="font-semibold">Outcome:</span> {formatStageLabel(round.decision)}</p> : null}
+              </div>
+            ))}
+            {!pastRounds.length ? <p className="text-sm text-[var(--muted)]">Past interview history will appear here after your first round is scheduled.</p> : null}
           </div>
         </Card>
       </div>

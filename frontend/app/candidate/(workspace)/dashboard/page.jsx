@@ -87,6 +87,22 @@ export default async function CandidateDashboardPage() {
 
           <Card>
             <div className="flex items-center justify-between gap-4">
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Upcoming interviews</h2>
+              <Link href="/candidate/applications" className="text-sm font-semibold text-[var(--brand)]">Open applications</Link>
+            </div>
+            <div className="mt-5 space-y-3">
+              {dashboard.upcomingInterviews?.length ? dashboard.upcomingInterviews.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-[var(--line)] p-4 text-sm">
+                  <p className="font-semibold">{item.roundName}</p>
+                  <p className="mt-1 text-[var(--muted)]">{item.job?.title || 'Interview'} | {new Date(item.scheduledStartAt).toLocaleString()}</p>
+                  <p className="mt-2 text-[var(--muted)]">{item.candidateInstructions || 'Watch your application detail page for joining instructions and updates.'}</p>
+                </div>
+              )) : <p className="text-sm text-[var(--muted)]">No upcoming interviews scheduled.</p>}
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl font-semibold">Recently viewed jobs</h2>
               <form action={clearRecentJobsAction}>
                 <button type="submit" className="text-sm font-semibold text-[var(--brand)]">Clear history</button>

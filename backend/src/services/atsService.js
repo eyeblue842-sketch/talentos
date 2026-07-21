@@ -284,6 +284,43 @@ async function createCandidateNotification(application, title, message, entityTy
   });
 }
 
+async function createInterviewReminderNotifications(application, round, panelMembers, scheduledStartAt) {
+  const hoursUntilInterview = dayjs(scheduledStartAt).diff(dayjs(), 'hour', true);
+  const reminderWindows = [];
+
+  if (hoursUntilInterview <= 24 && hoursUntilInterview > 1) {
+    reminderWindows.push({
+      title: 'Interview reminder',
+      message: `${round.roundName} starts within 24 hours on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
+    });
+  }
+
+  if (hoursUntilInterview <= 1 && hoursUntilInterview >= 0) {
+    reminderWindows.push({
+      title: 'Interview reminder',
+      message: `${round.roundName} starts within the next hour on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
+    });
+  }
+
+  for (const reminder of reminderWindows) {
+    await createCandidateNotification(application, reminder.title, reminder.message, 'InterviewRound');
+    await Promise.all(panelMembers.map((member) => createNotification({
+      organisationId: application.organisationId,
+      recipientUserId: member.userId,
+      type: 'INTERVIEW',
+      title: reminder.title,
+      message: reminder.message,
+      entityType: 'InterviewRound',
+      entityId: round.id,
+      metadata: {
+        applicationId: application.submittedApplication?.id || application.id,
+        roundId: round.id,
+        reminder: true,
+      },
+    })));
+  }
+}
+
 async function getApplicationWithRelations(organisationId, applicationId) {
   return prisma.application.findFirst({
     where: { id: applicationId, organisationId },
@@ -557,16 +594,44 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
     throw error;
   }
 
+  const panelMembers = (payload.panelMembers || payload.panelUserIds || []).map((member, index) => {
+    if (typeof member === 'string') {
+      return {
+        userId: member,
+        isLead: index === 0,
+        isObserver: false,
+        feedbackRequired: true,
+      };
+    }
+
+    return {
+      userId: String(member.userId || '').trim(),
+      isLead: Boolean(member.isLead),
+      isObserver: Boolean(member.isObserver),
+      feedbackRequired: member.feedbackRequired !== false,
+    };
+  });
+
+  const uniquePanelUserIds = new Set();
+  for (const member of panelMembers) {
+    if (!member.userId || uniquePanelUserIds.has(member.userId)) {
+      const error = new Error('Panel members must be unique and valid.');
+      error.statusCode = 422;
+      throw error;
+    }
+    uniquePanelUserIds.add(member.userId);
+  }
+
   const validPanelMemberships = await prisma.organisationMembership.findMany({
     where: {
       organisationId: context.organisationId,
-      userId: { in: payload.panelUserIds },
+      userId: { in: panelMembers.map((member) => member.userId) },
       status: 'ACTIVE',
       role: { in: ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER'] },
     },
   });
 
-  if (validPanelMemberships.length !== payload.panelUserIds.length) {
+  if (validPanelMemberships.length !== panelMembers.length) {
     const error = new Error('All panel members must belong to the organisation and hold an interview-eligible role.');
     error.statusCode = 422;
     throw error;
@@ -582,16 +647,27 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
       data: {
         interviewType: payload.interviewType,
         status: payload.status || 'SCHEDULED',
+        durationMinutes: payload.durationMinutes ?? Math.max(15, dayjs(scheduledEndAt).diff(dayjs(scheduledStartAt), 'minute')),
+        timezone: payload.timezone || null,
+        meetingMode: payload.meetingMode || null,
         scheduledStartAt,
         scheduledEndAt,
         meetingLocation: payload.meetingLocation || null,
         meetingLink: payload.meetingLink || null,
+        officeAddress: payload.officeAddress || null,
+        candidateInstructions: payload.candidateInstructions || null,
+        instructions: payload.notes || null,
         cancelReason: null,
+        rescheduleCount: priorRound?.scheduledStartAt ? { increment: 1 } : undefined,
+        lastRescheduledAt: priorRound?.scheduledStartAt ? new Date() : null,
         panelMembers: {
           deleteMany: {},
-          create: payload.panelUserIds.map((userId) => ({
+          create: panelMembers.map((member) => ({
             organisationId: context.organisationId,
-            userId,
+            userId: member.userId,
+            isLead: member.isLead,
+            isObserver: member.isObserver,
+            feedbackRequired: member.feedbackRequired,
           })),
         },
       },
@@ -617,7 +693,9 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
         roundId: round.id,
         scheduledStartAt,
         scheduledEndAt,
-        panelUserIds: payload.panelUserIds,
+        timezone: payload.timezone || null,
+        meetingMode: payload.meetingMode || null,
+        panelMembers,
       },
     }),
     createCandidateTimeline(
@@ -626,16 +704,20 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
       actorUser.id,
       priorRound?.scheduledStartAt ? 'INTERVIEW_RESCHEDULED' : 'INTERVIEW_SCHEDULED',
       `Interview scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-      { roundId: round.id },
+      {
+        roundId: round.id,
+        timezone: payload.timezone || null,
+        meetingMode: payload.meetingMode || null,
+      },
     ),
     createCandidateNotification(
       application,
       priorRound?.scheduledStartAt ? 'Interview rescheduled' : 'Interview scheduled',
       `${round.roundName} is scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
     ),
-    ...payload.panelUserIds.map((userId) => createNotification({
+    ...panelMembers.map((member) => createNotification({
       organisationId: context.organisationId,
-      recipientUserId: userId,
+      recipientUserId: member.userId,
       type: 'INTERVIEW',
       title: priorRound?.scheduledStartAt ? 'Interview rescheduled' : 'Interview scheduled',
       message: `${application.candidate.fullName} has a ${round.roundName} round on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
@@ -654,11 +736,18 @@ export async function scheduleInterview(applicationId, actorUser, payload, organ
         scheduledEndAt,
         meetingLocation: payload.meetingLocation || null,
         meetingLink: payload.meetingLink || null,
-        panelUserIds: payload.panelUserIds,
+        officeAddress: payload.officeAddress || null,
+        candidateInstructions: payload.candidateInstructions || null,
+        notes: payload.notes || null,
+        timezone: payload.timezone || null,
+        meetingMode: payload.meetingMode || null,
+        panelMembers,
       },
       ...requestMeta,
     }),
   ]);
+
+  await createInterviewReminderNotifications(application, round, panelMembers, scheduledStartAt);
 
   const updated = await getApplicationWithRelations(context.organisationId, applicationId);
   return serializeApplication(updated, { includeCoverLetter: true, includeCandidatePrivate: true });

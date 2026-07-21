@@ -55,9 +55,14 @@ export const interviewTypeSchema = z.enum([
   'SCREENING',
   'TECHNICAL',
   'MANAGERIAL',
+  'MANAGER',
+  'DIRECTOR',
+  'CLIENT',
+  'BEHAVIORAL',
   'HR',
   'PANEL',
   'TAKE_HOME',
+  'CUSTOM',
   'OTHER',
 ]);
 
@@ -70,12 +75,29 @@ export const interviewStatusSchema = z.enum([
   'RESCHEDULE_REQUIRED',
 ]);
 
+export const meetingModeSchema = z.enum([
+  'VIRTUAL',
+  'ONSITE',
+  'HYBRID',
+  'PHONE',
+  'OTHER',
+]);
+
 export const feedbackRecommendationSchema = z.enum([
   'STRONG_HIRE',
   'HIRE',
   'HOLD',
   'NO_HIRE',
   'STRONG_NO_HIRE',
+]);
+
+export const interviewDecisionSchema = z.enum([
+  'MOVE_NEXT_ROUND',
+  'REJECT',
+  'HOLD',
+  'CANCEL',
+  'COMPLETE',
+  'READY_FOR_OFFER',
 ]);
 
 export const notificationTypeSchema = z.enum([
@@ -198,10 +220,21 @@ export const atsInterviewSchema = z.object({
   interviewType: interviewTypeSchema,
   scheduledStartAt: z.string().datetime(),
   scheduledEndAt: z.string().datetime(),
-  panelUserIds: z.array(z.string().min(1)).min(1).max(20),
+  timezone: z.string().trim().min(2).max(80),
+  meetingMode: meetingModeSchema,
+  panelMembers: z.array(z.object({
+    userId: z.string().min(1),
+    isLead: z.boolean().optional(),
+    isObserver: z.boolean().optional(),
+    feedbackRequired: z.boolean().optional(),
+  })).min(1).max(20),
   meetingLocation: z.string().trim().max(200).optional().nullable(),
   meetingLink: z.string().trim().url().optional().nullable().or(z.literal('')),
+  officeAddress: z.string().trim().max(300).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  candidateInstructions: z.string().trim().max(2000).optional().nullable(),
   status: interviewStatusSchema.optional(),
+  durationMinutes: z.coerce.number().int().min(15).max(480).optional().nullable(),
 }).refine((value) => new Date(value.scheduledStartAt) < new Date(value.scheduledEndAt), {
   message: 'Interview end time must be after the start time.',
   path: ['scheduledEndAt'],
@@ -323,30 +356,78 @@ export const requisitionApprovalSchema = z.object({
   status: requisitionStatusSchema.optional(),
 });
 
-export const interviewPlanCreateSchema = z.object({
-  applicationId: z.string().min(1),
-  title: z.string().trim().min(2).max(160),
-  status: interviewStatusSchema.optional(),
-});
-
-export const interviewRoundCreateSchema = z.object({
+export const interviewPlanRoundSchema = z.object({
   roundName: z.string().trim().min(2).max(120),
-  sequence: z.coerce.number().int().min(1).max(20),
+  sequence: z.coerce.number().int().min(1).max(50),
   interviewType: interviewTypeSchema,
   status: interviewStatusSchema.optional(),
+  durationMinutes: z.coerce.number().int().min(15).max(480).optional().nullable(),
+  ownerUserId: z.string().min(1).optional().nullable(),
+  timezone: z.string().trim().min(2).max(80).optional().nullable(),
+  meetingMode: meetingModeSchema.optional().nullable(),
   scheduledStartAt: z.string().datetime().optional().nullable(),
   scheduledEndAt: z.string().datetime().optional().nullable(),
+  meetingLocation: z.string().trim().max(200).optional().nullable(),
+  meetingLink: z.string().trim().url().optional().nullable().or(z.literal('')),
+  officeAddress: z.string().trim().max(300).optional().nullable(),
+  candidateInstructions: z.string().trim().max(2000).optional().nullable(),
+  instructions: z.string().trim().max(2000).optional().nullable(),
+  internalNotes: z.string().trim().max(3000).optional().nullable(),
   scorecardCriteria: z.array(z.object({
     key: z.string().trim().min(1).max(80),
     label: z.string().trim().min(1).max(120),
     weight: z.coerce.number().min(0).max(100).optional(),
   })).optional(),
-  panelUserIds: z.array(z.string().min(1)).max(20).optional(),
+  panelMembers: z.array(z.object({
+    userId: z.string().min(1),
+    isLead: z.boolean().optional(),
+    isObserver: z.boolean().optional(),
+    feedbackRequired: z.boolean().optional(),
+  })).max(20).optional(),
+});
+
+export const interviewPlanCreateSchema = z.object({
+  applicationId: z.string().min(1),
+  title: z.string().trim().min(2).max(160),
+  status: interviewStatusSchema.optional(),
+  rounds: z.array(interviewPlanRoundSchema).max(20).optional(),
+});
+
+export const interviewRoundCreateSchema = z.object({
+  ...interviewPlanRoundSchema.shape,
+});
+
+export const interviewPlanUpsertSchema = z.object({
+  applicationId: z.string().min(1),
+  title: z.string().trim().min(2).max(160),
+  status: interviewStatusSchema.optional(),
+  rounds: z.array(interviewPlanRoundSchema).min(1).max(20),
+});
+
+export const interviewRoundUpdateSchema = z.object({
+  ...interviewPlanRoundSchema.partial().shape,
+});
+
+export const interviewRoundDecisionSchema = z.object({
+  decision: interviewDecisionSchema,
+  reason: z.string().trim().min(2).max(1000).optional().nullable(),
+});
+
+export const interviewRoundDuplicateSchema = z.object({
+  roundName: z.string().trim().min(2).max(120).optional().nullable(),
+  sequence: z.coerce.number().int().min(1).max(50).optional().nullable(),
 });
 
 export const interviewFeedbackCreateSchema = z.object({
   recommendation: feedbackRecommendationSchema.optional(),
   overallScore: z.coerce.number().int().min(0).max(100).optional().nullable(),
+  technicalRating: z.coerce.number().int().min(0).max(5).optional().nullable(),
+  communicationRating: z.coerce.number().int().min(0).max(5).optional().nullable(),
+  problemSolvingRating: z.coerce.number().int().min(0).max(5).optional().nullable(),
+  cultureFitRating: z.coerce.number().int().min(0).max(5).optional().nullable(),
+  strengths: z.string().trim().max(2000).optional().nullable(),
+  weaknesses: z.string().trim().max(2000).optional().nullable(),
+  detailedNotes: z.string().trim().max(4000).optional().nullable(),
   comments: z.string().trim().max(4000).optional(),
   criteriaScores: z.array(z.object({
     key: z.string().trim().min(1).max(80),

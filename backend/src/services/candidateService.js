@@ -897,8 +897,12 @@ export async function getCandidateDashboard(candidateId, userId) {
     upcomingInterviews: interviews.map((row) => ({
       id: row.id,
       roundName: row.roundName,
+      status: row.status,
       scheduledStartAt: row.scheduledStartAt?.toISOString(),
       scheduledEndAt: row.scheduledEndAt?.toISOString(),
+      candidateInstructions: row.candidateInstructions,
+      meetingMode: row.meetingMode,
+      meetingLink: row.meetingLink,
       job: serializePublicJob(row.interviewProcess.application.job),
     })),
     notifications: notifications.map((row) => serializeCandidateNotification(row)),

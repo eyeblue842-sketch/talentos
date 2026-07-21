@@ -6,21 +6,31 @@ import { PageHeader } from '@/components/ui/page-header';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getOrganisationMembers, getRecruiterApplicationV2 } from '@/lib/api';
 import {
+  addInterviewRoundAction,
   addNoteAction,
   cancelInterviewAction,
+  createInterviewPlanAction,
   deleteNoteAction,
+  decideInterviewRoundAction,
+  duplicateInterviewRoundAction,
   editNoteAction,
   moveApplicationStageAction,
   scheduleInterviewAction,
+  submitInterviewFeedbackAction,
 } from '../../actions';
 
 const actions = {
+  addInterviewRoundAction,
   addNoteAction,
   cancelInterviewAction,
+  createInterviewPlanAction,
   deleteNoteAction,
+  decideInterviewRoundAction,
+  duplicateInterviewRoundAction,
   editNoteAction,
   moveApplicationStageAction,
   scheduleInterviewAction,
+  submitInterviewFeedbackAction,
 };
 
 export default async function RecruiterApplicationDetailPage({ params }) {

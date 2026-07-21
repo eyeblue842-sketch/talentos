@@ -260,6 +260,13 @@ export async function deleteNoteAction(applicationId, noteId) {
 }
 
 export async function scheduleInterviewAction(applicationId, formData) {
+  const panelMembers = splitCommaList(formData.get('panelUserIds')).map((userId, index) => ({
+    userId,
+    isLead: index === 0,
+    isObserver: false,
+    feedbackRequired: true,
+  }));
+
   await recruiterRequest(`/ats/pipeline/${applicationId}/interview`, {
     method: 'PATCH',
     body: JSON.stringify({
@@ -267,13 +274,101 @@ export async function scheduleInterviewAction(applicationId, formData) {
       interviewType: String(formData.get('interviewType')),
       scheduledStartAt: new Date(String(formData.get('scheduledStartAt'))).toISOString(),
       scheduledEndAt: new Date(String(formData.get('scheduledEndAt'))).toISOString(),
-      panelUserIds: splitCommaList(formData.get('panelUserIds')),
+      timezone: String(formData.get('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'),
+      meetingMode: String(formData.get('meetingMode') || 'VIRTUAL'),
+      panelMembers,
       meetingLocation: asNullableString(formData.get('meetingLocation')),
       meetingLink: asNullableString(formData.get('meetingLink')),
+      officeAddress: asNullableString(formData.get('officeAddress')),
+      candidateInstructions: asNullableString(formData.get('candidateInstructions')),
+      notes: asNullableString(formData.get('notes')),
+      durationMinutes: formData.get('durationMinutes') ? Number(formData.get('durationMinutes')) : null,
       status: 'SCHEDULED',
     }),
   });
   revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function createInterviewPlanAction(applicationId, formData) {
+  await recruiterRequest('/interviews/plans', {
+    method: 'POST',
+    body: JSON.stringify({
+      applicationId,
+      title: String(formData.get('title') || 'Interview plan').trim(),
+      rounds: [{
+        roundName: String(formData.get('roundName') || '').trim(),
+        sequence: Number(formData.get('sequence') || 1),
+        interviewType: String(formData.get('interviewType') || 'TECHNICAL'),
+        durationMinutes: formData.get('durationMinutes') ? Number(formData.get('durationMinutes')) : null,
+        ownerUserId: asNullableString(formData.get('ownerUserId')),
+        instructions: asNullableString(formData.get('instructions')),
+        internalNotes: asNullableString(formData.get('internalNotes')),
+      }],
+    }),
+  });
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function addInterviewRoundAction(applicationId, interviewProcessId, formData) {
+  await recruiterRequest(`/interviews/plans/${interviewProcessId}/rounds`, {
+    method: 'POST',
+    body: JSON.stringify({
+      roundName: String(formData.get('roundName') || '').trim(),
+      sequence: Number(formData.get('sequence') || 1),
+      interviewType: String(formData.get('interviewType') || 'TECHNICAL'),
+      durationMinutes: formData.get('durationMinutes') ? Number(formData.get('durationMinutes')) : null,
+      ownerUserId: asNullableString(formData.get('ownerUserId')),
+      instructions: asNullableString(formData.get('instructions')),
+      internalNotes: asNullableString(formData.get('internalNotes')),
+      scorecardCriteria: [],
+    }),
+  });
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function duplicateInterviewRoundAction(applicationId, roundId) {
+  await recruiterRequest(`/interviews/rounds/${roundId}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function decideInterviewRoundAction(applicationId, roundId, formData) {
+  await recruiterRequest(`/interviews/rounds/${roundId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({
+      decision: String(formData.get('decision')),
+      reason: asNullableString(formData.get('reason')),
+    }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function submitInterviewFeedbackAction(applicationId, roundId, formData) {
+  await recruiterRequest(`/interviews/rounds/${roundId}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify({
+      recommendation: asNullableString(formData.get('recommendation')),
+      overallScore: formData.get('overallScore') ? Number(formData.get('overallScore')) : null,
+      technicalRating: formData.get('technicalRating') ? Number(formData.get('technicalRating')) : null,
+      communicationRating: formData.get('communicationRating') ? Number(formData.get('communicationRating')) : null,
+      problemSolvingRating: formData.get('problemSolvingRating') ? Number(formData.get('problemSolvingRating')) : null,
+      cultureFitRating: formData.get('cultureFitRating') ? Number(formData.get('cultureFitRating')) : null,
+      strengths: asNullableString(formData.get('strengths')),
+      weaknesses: asNullableString(formData.get('weaknesses')),
+      detailedNotes: asNullableString(formData.get('detailedNotes')),
+      comments: asNullableString(formData.get('comments')),
+      finalize: formData.get('finalize') === 'true',
+    }),
+  });
   revalidatePath('/recruiter/ats');
   revalidatePath(`/recruiter/ats/${applicationId}`);
 }
