@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { redirectIfAuthenticated } from '@/lib/auth';
 import { buildPathWithParams, candidateAuthRoutes, employerAuthRoutes, getLegacyAuthDestination } from '@/lib/auth-experience';
+import { redirectToSetupIfRequired } from '@/lib/setup';
 
 export default async function AuthCompatibilityPage({ searchParams }) {
+  await redirectToSetupIfRequired();
   await redirectIfAuthenticated();
   const params = await searchParams;
   const destination = getLegacyAuthDestination(params || {});

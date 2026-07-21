@@ -37,52 +37,31 @@ export async function scheduleResumeParsingTasks() {
 }
 
 export async function scheduleInterviewReminderTasks() {
-  const now = new Date();
-  const in24Hours = hoursFromNow(24);
-  const inOneHour = hoursFromNow(1);
-  const rounds = await prisma.interviewRound.findMany({
+  const reminders = await prisma.meetingReminder.findMany({
     where: {
       status: 'SCHEDULED',
-      scheduledStartAt: {
-        gte: now,
-        lte: in24Hours,
-      },
+      backgroundTaskId: null,
+      scheduledFor: { gt: new Date() },
     },
     select: {
       id: true,
       organisationId: true,
-      scheduledStartAt: true,
+      scheduledFor: true,
       updatedAt: true,
+      interviewMeetingId: true,
     },
     take: 100,
   });
 
-  await Promise.all(rounds.flatMap((round) => {
-    const tasks = [];
-    if (round.scheduledStartAt <= in24Hours) {
-      tasks.push(enqueueBackgroundTask({
-        organisationId: round.organisationId,
-        type: 'INTERVIEW_REMINDER',
-        entityType: 'InterviewRound',
-        entityId: round.id,
-        idempotencyKey: `interview-reminder-24h:${round.id}:${round.updatedAt.toISOString()}`,
-        payload: { roundId: round.id, reminderWindow: '24h' },
-        nextAttemptAt: new Date(Math.max(now.getTime(), new Date(round.scheduledStartAt).getTime() - (24 * 60 * 60 * 1000))),
-      }));
-    }
-    if (round.scheduledStartAt <= inOneHour) {
-      tasks.push(enqueueBackgroundTask({
-        organisationId: round.organisationId,
-        type: 'INTERVIEW_REMINDER',
-        entityType: 'InterviewRound',
-        entityId: round.id,
-        idempotencyKey: `interview-reminder-1h:${round.id}:${round.updatedAt.toISOString()}`,
-        payload: { roundId: round.id, reminderWindow: '1h' },
-        nextAttemptAt: new Date(Math.max(now.getTime(), new Date(round.scheduledStartAt).getTime() - (60 * 60 * 1000))),
-      }));
-    }
-    return tasks;
-  }));
+  await Promise.all(reminders.map((reminder) => enqueueBackgroundTask({
+    organisationId: reminder.organisationId,
+    type: 'INTERVIEW_REMINDER',
+    entityType: 'MeetingReminder',
+    entityId: reminder.id,
+    idempotencyKey: `meeting-reminder:${reminder.id}:${reminder.updatedAt.toISOString()}`,
+    payload: { reminderId: reminder.id, meetingId: reminder.interviewMeetingId },
+    nextAttemptAt: reminder.scheduledFor,
+  })));
 }
 
 export async function scheduleOfferReminderTasks() {

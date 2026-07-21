@@ -45,8 +45,8 @@ async function ensureUniqueOrganisationSlug(slug, organisationId = null) {
   return normalized;
 }
 
-async function ensureSystemRoleDefinitions(organisationId) {
-  const definitions = await prisma.organisationRoleDefinition.findMany({
+export async function ensureSystemRoleDefinitions(organisationId, client = prisma) {
+  const definitions = await client.organisationRoleDefinition.findMany({
     where: { organisationId, archivedAt: null },
     orderBy: [{ isSystem: 'desc' }, { createdAt: 'asc' }],
   });
@@ -59,7 +59,7 @@ async function ensureSystemRoleDefinitions(organisationId) {
     return definitions;
   }
 
-  await prisma.organisationRoleDefinition.createMany({
+  await client.organisationRoleDefinition.createMany({
     data: missing.map((role) => ({
       organisationId,
       name: role.replaceAll('_', ' '),
@@ -70,20 +70,20 @@ async function ensureSystemRoleDefinitions(organisationId) {
     })),
   });
 
-  return prisma.organisationRoleDefinition.findMany({
+  return client.organisationRoleDefinition.findMany({
     where: { organisationId, archivedAt: null },
     orderBy: [{ isSystem: 'desc' }, { createdAt: 'asc' }],
   });
 }
 
-async function ensureOrganisationSettings(organisationId, updatedByUserId = null) {
-  const existing = await prisma.organisationSettings.findUnique({
+export async function ensureOrganisationSettings(organisationId, updatedByUserId = null, client = prisma) {
+  const existing = await client.organisationSettings.findUnique({
     where: { organisationId },
   });
 
   if (existing) return existing;
 
-  return prisma.organisationSettings.create({
+  return client.organisationSettings.create({
     data: {
       organisationId,
       employmentTypes: ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'],
@@ -579,6 +579,7 @@ export async function updateOrganisationSettingsAdmin(actorUser, payload, organi
       employmentTypes: payload.employmentTypes ?? undefined,
       workModes: payload.workModes ?? undefined,
       experienceBands: payload.experienceBands ?? undefined,
+      interviewSchedulingSettings: payload.interviewSchedulingSettings ?? undefined,
       careerPageSettings: payload.careerPageSettings ?? undefined,
       emailBranding: payload.emailBranding ?? undefined,
       updatedByUserId: actorUser.id,

@@ -3,8 +3,10 @@ import { PublicHeader } from '@/components/public/public-header';
 import { AccessEntryCard } from '@/components/sections/access-entry-card';
 import { redirectIfAuthenticated } from '@/lib/auth';
 import { employerAuthRoutes } from '@/lib/auth-experience';
+import { redirectToSetupIfRequired } from '@/lib/setup';
 
 export default async function HireEntryPage() {
+  await redirectToSetupIfRequired();
   await redirectIfAuthenticated();
 
   return (

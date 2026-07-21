@@ -115,6 +115,33 @@ export async function markBackgroundTaskCancelled(taskId, workerId = null, reaso
   });
 }
 
+export async function cancelBackgroundTasks(where = {}, workerId = null, reason = 'TASK_CANCELLED') {
+  const tasks = await prisma.backgroundTask.findMany({
+    where: {
+      ...where,
+      status: { in: ['PENDING', 'RETRY_SCHEDULED', 'RUNNING'] },
+    },
+  });
+
+  if (!tasks.length) return [];
+
+  await prisma.backgroundTask.updateMany({
+    where: {
+      id: { in: tasks.map((task) => task.id) },
+    },
+    data: {
+      status: 'CANCELLED',
+      updatedByUserId: workerId,
+      completedAt: nowDate(),
+      nextAttemptAt: null,
+      lastErrorCode: reason,
+      lastErrorMessage: reason,
+    },
+  });
+
+  return tasks;
+}
+
 export async function markBackgroundTaskFailed(task, error, workerId = null) {
   const nextStatus = task.attemptCount >= task.maxAttempts ? 'DEAD_LETTER' : 'RETRY_SCHEDULED';
   const delayMinutes = Math.min(60, Math.max(1, task.attemptCount * 5));

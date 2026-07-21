@@ -2,78 +2,97 @@
 
 ## Overview
 
-Careeriz is a multi-tenant recruitment platform with three primary application surfaces:
+Careeriz is a multi-tenant recruitment platform with four primary runtime surfaces:
 
-- public and access pages
+- public website and job discovery
 - candidate workspace
-- recruiter and enterprise administration workspace
+- recruiter and interviewer workspace
+- enterprise administration workspace
 
-## Frontend
+The platform is organized around a shared Express backend, a Next.js App Router frontend, Prisma/PostgreSQL persistence, Redis-backed operational services, and a background worker runtime.
 
-- framework: Next.js 16 App Router
-- language: JavaScript with TypeScript checking
-- patterns: server-rendered route pages plus client components for interactive workflows
-- shells: shared workspace shells for recruiter, candidate, and admin navigation consistency
+## Runtime Layers
 
-## Backend
+- Frontend: `frontend/`, Next.js 16, App Router, server components plus client-side interaction for workflow actions.
+- Backend API: `backend/src/app.js`, modular route/controller/service architecture.
+- Shared contracts: `shared/`, shared Zod schemas and validation contracts.
+- Data layer: Prisma schema in `backend/prisma/schema.prisma`.
+- Worker runtime: `backend/src/worker.js`, persisted background tasks plus retry/dead-letter behavior.
 
-- framework: Express
-- API style: modular route/controller/service pattern
-- validation: shared Zod schemas plus existing backend validation utilities
-- tenancy: organization-scoped access checks and permission helpers
+## Core Domains
 
-## Data Layer
-
-- database: PostgreSQL-oriented Prisma schema
-- ORM: Prisma
-- migrations: additive milestone-based migrations in `backend/prisma/migrations`
-
-## Core Domain Areas
-
-- auth and session hardening
-- organization and membership management
-- jobs and requisitions
-- resume assets and candidate profiles
-- ATS applications and pipeline
-- interview lifecycle
-- offer lifecycle
+- authentication and session security
+- first-run installation bootstrap and setup state
+- organization, membership, and RBAC
+- jobs, requisitions, and ATS applications
+- candidate profile and resume assets
+- interview lifecycle and interview scheduling
+- offers and joining lifecycle
 - enterprise administration
-- centralized intelligence and analytics
+- intelligence, analytics, and release hardening
 
-## Shared Services
+## Initial Setup Architecture
 
-- audit logging
-- notifications
-- organization access
-- feature flags
-- enterprise permissions
-- health and observability
+Milestone 9 adds a bootstrap layer for fresh installations:
 
-## Intelligence Architecture
+- `PlatformSetupState` stores whether the system has been initialized
+- `backend/src/services/setupService.js` owns setup status, completion, and reset rules
+- `frontend/app/setup/page.jsx` renders the one-time setup wizard
+- public/auth entry pages server-redirect to `/setup` only when initialization is missing
 
-Milestone 7 adds a centralized intelligence layer. See `CAREERIZ_INTELLIGENCE_ARCHITECTURE.md` for detailed design.
+The setup wizard creates the first organization and first super administrator by reusing existing organization, membership, role-definition, settings, feature-flag, and audit services.
+
+## Meeting and Scheduling Architecture
+
+Milestone 8.5 extends the interview domain without introducing a parallel workflow system:
+
+- `InterviewRound` remains the canonical ATS interview round.
+- `InterviewMeeting` stores schedule and provider state for a round.
+- `MeetingParticipant` stores explicit candidate and interviewer participation.
+- `InterviewRescheduleRequest` and `InterviewRescheduleOption` model candidate/interviewer reschedule requests.
+- `InterviewScheduleHistory` records append-only schedule changes.
+- `MeetingReminder` links reminder intent to background tasks.
+- `MeetingProviderConnection` stores encrypted organization-scoped Google or Zoom OAuth connections.
+
+Scheduling logic is centralized in `backend/src/meeting/meetingService.js`. Controllers and routes only validate/authenticate and delegate.
+
+## Provider Integration Boundary
+
+Meeting providers are abstracted behind `backend/src/meeting/providers/`:
+
+- `GoogleMeetProvider`
+- `ZoomProvider`
+- `CustomMeetingProvider`
+- `meetingProviderFactory`
+
+No controller calls Google or Zoom directly. Provider adapters normalize errors and operate on validated, redacted meeting payloads.
+
+## Security and Isolation
+
+- Organization scoping is enforced in backend services before every write.
+- Meeting provider connections are organization-scoped and encrypted at rest.
+- Candidate and interviewer meeting views are permission-filtered and do not expose host URLs, tokens, or internal notes.
+- Audit logging records provider connection, schedule, reschedule, reminder, and cancellation events.
 
 ## Background Automation
 
-Milestone 8 turns the background-task model into a real worker runtime:
+Milestone 8 introduced persisted background tasks. Milestone 8.5 reuses that system for:
 
-- `backend/src/worker.js`
-- persisted `BackgroundTask` records
-- Redis wakeups
-- scheduler loop
-- retry and dead-letter handling
+- interview reminders
+- retry-safe reminder cancellation/rescheduling
+- future provider retry hooks
 
 See `BACKGROUND_TASK_ARCHITECTURE.md`.
 
 ## Deployment Topology
 
-Milestone 8 standardizes:
+Careeriz is prepared for Dockerized deployment with:
 
-- Dockerized backend
-- Dockerized worker
-- Dockerized frontend
-- Redis
+- frontend container
+- backend API container
+- worker container
 - PostgreSQL
+- Redis
 - Elasticsearch
 
-See `DEVOPS_ARCHITECTURE.md` and `DOCKER_GUIDE.md`.
+Docker assets exist in the repository, but Docker runtime validation could not be performed in this environment because Docker CLI is unavailable.

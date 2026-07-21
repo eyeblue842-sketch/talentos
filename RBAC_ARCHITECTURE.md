@@ -2,17 +2,14 @@
 
 ## Overview
 
-Careeriz uses authenticated user identity, organization membership, and permission helpers to enforce multi-tenant access across recruiter, admin, ATS, interview, offer, and intelligence workflows.
+Careeriz uses organization-scoped RBAC with:
+
+- system roles
+- organization membership roles
+- permission mappings in backend services
+- frontend route affordances that mirror, but do not replace, backend authorization
 
 ## Core Roles
-
-User roles include at least:
-
-- candidate
-- recruiter
-- admin/platform-admin-capable role paths where applicable
-
-Organization membership roles include:
 
 - `OWNER`
 - `ADMIN`
@@ -21,46 +18,47 @@ Organization membership roles include:
 - `INTERVIEWER`
 - `VIEWER`
 
-Custom organization role definitions can extend permission sets through `OrganisationRoleDefinition`.
+Platform admin controls remain separate from organization membership.
 
 ## Permission Enforcement
 
-Central permission mapping lives in `backend/src/services/enterprisePermissionService.js`.
+Permissions are centralized through `backend/src/services/enterprisePermissionService.js` and shared admin schema contracts.
 
-Key categories include:
+## Interview Scheduling Permissions
 
-- organization management
-- user and membership administration
-- settings and workflow administration
-- audit access
-- feature flags
-- analytics
-- intelligence permissions
+Milestone 8.5 adds:
 
-## Intelligence Permissions
+- `interview.schedule`
+- `interview.reschedule`
+- `interview.cancel`
+- `interview.view`
+- `interview.join`
+- `interview.manageParticipants`
+- `interview.reviewRescheduleRequest`
+- `interview.overrideConflict`
+- `interview.markNoShow`
+- `meetingProvider.manage`
+- `meetingProvider.viewStatus`
+- `meetingProvider.disconnect`
+- `schedulingSettings.manage`
+- `schedulingAudit.view`
 
-Milestone 7 adds:
+## Scheduling Access Rules
 
-- `intelligence.resume.read`
-- `intelligence.resume.generate`
-- `intelligence.match.read`
-- `intelligence.match.generate`
-- `intelligence.job.generate`
-- `intelligence.interview.generate`
-- `intelligence.search.use`
-- `intelligence.analytics.use`
-- `intelligence.governance.read`
-- `intelligence.governance.manage`
+- candidate access is limited to the candidate’s own interviews
+- interviewer access is limited to explicit participant assignment or existing allowed role context
+- provider connection management is organization-admin scoped
+- provider host URLs are never exposed to general recruiter/interviewer/candidate serializers
 
 ## Feature Flags and Permissions
 
-Sensitive capabilities such as intelligence features require:
+Scheduling is not feature-flagged separately in the current milestone. Access is governed by:
 
-- authenticated user
 - organization membership
-- permission check
-- relevant feature flag where enforced
+- role permissions
+- organization settings for allowed providers and reschedule rules
 
-## Known Gap
+## Known Gaps
 
-Some legacy recruiter modules still use older role-based checks instead of the newest unified field-level permission approach. This remains a known issue rather than an active regression.
+- legacy recruiter pages still contain some coarse-grained role assumptions in UI affordances
+- interviewer-specific standalone workspace polish remains limited; the backend permission model is stronger than the current dedicated UI surface

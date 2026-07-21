@@ -2,80 +2,56 @@
 
 ## Scope
 
-Milestone 7 does not introduce a full worker platform. It introduces a bounded task architecture so future automation can be added without rewriting interview, offer, intelligence, or export services.
+Careeriz uses a persisted `BackgroundTask` model plus worker runtime for retry-safe asynchronous operations.
 
 ## Current Task Model
 
-Prisma model: `BackgroundTask`
+Each task records:
 
-Core fields:
+- type
+- status
+- idempotency key
+- retry metadata
+- payload
+- organisation scope where relevant
+- creator/updater attribution
 
-- `type`
-- `status`
-- `entityType`
-- `entityId`
-- `idempotencyKey`
-- `payload`
-- `attemptCount`
-- `maxAttempts`
-- `lastErrorCode`
-- `lastErrorMessage`
-- `lastAttemptAt`
-- `nextAttemptAt`
-- `createdByUserId`
-- `updatedByUserId`
-- `completedAt`
+## Active Task Types
 
-## Task Types
+- interview reminders
+- offer expiry
+- offer reminders
+- email retry
+- notification retry
+- resume parsing
+- intelligence execution
+- data export
+- stale-result cleanup
 
-- `INTERVIEW_REMINDER`
-- `OFFER_EXPIRY`
-- `OFFER_REMINDER`
-- `EMAIL_RETRY`
-- `RESUME_PARSE`
-- `INTELLIGENCE_EXECUTION`
-- `DATA_EXPORT`
-- `STALE_RESULT_CLEANUP`
+## Milestone 8.5 Additions
 
-## Task Statuses
+Interview scheduling now creates and manages reminder work through `MeetingReminder` rows plus background tasks:
 
-- `PENDING`
-- `RUNNING`
-- `COMPLETED`
-- `FAILED`
-- `CANCELLED`
-- `RETRYING`
+- schedule reminders after successful meeting creation/reschedule
+- cancel obsolete tasks after reschedule or cancellation
+- prevent duplicate reminder creation through participant/reminder uniqueness
+- keep operational history even after cancellation
 
-## Design Intent
+The scheduler path was updated to read `MeetingReminder` instead of directly scanning `InterviewRound`.
 
-The task model provides:
+## Worker Safety Rules
 
-- idempotency-key protection
-- safe admin visibility
-- future retry metadata
-- entity linkage
-- organization attribution where relevant
+- no synchronous reminder sending inside request handlers
+- retries and dead-letter behavior remain active
+- reminder operations must be idempotent
+- reschedule/cancellation must cancel obsolete future reminder tasks
 
-## Current Milestone 7 Behavior
+## Future Expansion
 
-- interview reminders are not backed by a general scheduler yet
-- offer expiry still relies on safe service checks and on-access resolution
-- intelligence execution remains synchronous in the current request path
-- the admin background-jobs page remains informational and does not claim worker execution that does not exist
+The same task system can later handle:
 
-## Future Worker Integration
+- provider retry operations
+- meeting sync reconciliation
+- stale provider connection health checks
 
-Recommended future additions:
-
-- lightweight polling worker or queue consumer
-- Redis-backed dispatch or equivalent queue later
-- retry scheduling by `nextAttemptAt`
-- alerting on repeated failure
-- worker health partitioned by task type
-
-## Safety Rules
-
-- no task should execute cross-organization actions without a fresh scope check
-- sensitive tokens must never be stored in task payloads
-- retries must remain idempotent
-- synchronous fallbacks must not claim that scheduled dispatch already exists
+No new queue vendor was introduced in Milestone 8.5.

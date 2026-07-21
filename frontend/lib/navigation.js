@@ -4,6 +4,7 @@ export const recruiterNav = [
   { label: 'Requisitions', href: '/recruiter/requisitions', icon: 'ClipboardList' },
   { label: 'Resume Database', href: '/recruiter/database', icon: 'Database' },
   { label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
+  { label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
   { label: 'Members', href: '/recruiter/members', icon: 'Users' },
   { label: 'Notifications', href: '/recruiter/notifications', icon: 'BarChart3' },
   { label: 'Settings', href: '/recruiter/settings', icon: 'Settings2' },

@@ -887,7 +887,10 @@ export async function markAllCandidateNotificationsRead(userId) {
 }
 
 function missingRelationTable(error) {
-  return error?.code === 'P2021' || error?.message?.includes('does not exist in the current database');
+  return error?.code === 'P2021'
+    || error?.code === 'P1001'
+    || error?.message?.includes('does not exist in the current database')
+    || error?.message?.includes("Can't reach database server");
 }
 
 async function countOrZero(query) {
@@ -1194,6 +1197,15 @@ export async function getCandidateInterviewCenter(candidateId) {
       },
     },
     include: {
+      meeting: {
+        include: {
+          participants: true,
+          rescheduleRequests: {
+            include: { options: true },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      },
       panelMembers: {
         include: {
           user: true,
@@ -1216,17 +1228,38 @@ export async function getCandidateInterviewCenter(candidateId) {
     id: round.id,
     roundName: round.roundName,
     interviewType: round.interviewType,
-    status: round.status,
-    timezone: round.timezone,
-    meetingMode: round.meetingMode,
-    meetingLink: round.meetingLink,
-    officeAddress: round.officeAddress,
-    candidateInstructions: round.candidateInstructions,
+    status: round.meeting?.status || round.status,
+    timezone: round.meeting?.timezone || round.timezone,
+    meetingMode: round.meeting?.mode || round.meetingMode,
+    meetingProvider: round.meeting?.provider || round.calendarProvider || 'CUSTOM',
+    providerDisplayName: round.meeting?.providerDisplayName || round.calendarProvider || null,
+    meetingLink: round.meeting?.safeJoinUrl || round.meetingLink,
+    officeAddress: round.meeting?.officeAddress || round.officeAddress,
+    dialInInformation: round.meeting?.dialInInformation || null,
+    candidateInstructions: round.meeting?.candidateInstructions || round.candidateInstructions,
     cancelReason: round.cancelReason,
-    scheduledStartAt: round.scheduledStartAt?.toISOString?.() || round.scheduledStartAt || null,
-    scheduledEndAt: round.scheduledEndAt?.toISOString?.() || round.scheduledEndAt || null,
-    rescheduleCount: round.rescheduleCount || 0,
-    lastRescheduledAt: round.lastRescheduledAt?.toISOString?.() || round.lastRescheduledAt || null,
+    scheduledStartAt: round.meeting?.scheduledStartUtc?.toISOString?.() || round.scheduledStartAt?.toISOString?.() || round.scheduledStartAt || null,
+    scheduledEndAt: round.meeting?.scheduledEndUtc?.toISOString?.() || round.scheduledEndAt?.toISOString?.() || round.scheduledEndAt || null,
+    rescheduleCount: round.meeting?.rescheduleCount || round.rescheduleCount || 0,
+    lastRescheduledAt: round.meeting?.lastRescheduledAt?.toISOString?.() || round.lastRescheduledAt?.toISOString?.() || round.lastRescheduledAt || null,
+    calendarDownloadUrl: `/api/interviews/candidate/rounds/${round.id}/calendar.ics`,
+    rescheduleRequests: (round.meeting?.rescheduleRequests || []).map((request) => ({
+      id: request.id,
+      requestedByType: request.requestedByType,
+      status: request.status,
+      reasonCode: request.reasonCode,
+      reasonText: request.reasonText,
+      preferredTimezone: request.preferredTimezone,
+      reviewedAt: request.reviewedAt?.toISOString?.() || request.reviewedAt || null,
+      createdAt: request.createdAt?.toISOString?.() || request.createdAt || null,
+      options: (request.options || []).map((option) => ({
+        id: option.id,
+        proposedStartUtc: option.proposedStartUtc?.toISOString?.() || option.proposedStartUtc || null,
+        proposedEndUtc: option.proposedEndUtc?.toISOString?.() || option.proposedEndUtc || null,
+        timezone: option.timezone,
+        priority: option.priority,
+      })),
+    })),
     job: round.interviewProcess?.application?.job ? serializePublicJob(round.interviewProcess.application.job) : null,
     applicationId: round.interviewProcess?.application?.id || null,
     panelMembers: (round.panelMembers || []).map((member) => ({

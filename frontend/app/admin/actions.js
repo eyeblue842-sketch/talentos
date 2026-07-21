@@ -1,22 +1,29 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import {
   archiveAdminOrganisation,
   archiveAdminOrganisationUnit,
+  beginMeetingProviderConnect,
   bulkInviteAdminUsers,
+  disconnectMeetingProvider,
   bulkUpdateAdminUsers,
   saveAdminFeatureFlag,
   saveAdminNotificationTemplate,
   saveAdminOrganisationUnit,
   saveAdminRole,
   transferAdminOwnership,
+  resetInitialSetup,
   updateAdminLookups,
   updateAdminOrganisation,
   updateAdminSettings,
   updateAdminUserMembership,
   updateAdminWorkflow,
+  validateMeetingProvider,
 } from '@/lib/api';
+import { ORGANISATION_COOKIE, SESSION_COOKIE } from '@/lib/auth';
 
 function parseCsv(value) {
   return String(value || '')
@@ -151,10 +158,57 @@ export async function updateAdminSettingsAction(formData) {
     employmentTypes: parseCsv(formData.get('employmentTypes')),
     workModes: parseCsv(formData.get('workModes')),
     experienceBands: parseJson(formData.get('experienceBands'), []),
+    interviewSchedulingSettings: {
+      defaultMeetingProvider: String(formData.get('defaultMeetingProvider') || 'CUSTOM'),
+      allowedProviders: formData.getAll('allowedProviders').map((value) => String(value)).filter(Boolean),
+      defaultInterviewDuration: Number(formData.get('defaultInterviewDuration') || 60),
+      minimumSchedulingNoticeMinutes: Number(formData.get('minimumSchedulingNoticeMinutes') || 0),
+      maximumCandidateRequests: Number(formData.get('maximumCandidateRequests') || 3),
+      maximumRescheduleCount: Number(formData.get('maximumRescheduleCount') || 10),
+      rescheduleCutoffMinutes: Number(formData.get('rescheduleCutoffMinutes') || 30),
+      reminderIntervalsMinutes: parseCsv(formData.get('reminderIntervalsMinutes')).map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+      includeRecruiterInInvite: formData.get('includeRecruiterInInvite') === 'on',
+      includeCoordinatorInInvite: formData.get('includeCoordinatorInInvite') === 'on',
+      allowAvailabilityChecks: formData.get('allowAvailabilityChecks') === 'on',
+      allowManualCustomLink: formData.get('allowManualCustomLink') === 'on',
+      candidateRescheduleEnabled: formData.get('candidateRescheduleEnabled') === 'on',
+      interviewerRescheduleEnabled: formData.get('interviewerRescheduleEnabled') === 'on',
+      zoomWaitingRoomDefault: formData.get('zoomWaitingRoomDefault') === 'on',
+      cancellationReasonRequired: formData.get('cancellationReasonRequired') === 'on',
+    },
     careerPageSettings: parseJson(formData.get('careerPageSettings'), {}),
     emailBranding: parseJson(formData.get('emailBranding'), {}),
   });
   refreshAdmin();
+}
+
+export async function connectMeetingProviderAction(formData) {
+  const provider = String(formData.get('provider') || '');
+  if (!provider) return;
+  const result = await beginMeetingProviderConnect(provider);
+  redirect(result.authorizationUrl);
+}
+
+export async function validateMeetingProviderAction(formData) {
+  const provider = String(formData.get('provider') || '');
+  if (!provider) return;
+  await validateMeetingProvider(provider);
+  refreshAdmin();
+}
+
+export async function disconnectMeetingProviderAction(formData) {
+  const provider = String(formData.get('provider') || '');
+  if (!provider) return;
+  await disconnectMeetingProvider(provider);
+  refreshAdmin();
+}
+
+export async function resetInitialSetupAction(formData) {
+  await resetInitialSetup(String(formData.get('password') || ''));
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(ORGANISATION_COOKIE);
+  redirect('/setup?reset=1');
 }
 
 export async function updateAdminWorkflowAction(formData) {

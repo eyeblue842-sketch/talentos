@@ -3,6 +3,8 @@ import { auth } from '../middleware/auth.js';
 import { validateSchema } from '../middleware/schema.js';
 import {
   candidateAccountDeactivationSchema,
+  interviewRescheduleRequestCreateSchema,
+  interviewRescheduleRequestWithdrawSchema,
   candidateOnboardingUpdateSchema,
   candidateJobViewCreateSchema,
   candidateRecentJobListQuerySchema,
@@ -33,8 +35,10 @@ import {
   markCandidateNotifications,
   patchCandidateProfile,
   patchCandidateSettings,
+  postCandidateInterviewRescheduleRequest,
   postCandidateAccountDeactivation,
   postCandidateOnboarding,
+  withdrawCandidateInterviewReschedule,
 } from '../controllers/candidateController.js';
 
 export const candidateRouter = Router();
@@ -48,6 +52,8 @@ candidateRouter.patch('/profile', validateSchema(candidateProfileUpdateSchema), 
 candidateRouter.get('/settings', getCandidatePreferenceSettings);
 candidateRouter.patch('/settings', validateSchema(candidateSettingsUpdateSchema), patchCandidateSettings);
 candidateRouter.get('/interviews', getCandidateInterviews);
+candidateRouter.post('/interviews/:roundId/reschedule-request', validateSchema(interviewRescheduleRequestCreateSchema), postCandidateInterviewRescheduleRequest);
+candidateRouter.post('/interviews/reschedule-request/withdraw', validateSchema(interviewRescheduleRequestWithdrawSchema), withdrawCandidateInterviewReschedule);
 candidateRouter.get('/offers', getCandidateOffers);
 candidateRouter.get('/data-export', exportCandidateData);
 candidateRouter.post('/account-deactivation', validateSchema(candidateAccountDeactivationSchema), postCandidateAccountDeactivation);

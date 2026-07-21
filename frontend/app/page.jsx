@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { redirectIfAuthenticated } from '@/lib/auth';
+import { redirectToSetupIfRequired } from '@/lib/setup';
 
 const aiFeatures = [
   {
@@ -118,6 +119,7 @@ function JourneyCard({ item }) {
 }
 
 export default async function HomePage() {
+  await redirectToSetupIfRequired();
   await redirectIfAuthenticated();
 
   return (

@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import dayjs from 'dayjs';
 import { prisma } from '../config/db.js';
 import { buildKeywordMatch } from './matchService.js';
 import { sendPipelineEmail, sendRecruiterOutreachEmail } from './emailService.js';
@@ -7,6 +6,7 @@ import { serializeApplication, serializeAtsNote } from '../serializers/index.js'
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
+import { cancelInterviewMeeting, scheduleInterviewMeeting } from '../meeting/meetingService.js';
 
 const allowedStages = {
   APPLIED: ['SHORTLISTED', 'REJECTED'],
@@ -38,6 +38,13 @@ const candidateVisibleStatusMap = {
   REJECTED: 'Application Closed',
   WITHDRAWN: 'Application Withdrawn',
 };
+
+function isMissingInterviewMeetingInfrastructure(error) {
+  return error?.code === 'P2021'
+    || error?.code === 'P2022'
+    || error?.message?.includes('InterviewMeeting')
+    || error?.message?.includes('interviewMeeting');
+}
 
 function generatePublicReference() {
   return crypto.randomBytes(10).toString('hex').slice(0, 10).toUpperCase();
@@ -284,43 +291,6 @@ async function createCandidateNotification(application, title, message, entityTy
   });
 }
 
-async function createInterviewReminderNotifications(application, round, panelMembers, scheduledStartAt) {
-  const hoursUntilInterview = dayjs(scheduledStartAt).diff(dayjs(), 'hour', true);
-  const reminderWindows = [];
-
-  if (hoursUntilInterview <= 24 && hoursUntilInterview > 1) {
-    reminderWindows.push({
-      title: 'Interview reminder',
-      message: `${round.roundName} starts within 24 hours on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-    });
-  }
-
-  if (hoursUntilInterview <= 1 && hoursUntilInterview >= 0) {
-    reminderWindows.push({
-      title: 'Interview reminder',
-      message: `${round.roundName} starts within the next hour on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-    });
-  }
-
-  for (const reminder of reminderWindows) {
-    await createCandidateNotification(application, reminder.title, reminder.message, 'InterviewRound');
-    await Promise.all(panelMembers.map((member) => createNotification({
-      organisationId: application.organisationId,
-      recipientUserId: member.userId,
-      type: 'INTERVIEW',
-      title: reminder.title,
-      message: reminder.message,
-      entityType: 'InterviewRound',
-      entityId: round.id,
-      metadata: {
-        applicationId: application.submittedApplication?.id || application.id,
-        roundId: round.id,
-        reminder: true,
-      },
-    })));
-  }
-}
-
 async function getApplicationWithRelations(organisationId, applicationId) {
   return prisma.application.findFirst({
     where: { id: applicationId, organisationId },
@@ -372,20 +342,6 @@ async function assertOrganisationCanAccessApplication(actorUser, applicationId, 
   }
 
   return { context, application };
-}
-
-async function getInterviewRoundForApplication(organisationId, applicationId, roundId) {
-  return prisma.interviewRound.findFirst({
-    where: {
-      id: roundId,
-      organisationId,
-      interviewProcess: { applicationId },
-    },
-    include: {
-      panelMembers: { include: { user: true } },
-      interviewProcess: true,
-    },
-  });
 }
 
 function ensureTransitionAllowed(currentStage, nextStage) {
@@ -580,242 +536,195 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
 }
 
 export async function scheduleInterview(applicationId, actorUser, payload, organisationId = null, requestMeta = {}) {
-  const { context, application } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
-  if (!writableRoles.includes(context.activeMembership.role)) {
-    const error = new Error('You are not allowed to schedule interviews for this application.');
-    error.statusCode = 403;
-    throw error;
-  }
+  const normalizedPanelMembers = (payload.panelMembers || payload.panelUserIds || []).map((member, index) => (
+    typeof member === 'string'
+      ? {
+          userId: member,
+          isLead: index === 0,
+          isObserver: false,
+          feedbackRequired: true,
+        }
+      : {
+          userId: String(member.userId || '').trim(),
+          isLead: Boolean(member.isLead),
+          isObserver: Boolean(member.isObserver),
+          feedbackRequired: member.feedbackRequired !== false,
+      }
+  ));
 
-  const round = await getInterviewRoundForApplication(context.organisationId, applicationId, payload.roundId);
-  if (!round) {
-    const error = new Error('Interview round not found.');
-    error.statusCode = 404;
-    throw error;
-  }
+  const runLegacyScheduling = async () => {
+    const { context, application } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
+    const round = (application.interviewProcesses || [])
+      .flatMap((process) => process.rounds || [])
+      .find((item) => item.id === payload.roundId);
 
-  const panelMembers = (payload.panelMembers || payload.panelUserIds || []).map((member, index) => {
-    if (typeof member === 'string') {
-      return {
-        userId: member,
-        isLead: index === 0,
-        isObserver: false,
-        feedbackRequired: true,
-      };
+    if (!round) {
+      const error = new Error('Interview round not found.');
+      error.statusCode = 404;
+      throw error;
     }
 
-    return {
-      userId: String(member.userId || '').trim(),
-      isLead: Boolean(member.isLead),
-      isObserver: Boolean(member.isObserver),
-      feedbackRequired: member.feedbackRequired !== false,
-    };
-  });
+    const membershipUserIds = normalizedPanelMembers.map((item) => item.userId).filter(Boolean);
+    const memberships = await prisma.organisationMembership.findMany({
+      where: {
+        organisationId: context.organisationId,
+        userId: { in: membershipUserIds },
+        status: 'ACTIVE',
+      },
+    });
 
-  const uniquePanelUserIds = new Set();
-  for (const member of panelMembers) {
-    if (!member.userId || uniquePanelUserIds.has(member.userId)) {
-      const error = new Error('Panel members must be unique and valid.');
+    if (memberships.length !== membershipUserIds.length) {
+      const error = new Error('Interview panel members must belong to the organisation.');
       error.statusCode = 422;
       throw error;
     }
-    uniquePanelUserIds.add(member.userId);
-  }
 
-  const validPanelMemberships = await prisma.organisationMembership.findMany({
-    where: {
-      organisationId: context.organisationId,
-      userId: { in: panelMembers.map((member) => member.userId) },
-      status: 'ACTIVE',
-      role: { in: ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER'] },
-    },
-  });
-
-  if (validPanelMemberships.length !== panelMembers.length) {
-    const error = new Error('All panel members must belong to the organisation and hold an interview-eligible role.');
-    error.statusCode = 422;
-    throw error;
-  }
-
-  const scheduledStartAt = dayjs(payload.scheduledStartAt).toDate();
-  const scheduledEndAt = dayjs(payload.scheduledEndAt).toDate();
-  const priorRound = await prisma.interviewRound.findUnique({ where: { id: round.id } });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.interviewRound.update({
+    await prisma.interviewRound.update({
       where: { id: round.id },
       data: {
+        status: 'SCHEDULED',
         interviewType: payload.interviewType,
-        status: payload.status || 'SCHEDULED',
-        durationMinutes: payload.durationMinutes ?? Math.max(15, dayjs(scheduledEndAt).diff(dayjs(scheduledStartAt), 'minute')),
-        timezone: payload.timezone || null,
-        meetingMode: payload.meetingMode || null,
-        scheduledStartAt,
-        scheduledEndAt,
+        scheduledStartAt: new Date(payload.scheduledStartAt),
+        scheduledEndAt: new Date(payload.scheduledEndAt),
+        timezone: payload.timezone || round.timezone || 'UTC',
+        meetingMode: payload.meetingMode || round.meetingMode || 'VIRTUAL',
         meetingLocation: payload.meetingLocation || null,
         meetingLink: payload.meetingLink || null,
         officeAddress: payload.officeAddress || null,
         candidateInstructions: payload.candidateInstructions || null,
         instructions: payload.notes || null,
-        cancelReason: null,
-        rescheduleCount: priorRound?.scheduledStartAt ? { increment: 1 } : undefined,
-        lastRescheduledAt: priorRound?.scheduledStartAt ? new Date() : null,
-        panelMembers: {
-          deleteMany: {},
-          create: panelMembers.map((member) => ({
-            organisationId: context.organisationId,
-            userId: member.userId,
-            isLead: member.isLead,
-            isObserver: member.isObserver,
-            feedbackRequired: member.feedbackRequired,
-          })),
-        },
+        durationMinutes: payload.durationMinutes || round.durationMinutes || 60,
+        rescheduleCount: round.rescheduleCount || 0,
       },
     });
 
-    await tx.application.update({
-      where: { id: applicationId },
+    await prisma.application.update({
+      where: { id: application.id },
       data: {
         currentStage: 'INTERVIEW_SCHEDULED',
         statusLabel: stageLabelMap.INTERVIEW_SCHEDULED,
-        interviewScheduledAt: scheduledStartAt,
-        interviewerName: round.roundName,
       },
     });
-  });
 
-  await Promise.all([
-    createActivity(context.organisationId, applicationId, {
-      actorUserId: actorUser.id,
-      eventType: priorRound?.scheduledStartAt ? 'INTERVIEW_RESCHEDULED' : 'INTERVIEW_SCHEDULED',
-      message: `Interview ${priorRound?.scheduledStartAt ? 'rescheduled' : 'scheduled'} for ${round.roundName} on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-      metadata: {
-        roundId: round.id,
-        scheduledStartAt,
-        scheduledEndAt,
-        timezone: payload.timezone || null,
-        meetingMode: payload.meetingMode || null,
-        panelMembers,
-      },
-    }),
-    createCandidateTimeline(
-      application.submittedApplication?.id || application.id,
-      context.organisationId,
-      actorUser.id,
-      priorRound?.scheduledStartAt ? 'INTERVIEW_RESCHEDULED' : 'INTERVIEW_SCHEDULED',
-      `Interview scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-      {
-        roundId: round.id,
-        timezone: payload.timezone || null,
-        meetingMode: payload.meetingMode || null,
-      },
-    ),
-    createCandidateNotification(
-      application,
-      priorRound?.scheduledStartAt ? 'Interview rescheduled' : 'Interview scheduled',
-      `${round.roundName} is scheduled for ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-    ),
-    ...panelMembers.map((member) => createNotification({
-      organisationId: context.organisationId,
-      recipientUserId: member.userId,
-      type: 'INTERVIEW',
-      title: priorRound?.scheduledStartAt ? 'Interview rescheduled' : 'Interview scheduled',
-      message: `${application.candidate.fullName} has a ${round.roundName} round on ${dayjs(scheduledStartAt).format('DD MMM YYYY, hh:mm A')}.`,
-      entityType: 'InterviewRound',
-      entityId: round.id,
-    })),
-    recordAuditLog({
-      organisationId: context.organisationId,
-      actorUserId: actorUser.id,
-      action: priorRound?.scheduledStartAt ? 'application.interview.reschedule' : 'application.interview.schedule',
-      entityType: 'InterviewRound',
-      entityId: round.id,
-      beforeData: priorRound,
-      afterData: {
-        scheduledStartAt,
-        scheduledEndAt,
-        meetingLocation: payload.meetingLocation || null,
-        meetingLink: payload.meetingLink || null,
-        officeAddress: payload.officeAddress || null,
-        candidateInstructions: payload.candidateInstructions || null,
-        notes: payload.notes || null,
-        timezone: payload.timezone || null,
-        meetingMode: payload.meetingMode || null,
-        panelMembers,
-      },
-      ...requestMeta,
-    }),
-  ]);
+    await Promise.all([
+      createActivity(context.organisationId, applicationId, {
+        actorUserId: actorUser.id,
+        eventType: 'INTERVIEW_SCHEDULED',
+        message: `${round.roundName} interview scheduled.`,
+        metadata: { roundId: round.id },
+      }),
+      ...normalizedPanelMembers.map((member) => createNotification({
+        organisationId: context.organisationId,
+        recipientUserId: member.userId,
+        type: 'INTERVIEW',
+        title: 'Interview scheduled',
+        message: `${round.roundName} has been scheduled.`,
+        entityType: 'InterviewRound',
+        entityId: round.id,
+        metadata: { applicationId, roundId: round.id },
+      })),
+      recordAuditLog({
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: 'application.interview.schedule',
+        entityType: 'InterviewRound',
+        entityId: round.id,
+        afterData: {
+          scheduledStartAt: payload.scheduledStartAt,
+          scheduledEndAt: payload.scheduledEndAt,
+          panelUserIds: membershipUserIds,
+        },
+        ...requestMeta,
+      }),
+    ]);
 
-  await createInterviewReminderNotifications(application, round, panelMembers, scheduledStartAt);
+    const updatedLegacy = await getApplicationWithRelations(context.organisationId, applicationId);
+    return serializeApplication(updatedLegacy, { includeCoverLetter: true, includeCandidatePrivate: true });
+  };
 
+  if (!prisma.interviewMeeting?.create) {
+    return runLegacyScheduling();
+  }
+
+  try {
+    await scheduleInterviewMeeting(applicationId, actorUser, {
+      ...payload,
+      panelMembers: normalizedPanelMembers,
+      notes: payload.notes || null,
+    }, organisationId, requestMeta);
+  } catch (error) {
+    if (!isMissingInterviewMeetingInfrastructure(error)) {
+      throw error;
+    }
+    return runLegacyScheduling();
+  }
+
+  const context = await requireOrganisationContext(actorUser, organisationId);
   const updated = await getApplicationWithRelations(context.organisationId, applicationId);
   return serializeApplication(updated, { includeCoverLetter: true, includeCandidatePrivate: true });
 }
 
 export async function cancelInterview(applicationId, actorUser, payload, organisationId = null, requestMeta = {}) {
-  const { context, application } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
-  if (!writableRoles.includes(context.activeMembership.role)) {
-    const error = new Error('You are not allowed to cancel interviews for this application.');
-    error.statusCode = 403;
-    throw error;
+  const runLegacyCancellation = async () => {
+    const { context, application } = await assertOrganisationCanAccessApplication(actorUser, applicationId, organisationId);
+    const round = (application.interviewProcesses || [])
+      .flatMap((process) => process.rounds || [])
+      .find((item) => item.id === payload.roundId);
+
+    if (!round) {
+      const error = new Error('Interview round not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    await prisma.interviewRound.update({
+      where: { id: round.id },
+      data: {
+        status: 'CANCELLED',
+        cancelReason: payload.cancelReason,
+      },
+    });
+
+    await Promise.all([
+      createActivity(context.organisationId, applicationId, {
+        actorUserId: actorUser.id,
+        eventType: 'INTERVIEW_CANCELLED',
+        message: `${round.roundName} interview cancelled.`,
+        metadata: { roundId: round.id, cancelReason: payload.cancelReason },
+      }),
+      recordAuditLog({
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: 'application.interview.cancel',
+        entityType: 'InterviewRound',
+        entityId: round.id,
+        afterData: { cancelReason: payload.cancelReason },
+        ...requestMeta,
+      }),
+    ]);
+
+    const updatedLegacy = await getApplicationWithRelations(context.organisationId, applicationId);
+    return serializeApplication(updatedLegacy, { includeCoverLetter: true, includeCandidatePrivate: true });
+  };
+
+  if (!prisma.interviewMeeting?.update) {
+    return runLegacyCancellation();
   }
 
-  const round = await getInterviewRoundForApplication(context.organisationId, applicationId, payload.roundId);
-  if (!round) {
-    const error = new Error('Interview round not found.');
-    error.statusCode = 404;
-    throw error;
+  try {
+    await cancelInterviewMeeting(applicationId, actorUser, payload, organisationId, requestMeta);
+  } catch (error) {
+    const canFallbackToLegacy = isMissingInterviewMeetingInfrastructure(error)
+      || (error?.statusCode === 422 && error?.message === 'This interview has not been scheduled yet.');
+
+    if (!canFallbackToLegacy) {
+      throw error;
+    }
+
+    return runLegacyCancellation();
   }
 
-  await prisma.interviewRound.update({
-    where: { id: round.id },
-    data: {
-      status: 'CANCELLED',
-      cancelReason: payload.cancelReason,
-    },
-  });
-
-  await Promise.all([
-    createActivity(context.organisationId, applicationId, {
-      actorUserId: actorUser.id,
-      eventType: 'INTERVIEW_CANCELLED',
-      message: `Interview cancelled for ${round.roundName}.`,
-      metadata: { roundId: round.id, cancelReason: payload.cancelReason },
-    }),
-    createCandidateTimeline(
-      applicationId,
-      context.organisationId,
-      actorUser.id,
-      'INTERVIEW_CANCELLED',
-      `Interview update for ${round.roundName}: this round was cancelled.`,
-      { roundId: round.id },
-    ),
-    createCandidateNotification(
-      application,
-      'Interview cancelled',
-      `${round.roundName} has been cancelled.`,
-    ),
-    ...round.panelMembers.map((member) => createNotification({
-      organisationId: context.organisationId,
-      recipientUserId: member.userId,
-      type: 'INTERVIEW',
-      title: 'Interview cancelled',
-      message: `${round.roundName} interview has been cancelled.`,
-      entityType: 'InterviewRound',
-      entityId: round.id,
-    })),
-    recordAuditLog({
-      organisationId: context.organisationId,
-      actorUserId: actorUser.id,
-      action: 'application.interview.cancel',
-      entityType: 'InterviewRound',
-      entityId: round.id,
-      afterData: { status: 'CANCELLED', cancelReason: payload.cancelReason },
-      ...requestMeta,
-    }),
-  ]);
-
+  const context = await requireOrganisationContext(actorUser, organisationId);
   const updated = await getApplicationWithRelations(context.organisationId, applicationId);
   return serializeApplication(updated, { includeCoverLetter: true, includeCandidatePrivate: true });
 }

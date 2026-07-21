@@ -4,8 +4,10 @@ import { PublicHeader } from '@/components/public/public-header';
 import { AccessEntryCard } from '@/components/sections/access-entry-card';
 import { candidateAuthRoutes } from '@/lib/auth-experience';
 import { getCurrentUser } from '@/lib/auth';
+import { redirectToSetupIfRequired } from '@/lib/setup';
 
 export default async function CandidateEntryPage() {
+  await redirectToSetupIfRequired();
   const user = await getCurrentUser();
 
   if (user?.role === 'CANDIDATE') {

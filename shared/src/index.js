@@ -3,3 +3,4 @@ export * from './ats.js';
 export * from './phase4.js';
 export * from './admin.js';
 export * from './intelligence.js';
+export * from './setup.js';

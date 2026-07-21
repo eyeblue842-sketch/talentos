@@ -41,9 +41,18 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_MEETING_ENABLED: z.enum(['true', 'false']).default('false'),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
   LINKEDIN_REDIRECT_URI: z.string().url().optional(),
+  ZOOM_MEETING_ENABLED: z.enum(['true', 'false']).default('false'),
+  ZOOM_CLIENT_ID: z.string().optional(),
+  ZOOM_CLIENT_SECRET: z.string().optional(),
+  ZOOM_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  CUSTOM_MEETING_ENABLED: z.enum(['true', 'false']).default('true'),
+  PUBLIC_APP_URL: z.string().url().optional(),
+  MEETING_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   RESUME_BUILDER_ENABLED: z.enum(['true', 'false']).default('false'),
   RESUME_BUILDER_BASE_URL: z.string().url().optional(),
   RESUME_BUILDER_CLIENT_ID: z.string().optional(),
@@ -132,6 +141,38 @@ const envSchema = z.object({
       message: 'SMTP_HOST, SMTP_USER, and SMTP_PASS must be provided together for SMTP delivery.',
     });
   }
+
+  if (data.GOOGLE_MEETING_ENABLED === 'true') {
+    for (const field of ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI']) {
+      if (!data[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required when GOOGLE_MEETING_ENABLED=true.`,
+        });
+      }
+    }
+  }
+
+  if (data.ZOOM_MEETING_ENABLED === 'true') {
+    for (const field of ['ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET', 'ZOOM_OAUTH_REDIRECT_URI']) {
+      if (!data[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required when ZOOM_MEETING_ENABLED=true.`,
+        });
+      }
+    }
+  }
+
+  if (data.NODE_ENV === 'production' && (data.GOOGLE_MEETING_ENABLED === 'true' || data.ZOOM_MEETING_ENABLED === 'true') && !data.MEETING_TOKEN_ENCRYPTION_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MEETING_TOKEN_ENCRYPTION_KEY'],
+      message: 'MEETING_TOKEN_ENCRYPTION_KEY is required in production when a meeting provider integration is enabled.',
+    });
+  }
 });
 
 export function parseEnv(rawEnv) {
@@ -190,9 +231,18 @@ export const env = {
   googleClientId: parsed.data.GOOGLE_CLIENT_ID,
   googleClientSecret: parsed.data.GOOGLE_CLIENT_SECRET,
   googleRedirectUri: parsed.data.GOOGLE_REDIRECT_URI,
+  googleMeetingEnabled: parsed.data.GOOGLE_MEETING_ENABLED === 'true',
+  googleMeetingRedirectUri: parsed.data.GOOGLE_OAUTH_REDIRECT_URI,
   linkedinClientId: parsed.data.LINKEDIN_CLIENT_ID,
   linkedinClientSecret: parsed.data.LINKEDIN_CLIENT_SECRET,
   linkedinRedirectUri: parsed.data.LINKEDIN_REDIRECT_URI,
+  zoomMeetingEnabled: parsed.data.ZOOM_MEETING_ENABLED === 'true',
+  zoomClientId: parsed.data.ZOOM_CLIENT_ID,
+  zoomClientSecret: parsed.data.ZOOM_CLIENT_SECRET,
+  zoomRedirectUri: parsed.data.ZOOM_OAUTH_REDIRECT_URI,
+  customMeetingEnabled: parsed.data.CUSTOM_MEETING_ENABLED === 'true',
+  publicAppUrl: parsed.data.PUBLIC_APP_URL || parsed.data.FRONTEND_URL,
+  meetingTokenEncryptionKey: parsed.data.MEETING_TOKEN_ENCRYPTION_KEY,
   resumeBuilderEnabled: parsed.data.RESUME_BUILDER_ENABLED === 'true',
   resumeBuilderBaseUrl: parsed.data.RESUME_BUILDER_BASE_URL,
   resumeBuilderClientId: parsed.data.RESUME_BUILDER_CLIENT_ID,

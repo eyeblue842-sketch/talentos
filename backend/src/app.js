@@ -18,6 +18,8 @@ import { publicRouter } from './routes/publicRoutes.js';
 import { candidateRouter } from './routes/candidateRoutes.js';
 import { applicationWorkflowRouter } from './routes/applicationWorkflowRoutes.js';
 import { intelligenceRouter } from './routes/intelligenceRoutes.js';
+import { meetingProviderRouter } from './routes/meetingProviderRoutes.js';
+import { setupRouter } from './routes/setupRoutes.js';
 import { requestContext } from './middleware/requestContext.js';
 import { errorHandler } from './middleware/error.js';
 import { getApplicationHealth } from './services/healthService.js';
@@ -64,6 +66,7 @@ app.get('/api/health', async (req, res, next) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/setup', setupRouter);
 app.use('/api', applicationWorkflowRouter);
 app.use('/api/jobs', jobRouter);
 app.use('/api/public', publicRouter);
@@ -75,6 +78,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/organisations', organisationRouter);
 app.use('/api/requisitions', requisitionRouter);
 app.use('/api/interviews', interviewRouter);
+app.use('/api/meeting-providers', meetingProviderRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/offers', offerRouter);
 app.use('/api/admin', adminRouter);

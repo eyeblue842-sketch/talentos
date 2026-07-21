@@ -94,43 +94,63 @@ async function handleResumeParsingTask(task) {
 }
 
 async function handleInterviewReminderTask(task) {
-  const round = await prisma.interviewRound.findUnique({
-    where: { id: task.payload?.roundId || task.entityId || '' },
+  const reminder = await prisma.meetingReminder.findUnique({
+    where: { id: task.payload?.reminderId || task.entityId || '' },
     include: {
-      panelMembers: true,
-      interviewProcess: {
+      participant: true,
+      meeting: {
         include: {
-          application: {
+          participants: true,
+          interviewRound: {
             include: {
-              candidate: { include: { user: true } },
-              submittedApplication: true,
-              job: true,
+              interviewProcess: {
+                include: {
+                  application: {
+                    include: {
+                      candidate: { include: { user: true } },
+                      submittedApplication: true,
+                      job: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
       },
     },
   });
-  if (!round || round.status !== 'SCHEDULED' || !round.scheduledStartAt) return 'cancelled';
 
-  const recipientIds = new Set(round.panelMembers.map((member) => member.userId));
-  if (round.ownerUserId) recipientIds.add(round.ownerUserId);
-  const candidateUserId = round.interviewProcess.application.candidate?.userId;
-  if (candidateUserId) recipientIds.add(candidateUserId);
+  if (!reminder || reminder.status !== 'SCHEDULED' || !reminder.meeting || reminder.meeting.status !== 'SCHEDULED') return 'cancelled';
 
-  await Promise.all([...recipientIds].map((recipientUserId) => createNotification({
-    organisationId: round.organisationId,
-    recipientUserId,
-    type: 'INTERVIEW',
-    title: 'Interview reminder',
-    message: `${round.roundName} for ${round.interviewProcess.application.job?.title || 'this role'} starts soon.`,
-    entityType: 'InterviewRound',
-    entityId: round.id,
-    metadata: {
-      roundId: round.id,
-      reminderWindow: task.payload?.reminderWindow || 'scheduled',
+  const round = reminder.meeting.interviewRound;
+  const application = round.interviewProcess.application;
+  const participant = reminder.participant;
+
+  if (participant.userId) {
+    await createNotification({
+      organisationId: reminder.organisationId,
+      recipientUserId: participant.userId,
+      type: 'INTERVIEW',
+      title: 'Interview reminder',
+      message: `${round.roundName} for ${application.job?.title || 'this role'} starts soon.`,
+      entityType: 'InterviewRound',
+      entityId: round.id,
+      metadata: {
+        roundId: round.id,
+        meetingId: reminder.meeting.id,
+        reminderType: reminder.reminderType,
+      },
+    });
+  }
+
+  await prisma.meetingReminder.update({
+    where: { id: reminder.id },
+    data: {
+      status: 'SENT',
+      sentAt: new Date(),
     },
-  })));
+  });
 
   return 'success';
 }

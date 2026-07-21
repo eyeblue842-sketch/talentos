@@ -21,6 +21,10 @@ import {
   updateCandidateSelfProfile,
   updateCandidateSettings,
 } from '../services/candidateService.js';
+import {
+  submitInterviewRescheduleRequest,
+  withdrawInterviewRescheduleRequest,
+} from '../meeting/meetingService.js';
 import { sendSuccess } from '../utils/response.js';
 
 export async function getCandidateProfile(req, res, next) {
@@ -172,6 +176,39 @@ export async function postCandidateOnboarding(req, res, next) {
 export async function getCandidateInterviews(req, res, next) {
   try {
     const result = await getCandidateInterviewCenter(req.user.candidateProfile.id);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateInterviewRescheduleRequest(req, res, next) {
+  try {
+    const result = await submitInterviewRescheduleRequest({
+      candidateUser: req.user,
+      roundId: req.params.roundId,
+      payload: req.body,
+      requestMeta: {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    });
+    sendSuccess(res, 201, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function withdrawCandidateInterviewReschedule(req, res, next) {
+  try {
+    const result = await withdrawInterviewRescheduleRequest({
+      candidateUser: req.user,
+      requestId: req.body.requestId,
+      requestMeta: {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    });
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

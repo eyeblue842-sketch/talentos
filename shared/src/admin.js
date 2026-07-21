@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   employmentTypeSchema,
+  meetingProviderSchema,
   workplaceTypeSchema,
 } from './ats.js';
 import {
@@ -38,6 +39,20 @@ export const enterprisePermissionSchema = z.enum([
   'organisation.notifications.manage',
   'organisation.flags.manage',
   'organisation.lookups.manage',
+  'interview.schedule',
+  'interview.reschedule',
+  'interview.cancel',
+  'interview.view',
+  'interview.join',
+  'interview.manageParticipants',
+  'interview.reviewRescheduleRequest',
+  'interview.overrideConflict',
+  'interview.markNoShow',
+  'meetingProvider.manage',
+  'meetingProvider.viewStatus',
+  'meetingProvider.disconnect',
+  'schedulingSettings.manage',
+  'schedulingAudit.view',
   'intelligence.resume.read',
   'intelligence.resume.generate',
   'intelligence.match.read',
@@ -133,6 +148,29 @@ export const adminSettingsUpdateSchema = z.object({
   dateFormat: z.string().trim().min(2).max(40).optional(),
   employmentTypes: z.array(employmentTypeSchema).optional(),
   workModes: z.array(workplaceTypeSchema).optional(),
+  interviewSchedulingSettings: z.object({
+    defaultMeetingProvider: z.enum(['GOOGLE_MEET', 'ZOOM', 'CUSTOM']).optional(),
+    allowedProviders: z.array(z.enum(['GOOGLE_MEET', 'ZOOM', 'CUSTOM'])).max(5).optional(),
+    defaultInterviewDuration: z.number().int().min(15).max(480).optional(),
+    workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    workingHours: z.object({
+      start: z.string().trim().max(10).optional(),
+      end: z.string().trim().max(10).optional(),
+    }).optional(),
+    minimumSchedulingNoticeMinutes: z.number().int().min(0).max(10080).optional(),
+    candidateRescheduleEnabled: z.boolean().optional(),
+    interviewerRescheduleEnabled: z.boolean().optional(),
+    maximumCandidateRequests: z.number().int().min(0).max(20).optional(),
+    maximumRescheduleCount: z.number().int().min(0).max(20).optional(),
+    rescheduleCutoffMinutes: z.number().int().min(0).max(10080).optional(),
+    reminderIntervalsMinutes: z.array(z.number().int().min(1).max(10080)).max(10).optional(),
+    includeRecruiterInInvite: z.boolean().optional(),
+    includeCoordinatorInInvite: z.boolean().optional(),
+    allowAvailabilityChecks: z.boolean().optional(),
+    allowManualCustomLink: z.boolean().optional(),
+    zoomWaitingRoomDefault: z.boolean().optional(),
+    cancellationReasonRequired: z.boolean().optional(),
+  }).optional(),
   experienceBands: z.array(z.object({
     label: z.string().trim().min(1).max(80),
     min: z.number().int().min(0).max(80),
@@ -201,4 +239,9 @@ export const adminUserListQuerySchema = z.object({
   role: z.enum(['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER']).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
   accountStatus: userAccountStatusSchema.optional(),
+});
+
+export const adminMeetingProviderConfigSchema = z.object({
+  provider: meetingProviderSchema,
+  calendarId: z.string().trim().max(200).optional().nullable(),
 });

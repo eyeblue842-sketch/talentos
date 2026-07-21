@@ -253,6 +253,14 @@ export function RecruiterApplicationDetailView({
                   </select>
                 </label>
                 <label className="text-sm">
+                  <span className="mb-1 block font-medium">Meeting provider</span>
+                  <select name="meetingProvider" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue={primaryRound.meeting?.provider || primaryRound.calendarProvider || 'CUSTOM'}>
+                    <option value="CUSTOM">Custom</option>
+                    <option value="GOOGLE_MEET">Google Meet</option>
+                    <option value="ZOOM">Zoom</option>
+                  </select>
+                </label>
+                <label className="text-sm">
                   <span className="mb-1 block font-medium">Duration (minutes)</span>
                   <input name="durationMinutes" type="number" min="15" max="480" defaultValue={primaryRound.durationMinutes || 60} className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" />
                 </label>
@@ -268,9 +276,29 @@ export function RecruiterApplicationDetailView({
                   <span className="mb-1 block font-medium">Meeting link</span>
                   <input name="meetingLink" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Meeting link" defaultValue={primaryRound.meetingLink || ''} />
                 </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Provider display name</span>
+                  <input name="providerDisplayName" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Google Meet, Zoom, or custom label" defaultValue={primaryRound.meeting?.providerDisplayName || ''} />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Dial-in information</span>
+                  <input name="dialInInformation" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Dial-in or phone bridge details" defaultValue={primaryRound.meeting?.dialInInformation || ''} />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Passcode</span>
+                  <input name="passcode" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Optional provider passcode" />
+                </label>
                 <label className="text-sm md:col-span-2">
                   <span className="mb-1 block font-medium">Office address</span>
                   <input name="officeAddress" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Office address" defaultValue={primaryRound.officeAddress || ''} />
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="includeRecruiterInInvite" defaultChecked />
+                  <span>Include recruiter in invite</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="waitingRoomEnabled" defaultChecked={primaryRound.meeting?.provider === 'ZOOM'} />
+                  <span>Enable waiting room when supported</span>
                 </label>
                 <label className="text-sm md:col-span-2">
                   <span className="mb-1 block font-medium">Candidate instructions</span>

@@ -1,82 +1,95 @@
 # API Reference
 
-Base backend URL: `http://localhost:5000/api`
+Updated: 2026-07-21
 
 ## Auth
 
-- `POST /auth/signup`
-- `POST /auth/login`
-- `GET /auth/me`
-- `POST /auth/logout`
-- `POST /auth/email-verification/request`
-- `POST /auth/email-verification/confirm`
-- `POST /auth/password-reset/request`
-- `POST /auth/password-reset/session`
-- `POST /auth/password-reset/confirm`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `POST /api/auth/email-verification/request`
+- `POST /api/auth/email-verification/confirm`
+- `POST /api/auth/password-reset/request`
+- `POST /api/auth/password-reset/session`
+- `POST /api/auth/password-reset/confirm`
+- OAuth auth routes remain under `/api/auth/oauth/*`
+
+## Initial Setup
+
+- `GET /api/setup/status`
+- `POST /api/setup`
+- `POST /api/setup/reset`
+
+Frontend route:
+
+- `GET /setup`
+
+Notes:
+
+- `POST /api/setup` is rate-limited and available only before initialization completes
+- `POST /api/setup/reset` requires authenticated `ADMIN` plus password confirmation
 
 ## Public
 
-- `GET /public/jobs`
-- `GET /public/jobs/:slug`
-- `GET /public/companies/:slug`
+- `GET /api/public/jobs`
+- `GET /api/public/jobs/:slug`
+- `GET /api/public/companies/:slug`
 
 ## Candidate
 
-- `GET /candidate/profile`
-- `PATCH /candidate/profile`
-- `GET /candidate/resumes`
-- `POST /candidate/resumes`
-- `GET /candidate/resumes/:assetId/download`
-- `POST /candidate/applications`
-- `POST /candidate/applications/validate`
-- `GET /candidate/applications`
-- `GET /candidate/applications/:applicationId`
-- candidate notifications, saved jobs, export, recent jobs, and related self-service routes
+- profile, resume, saved-job, application, interview, offer, notification, export routes remain under `/api/candidate/*`
+- new scheduling actions:
+  - `POST /api/candidate/interviews/:roundId/reschedule-request`
+  - `POST /api/candidate/interviews/reschedule-request/withdraw`
+  - `GET /api/interviews/candidate/rounds/:roundId/calendar.ics`
 
 ## Recruiter Core
 
-- jobs CRUD and screening routes under `/jobs`
-- recruiter ATS routes under `/ats`
-- recruiter resume search routes under `/resumes/search`
-- requisition, members, notifications, and recruiter dashboard routes under existing recruiter APIs
+- jobs, requisitions, ATS, resume search, team, and dashboard routes remain under existing recruiter namespaces
+- existing interview lifecycle routes remain under `/api/interviews/*`
+- new meeting routes:
+  - `GET /api/interviews/meetings`
+  - `GET /api/interviews/assigned`
+  - `POST /api/interviews/availability`
+  - `GET /api/interviews/rounds/:roundId/meeting`
+  - `POST /api/interviews/rounds/:roundId/reschedule-request`
+  - `POST /api/interviews/reschedule-requests/:requestId/review`
+  - `POST /api/interviews/reschedule-requests/withdraw`
+  - `GET /api/interviews/rounds/:roundId/calendar.ics`
+
+## Meeting Provider Administration
+
+- `GET /api/meeting-providers/callback/:provider`
+- `GET /api/meeting-providers/admin/providers`
+- `POST /api/meeting-providers/admin/providers/:provider/connect`
+- `POST /api/meeting-providers/admin/providers/:provider/validate`
+- `DELETE /api/meeting-providers/admin/providers/:provider`
+
+These routes are organization-admin scoped and never expose raw OAuth tokens.
 
 ## Enterprise Admin
 
-- admin routes under `/admin/**`
-- organization profile and unit management
-- users and invitations
-- role definitions
-- settings and workflow administration
-- audit
-- notification templates
-- feature flags
-- background-job visibility
-- analytics
+- organization settings, roles, users, analytics, feature flags, audit, workflow, and notification admin routes remain under `/api/admin/*`
+- interview scheduling policy is now persisted through organization settings updates
 
 ## Intelligence
 
-- `GET /intelligence/health`
-- `GET /intelligence/governance`
-- `POST /intelligence/feedback`
-- `POST /intelligence/resume`
-- `POST /intelligence/match`
-- `POST /intelligence/match/batch`
-- `POST /intelligence/job`
-- `POST /intelligence/interview`
-- `POST /intelligence/search/parse`
-- `POST /intelligence/analytics/insight`
+Intelligence routes remain under `/api/intelligence/*` and are unchanged by Milestone 8.5.
 
-## Health
+## Health and Operations
 
-- `GET /health`
+- health endpoints remain unchanged
+- reminder execution reuses background-task infrastructure
 
-## Worker and Operations Notes
+## Error Model Notes
 
-- background workers are internal runtime processes and do not expose a public worker-control API in this milestone
-- admin background-job visibility remains available through existing admin routes
+The API returns normalized:
 
-## Notes
+- validation errors
+- permission errors
+- organization-boundary errors
+- conflict/stale-update errors
+- safe provider errors
 
-- All recruiter, admin, ATS, offer, and intelligence routes are organization-scoped through server-side authorization helpers.
-- Intelligence routes require both permission and feature gating where configured.
-- Candidate-facing routes enforce candidate ownership and do not expose recruiter-private data.
+Raw Google or Zoom responses, tokens, host URLs, and stack traces are not returned to clients.

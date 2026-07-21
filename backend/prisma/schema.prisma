@@ -161,6 +161,7 @@ enum AuthTokenType {
   EMAIL_VERIFICATION
   OAUTH_STATE
   OAUTH_HANDOFF
+  MEETING_PROVIDER_STATE
 }
 
 enum RequisitionPriority {
@@ -218,6 +219,81 @@ enum MeetingMode {
   HYBRID
   PHONE
   OTHER
+}
+
+enum MeetingProvider {
+  GOOGLE_MEET
+  ZOOM
+  CUSTOM
+}
+
+enum MeetingConnectionStatus {
+  DISCONNECTED
+  CONNECTED
+  EXPIRED
+  ERROR
+}
+
+enum InterviewMeetingStatus {
+  DRAFT
+  SCHEDULING
+  SCHEDULED
+  RESCHEDULE_REQUESTED
+  RESCHEDULING
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+  PROVIDER_FAILED
+  PARTIALLY_FAILED
+  EXPIRED
+}
+
+enum MeetingParticipantRole {
+  CANDIDATE
+  INTERVIEWER
+  LEAD_INTERVIEWER
+  HIRING_MANAGER
+  RECRUITER
+  COORDINATOR
+  OBSERVER
+}
+
+enum MeetingRsvpStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+  NOT_SENT
+}
+
+enum MeetingAttendanceStatus {
+  UNKNOWN
+  ATTENDED
+  NO_SHOW
+  EXCUSED
+  REMOVED
+}
+
+enum InterviewRescheduleRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum InterviewRescheduleRequesterType {
+  CANDIDATE
+  INTERVIEWER
+  RECRUITER
+  COORDINATOR
+}
+
+enum MeetingReminderStatus {
+  SCHEDULED
+  CANCELLED
+  SENT
+  FAILED
 }
 
 enum FeedbackRecommendation {
@@ -410,6 +486,8 @@ model User {
   id                         String                      @id @default(cuid())
   email                      String                      @unique
   passwordHash               String
+  name                       String?
+  phoneNumber                String?
   role                       UserRole
   isActive                   Boolean                     @default(true)
   accountStatus              UserAccountStatus           @default(ACTIVE)
@@ -435,6 +513,13 @@ model User {
   ownedInterviewRounds       InterviewRound[]            @relation("InterviewRoundOwner")
   interviewPanelMemberships  InterviewPanelMember[]
   interviewFeedbacks         InterviewFeedback[]         @relation("InterviewFeedbackAuthor")
+  meetingProviderConnections MeetingProviderConnection[] @relation("MeetingProviderConnectedBy")
+  interviewMeetingsCreated   InterviewMeeting[]          @relation("InterviewMeetingCreatedBy")
+  interviewMeetingsUpdated   InterviewMeeting[]          @relation("InterviewMeetingUpdatedBy")
+  meetingParticipants        MeetingParticipant[]
+  meetingRescheduleRequests  InterviewRescheduleRequest[] @relation("InterviewRescheduleRequestedBy")
+  meetingRescheduleReviews   InterviewRescheduleRequest[] @relation("InterviewRescheduleReviewedBy")
+  meetingScheduleHistory     InterviewScheduleHistory[]  @relation("InterviewScheduleHistoryActor")
   notifications              Notification[]              @relation("NotificationRecipient")
   auditLogs                  AuditLog[]                  @relation("AuditLogActor")
   screeningQuestionTemplates ScreeningQuestionTemplate[] @relation("ScreeningQuestionTemplateAuthor")
@@ -456,6 +541,8 @@ model User {
   intelligenceFeedbacks      IntelligenceFeedback[]
   backgroundTasksCreated     BackgroundTask[]            @relation("BackgroundTaskCreatedBy")
   backgroundTasksUpdated     BackgroundTask[]            @relation("BackgroundTaskUpdatedBy")
+  completedPlatformSetupStates PlatformSetupState[]      @relation("PlatformSetupCompletedBy")
+  resetPlatformSetupStates   PlatformSetupState[]        @relation("PlatformSetupResetBy")
 }
 
 model Organisation {
@@ -490,6 +577,12 @@ model Organisation {
   interviewRounds            InterviewRound[]
   interviewPanels            InterviewPanelMember[]
   interviewFeedbacks         InterviewFeedback[]
+  meetingProviderConnections MeetingProviderConnection[]
+  interviewMeetings          InterviewMeeting[]
+  meetingParticipants        MeetingParticipant[]
+  rescheduleRequests         InterviewRescheduleRequest[]
+  rescheduleHistory          InterviewScheduleHistory[]
+  meetingReminders           MeetingReminder[]
   notifications              Notification[]
   auditLogs                  AuditLog[]
   screeningQuestionTemplates ScreeningQuestionTemplate[]
@@ -568,6 +661,7 @@ model OrganisationSettings {
   defaultHiringWorkflow Json?
   defaultOfferWorkflow  Json?
   interviewTemplates    Json?
+  interviewSchedulingSettings Json?
   offerTemplates        Json?
   careerPageSettings    Json?
   emailBranding         Json?
@@ -636,6 +730,22 @@ model FeatureFlag {
 
   @@unique([organisationId, key])
   @@index([organisationId, enabled])
+}
+
+model PlatformSetupState {
+  id                 String    @id @default("platform-setup")
+  setupCompleted     Boolean   @default(false)
+  setupVersion       String?
+  setupCompletedAt   DateTime?
+  setupCompletedBy   String?
+  lastResetAt        DateTime?
+  lastResetBy        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  completedByUser    User?     @relation("PlatformSetupCompletedBy", fields: [setupCompletedBy], references: [id], onDelete: SetNull)
+  resetByUser        User?     @relation("PlatformSetupResetBy", fields: [lastResetBy], references: [id], onDelete: SetNull)
+
+  @@index([setupCompleted, setupCompletedAt])
 }
 
 model IntelligenceExecution {
@@ -882,6 +992,8 @@ model CandidateProfile {
   resumeAssets                ResumeAsset[]       @relation("CandidateResumeAssets")
   latestResumeAsset           ResumeAsset?        @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
   offers                      Offer[]
+  meetingParticipants         MeetingParticipant[]
+  rescheduleRequests          InterviewRescheduleRequest[]
 
   @@index([recommendationEnabled, updatedAt])
 }
@@ -1437,6 +1549,7 @@ model InterviewRound {
   owner              User?                  @relation("InterviewRoundOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   panelMembers       InterviewPanelMember[]
   feedbacks          InterviewFeedback[]
+  meeting            InterviewMeeting?
 
   @@unique([interviewProcessId, sequence])
   @@index([organisationId, status])
@@ -1487,6 +1600,197 @@ model InterviewFeedback {
 
   @@unique([interviewRoundId, interviewerId])
   @@index([organisationId, interviewerId, submittedAt])
+}
+
+model MeetingProviderConnection {
+  id                   String                  @id @default(cuid())
+  organisationId       String
+  provider             MeetingProvider
+  status               MeetingConnectionStatus @default(DISCONNECTED)
+  connectedAccountId   String?
+  connectedEmail       String?
+  encryptedRefreshToken String?
+  encryptedAccessToken String?
+  accessTokenExpiresAt DateTime?
+  scopes               Json?
+  calendarId           String?
+  providerMetadata     Json?
+  lastValidatedAt      DateTime?
+  lastErrorCode        String?
+  connectedByUserId    String?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  organisation         Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  connectedByUser      User?                   @relation("MeetingProviderConnectedBy", fields: [connectedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, provider])
+  @@index([organisationId, status])
+}
+
+model InterviewMeeting {
+  id                    String                 @id @default(cuid())
+  organisationId        String
+  interviewRoundId      String                 @unique
+  provider              MeetingProvider?
+  mode                  MeetingMode
+  status                InterviewMeetingStatus @default(DRAFT)
+  externalMeetingId     String?
+  externalCalendarEventId String?
+  conferenceId          String?
+  safeJoinUrl           String?
+  encryptedHostUrl      String?
+  passcodeMetadata      Json?
+  timezone              String
+  scheduledStartUtc     DateTime
+  scheduledEndUtc       DateTime
+  durationMinutes       Int
+  location              String?
+  officeAddress         String?
+  dialInInformation     String?
+  providerDisplayName   String?
+  instructions          String?
+  candidateInstructions String?
+  internalNotes         String?
+  providerMetadata      Json?
+  providerOperationKey  String?
+  operationVersion      Int                    @default(1)
+  rescheduleCount       Int                    @default(0)
+  lastRescheduledAt     DateTime?
+  providerLastSyncedAt  DateTime?
+  providerFailureCode   String?
+  providerFailureMessage String?
+  providerCancelledAt   DateTime?
+  createdByUserId       String?
+  updatedByUserId       String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  organisation          Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  interviewRound        InterviewRound         @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
+  createdByUser         User?                  @relation("InterviewMeetingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser         User?                  @relation("InterviewMeetingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  participants          MeetingParticipant[]
+  rescheduleRequests    InterviewRescheduleRequest[]
+  scheduleHistory       InterviewScheduleHistory[]
+  reminders             MeetingReminder[]
+
+  @@index([organisationId, status, scheduledStartUtc])
+  @@index([organisationId, provider, status])
+  @@index([externalCalendarEventId])
+  @@index([externalMeetingId])
+}
+
+model MeetingParticipant {
+  id               String                  @id @default(cuid())
+  organisationId   String
+  meetingId        String
+  userId           String?
+  candidateId      String?
+  email            String
+  participantRole  MeetingParticipantRole
+  required         Boolean                 @default(true)
+  rsvpStatus       MeetingRsvpStatus       @default(PENDING)
+  attendanceStatus MeetingAttendanceStatus @default(UNKNOWN)
+  notifiedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  organisation     Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting          InterviewMeeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user             User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  candidate        CandidateProfile?       @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  reminders        MeetingReminder[]
+
+  @@unique([meetingId, email])
+  @@index([organisationId, meetingId, participantRole])
+  @@index([userId, attendanceStatus])
+  @@index([candidateId, attendanceStatus])
+}
+
+model InterviewRescheduleRequest {
+  id                String                           @id @default(cuid())
+  organisationId    String
+  interviewMeetingId String
+  requestedByType   InterviewRescheduleRequesterType
+  requestedByUserId String?
+  candidateId       String?
+  reasonCode        String?
+  reasonText        String?
+  preferredTimezone String?
+  status            InterviewRescheduleRequestStatus @default(PENDING)
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  decisionReason    String?
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
+  organisation      Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting           InterviewMeeting                @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
+  requestedByUser   User?                            @relation("InterviewRescheduleRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  reviewedByUser    User?                            @relation("InterviewRescheduleReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  candidate         CandidateProfile?                @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  options           InterviewRescheduleOption[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([interviewMeetingId, status])
+}
+
+model InterviewRescheduleOption {
+  id               String                    @id @default(cuid())
+  requestId        String
+  proposedStartUtc DateTime
+  proposedEndUtc   DateTime
+  timezone         String
+  priority         Int                       @default(1)
+  createdAt        DateTime                  @default(now())
+  request          InterviewRescheduleRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, priority])
+}
+
+model InterviewScheduleHistory {
+  id                     String           @id @default(cuid())
+  organisationId         String
+  interviewMeetingId     String
+  action                 String
+  actorUserId            String?
+  oldStartUtc            DateTime?
+  oldEndUtc              DateTime?
+  newStartUtc            DateTime?
+  newEndUtc              DateTime?
+  oldProvider            MeetingProvider?
+  newProvider            MeetingProvider?
+  oldParticipantSnapshot Json?
+  newParticipantSnapshot Json?
+  reason                 String?
+  providerOperationId    String?
+  providerResult         Json?
+  createdAt              DateTime         @default(now())
+  organisation           Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting                InterviewMeeting @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
+  actorUser              User?            @relation("InterviewScheduleHistoryActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([interviewMeetingId, createdAt])
+}
+
+model MeetingReminder {
+  id               String                @id @default(cuid())
+  organisationId   String
+  interviewMeetingId String
+  participantId    String
+  reminderType     String
+  scheduledFor     DateTime
+  status           MeetingReminderStatus @default(SCHEDULED)
+  backgroundTaskId String?               @unique
+  sentAt           DateTime?
+  failureReason    String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  organisation     Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting          InterviewMeeting      @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
+  participant      MeetingParticipant    @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, reminderType, scheduledFor])
+  @@index([organisationId, scheduledFor, status])
+  @@index([interviewMeetingId, status])
 }
 
 model Notification {

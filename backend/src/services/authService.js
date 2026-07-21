@@ -7,6 +7,7 @@ import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '
 import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
 import { resolveMembershipForRequest } from './organisationAccessService.js';
+import { assertInitialSetupCompleted } from './setupService.js';
 
 function buildCandidateProfileData(payload) {
   const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
@@ -61,6 +62,8 @@ function ensureVerifiedUser(user) {
 }
 
 export async function registerUser(payload) {
+  await assertInitialSetupCompleted();
+
   if (payload.role === 'RECRUITER' && isPersonalEmail(payload.email)) {
     const error = new Error('Recruiters must register with a company email address.');
     error.statusCode = 422;

@@ -9,6 +9,7 @@ import {
   getCandidateApplicationWithdrawal,
   rejectCandidateOfferResponse,
   requestCandidateAccountDeactivation,
+  requestCandidateInterviewReschedule,
   requestCandidateOfferRevisionResponse,
   saveCandidateOnboarding,
   saveResumeBuilderLink,
@@ -19,6 +20,7 @@ import {
   updateCandidateResumeAssetState,
   updateCandidateProfile,
   updateCandidateSettings,
+  withdrawCandidateInterviewReschedule,
   withdrawCandidateApplication,
 } from '@/lib/api';
 
@@ -263,6 +265,44 @@ export async function linkExternalResumeBuilderAction(formData) {
 
 export async function requestCandidateDataExportAction() {
   return getCandidateDataExport();
+}
+
+export async function requestInterviewRescheduleAction(formData) {
+  const roundId = String(formData.get('roundId') || '');
+  if (!roundId) return;
+  const options = [];
+
+  for (let index = 1; index <= 3; index += 1) {
+    const start = String(formData.get(`preferredStart${index}`) || '');
+    const end = String(formData.get(`preferredEnd${index}`) || '');
+    if (!start || !end) continue;
+    options.push({
+      proposedStartUtc: new Date(start).toISOString(),
+      proposedEndUtc: new Date(end).toISOString(),
+      timezone: String(formData.get(`preferredTimezone${index}`) || formData.get('preferredTimezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+    });
+  }
+
+  if (!options.length) return;
+
+  await requestCandidateInterviewReschedule(roundId, {
+    roundId,
+    reasonCode: String(formData.get('reasonCode') || 'OTHER'),
+    reasonText: String(formData.get('reasonText') || ''),
+    preferredTimezone: String(formData.get('preferredTimezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+    options,
+  });
+
+  revalidatePath('/candidate/interviews');
+  revalidatePath('/candidate/dashboard');
+}
+
+export async function withdrawInterviewRescheduleAction(formData) {
+  const requestId = String(formData.get('requestId') || '');
+  if (!requestId) return;
+  await withdrawCandidateInterviewReschedule(requestId);
+  revalidatePath('/candidate/interviews');
+  revalidatePath('/candidate/dashboard');
 }
 
 export async function requestCandidateAccountDeactivationAction(previousState, formData) {

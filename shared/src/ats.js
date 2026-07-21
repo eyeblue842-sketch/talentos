@@ -83,6 +83,12 @@ export const meetingModeSchema = z.enum([
   'OTHER',
 ]);
 
+export const meetingProviderSchema = z.enum([
+  'GOOGLE_MEET',
+  'ZOOM',
+  'CUSTOM',
+]);
+
 export const feedbackRecommendationSchema = z.enum([
   'STRONG_HIRE',
   'HIRE',
@@ -261,9 +267,15 @@ export const atsInterviewSchema = z.object({
     isObserver: z.boolean().optional(),
     feedbackRequired: z.boolean().optional(),
   })).min(1).max(20),
+  meetingProvider: meetingProviderSchema.optional(),
   meetingLocation: z.string().trim().max(200).optional().nullable(),
   meetingLink: z.string().trim().url().optional().nullable().or(z.literal('')),
   officeAddress: z.string().trim().max(300).optional().nullable(),
+  dialInInformation: z.string().trim().max(1000).optional().nullable(),
+  providerDisplayName: z.string().trim().max(120).optional().nullable(),
+  passcode: z.string().trim().max(120).optional().nullable(),
+  waitingRoomEnabled: z.boolean().optional(),
+  includeRecruiterInInvite: z.boolean().optional(),
   notes: z.string().trim().max(2000).optional().nullable(),
   candidateInstructions: z.string().trim().max(2000).optional().nullable(),
   status: interviewStatusSchema.optional(),
@@ -273,9 +285,61 @@ export const atsInterviewSchema = z.object({
   path: ['scheduledEndAt'],
 });
 
+export const interviewAvailabilitySchema = z.object({
+  scheduledStartAt: z.string().datetime(),
+  scheduledEndAt: z.string().datetime(),
+  timezone: z.string().trim().min(2).max(80),
+  meetingProvider: meetingProviderSchema.optional(),
+  panelMembers: z.array(z.object({
+    userId: z.string().min(1),
+    email: z.string().email().optional(),
+    feedbackRequired: z.boolean().optional(),
+  })).max(20).optional().default([]),
+});
+
 export const atsInterviewCancelSchema = z.object({
   roundId: z.string().min(1),
   cancelReason: z.string().trim().min(3).max(500),
+});
+
+export const interviewRescheduleRequestCreateSchema = z.object({
+  roundId: z.string().min(1),
+  reasonCode: z.enum([
+    'MEDICAL_EMERGENCY',
+    'PERSONAL_EMERGENCY',
+    'SCHEDULE_CONFLICT',
+    'TECHNICAL_ISSUE',
+    'TRAVEL',
+    'INTERVIEWER_UNAVAILABLE',
+    'OTHER',
+  ]).optional(),
+  reasonText: z.string().trim().max(1000).optional().nullable(),
+  preferredTimezone: z.string().trim().min(2).max(80).optional().nullable(),
+  options: z.array(z.object({
+    proposedStartUtc: z.string().datetime(),
+    proposedEndUtc: z.string().datetime(),
+    timezone: z.string().trim().min(2).max(80).optional().nullable(),
+  })).min(1).max(3),
+});
+
+export const interviewRescheduleRequestReviewSchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  reason: z.string().trim().max(1000).optional().nullable(),
+  scheduledStartAt: z.string().datetime().optional().nullable(),
+  scheduledEndAt: z.string().datetime().optional().nullable(),
+  timezone: z.string().trim().min(2).max(80).optional().nullable(),
+  roundId: z.string().min(1),
+  meetingProvider: meetingProviderSchema.optional(),
+  panelMembers: z.array(z.object({
+    userId: z.string().min(1),
+    isLead: z.boolean().optional(),
+    isObserver: z.boolean().optional(),
+    feedbackRequired: z.boolean().optional(),
+  })).max(20).optional(),
+});
+
+export const interviewRescheduleRequestWithdrawSchema = z.object({
+  requestId: z.string().min(1),
 });
 
 export const atsNoteSchema = z.object({

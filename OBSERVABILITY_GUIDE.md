@@ -2,74 +2,49 @@
 
 ## Overview
 
-Milestone 7 adds a baseline observability layer focused on safe structured logs, correlation IDs, subsystem health, and intelligence execution visibility.
+Careeriz emits structured backend logs and uses health services introduced in Milestone 8.
 
 ## Request Correlation
 
-`backend/src/middleware/requestContext.js` assigns a request ID to every request and mirrors it in the `x-request-id` response header.
-
-## Structured Logging
-
-Request completion and error logs include safe structured fields such as:
+Backend request logs include:
 
 - request ID
-- organization ID where known
-- user ID where safe
 - route
 - method
 - status
 - latency
-- error code where present
+- organization ID where available
+- user ID where safe
 
-## Intelligence Logging
+## Scheduling and Provider Logging
 
-Execution records provide the durable intelligence trace for:
+Milestone 8.5 scheduling flows add safe identifiers such as:
 
-- feature
-- prompt key and version
+- organization ID
+- interview round/meeting ID
 - provider
-- model
-- cache hit
-- retries
-- latency
-- estimated usage
+- operation type
+- result
+- retry count
 
-## Logging Redaction Rules
+## Redaction Rules
 
-Do not log:
+The following must not appear in logs:
 
-- passwords
-- verification tokens
-- reset tokens
-- offer access tokens
-- invitation tokens
-- provider API keys
-- full resume bodies
-- raw provider payloads containing personal data
-- candidate contact information unless operationally required and already protected elsewhere
+- OAuth access or refresh tokens
+- encryption keys
+- meeting host URLs
+- passcodes
+- raw provider payloads containing participant data
+- private calendar event details
 
-## Health Endpoints
+## Health Behavior
 
-`/api/health` now reports bounded subsystem status for:
+Application health must not fail solely because optional organization meeting providers are disconnected.
 
-- application
-- database
-- Elasticsearch
-- intelligence provider
-- background-task subsystem
+Provider validation is surfaced through organization-level status, not global hard-fail health.
 
-No secret values are exposed.
+## Operational Notes
 
-## Operational Guidance
-
-- investigate repeated provider failures through intelligence governance records, not by enabling raw secret-bearing logs
-- use request IDs to trace safe client-reported failures
-- treat jsdom canvas warnings as test-environment noise unless browser evidence shows runtime impact
-
-## Future Enhancements
-
-- external log aggregation
-- worker metrics
-- alerting thresholds
-- latency percentiles per intelligence feature
-- structured analytics for retry and failure trends
+- Docker/compose validation could not be run in this environment because Docker CLI is unavailable.
+- Live Google Workspace and Zoom validation were not performed because no real credentials were configured.

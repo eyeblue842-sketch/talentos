@@ -18,6 +18,28 @@ export async function getRecruiterDashboard() {
   return response.data;
 }
 
+export async function getInitialSetupStatus() {
+  const response = await requestBackend('/setup/status', { method: 'GET' });
+  return response.data;
+}
+
+export async function submitInitialSetup(payload) {
+  const response = await requestBackend('/setup', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return response.data;
+}
+
+export async function resetInitialSetup(password) {
+  const token = await requireToken();
+  const response = await requestBackend('/setup/reset', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  }, token);
+  return response.data;
+}
+
 export async function getCurrentOrganisation() {
   const token = await requireToken();
   const response = await requestBackend('/organisations/current', { method: 'GET' }, token);
@@ -247,6 +269,24 @@ export async function getCandidateInterviews() {
   return response.data;
 }
 
+export async function requestCandidateInterviewReschedule(roundId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/interviews/${roundId}/reschedule-request`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function withdrawCandidateInterviewReschedule(requestId) {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/interviews/reschedule-request/withdraw', {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  }, token);
+  return response.data;
+}
+
 export async function getCandidateOffers() {
   const token = await requireToken();
   const response = await requestBackend('/candidate/offers', { method: 'GET' }, token);
@@ -408,6 +448,60 @@ export async function getRecruiterPipelinePage(query = '') {
 export async function getRecruiterApplication(applicationId) {
   const token = await requireToken();
   const response = await requestBackend(`/ats/pipeline/${applicationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getAssignedInterviewMeetings() {
+  const token = await requireToken();
+  const response = await requestBackend('/interviews/assigned', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterInterviewMeetings(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/interviews/meetings${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterInterviewMeeting(roundId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/interviews/rounds/${roundId}/meeting`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function checkRecruiterInterviewAvailability(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/interviews/availability', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function requestInterviewerReschedule(roundId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/interviews/rounds/${roundId}/reschedule-request`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function reviewInterviewRescheduleRequest(requestId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/interviews/reschedule-requests/${requestId}/review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function withdrawInterviewerReschedule(requestId) {
+  const token = await requireToken();
+  const response = await requestBackend('/interviews/reschedule-requests/withdraw', {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  }, token);
   return response.data;
 }
 
@@ -818,6 +912,36 @@ export async function updateAdminSettings(payload) {
   const response = await requestBackend('/admin/settings', {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getMeetingProviders() {
+  const token = await requireToken();
+  const response = await requestBackend('/meeting-providers/admin/providers', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function beginMeetingProviderConnect(provider) {
+  const token = await requireToken();
+  const response = await requestBackend(`/meeting-providers/admin/providers/${provider}/connect`, {
+    method: 'POST',
+  }, token);
+  return response.data;
+}
+
+export async function validateMeetingProvider(provider) {
+  const token = await requireToken();
+  const response = await requestBackend(`/meeting-providers/admin/providers/${provider}/validate`, {
+    method: 'POST',
+  }, token);
+  return response.data;
+}
+
+export async function disconnectMeetingProvider(provider) {
+  const token = await requireToken();
+  const response = await requestBackend(`/meeting-providers/admin/providers/${provider}`, {
+    method: 'DELETE',
   }, token);
   return response.data;
 }
