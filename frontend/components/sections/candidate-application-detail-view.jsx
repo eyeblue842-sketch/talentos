@@ -34,7 +34,7 @@ function renderAnswerValue(answer) {
   return String(answer.answerValue ?? 'Not answered');
 }
 
-export function CandidateApplicationDetailView({ application }) {
+export function CandidateApplicationDetailView({ application, offer = null }) {
   const stageIndex = getStageIndex(application.stage);
   const interviewRounds = (application.interviewProcesses || []).flatMap((process) => process.rounds || []);
   const upcomingRounds = interviewRounds.filter((round) => round.status === 'SCHEDULED' && round.scheduledStartAt && new Date(round.scheduledStartAt) >= new Date());
@@ -99,6 +99,40 @@ export function CandidateApplicationDetailView({ application }) {
           </div>
         </Card>
       </div>
+
+      {offer ? (
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Active offer</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">Your current offer version is available for review, download, and response.</p>
+            </div>
+            <Badge tone={getBadgeTone(application.stage)}>{offer.status.replaceAll('_', ' ')}</Badge>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-4 text-sm">
+            <div className="rounded-2xl border border-[var(--line)] p-4">
+              <p className="text-[var(--muted)]">Reference</p>
+              <p className="mt-2 font-semibold">{offer.referenceNumber}</p>
+            </div>
+            <div className="rounded-2xl border border-[var(--line)] p-4">
+              <p className="text-[var(--muted)]">Compensation</p>
+              <p className="mt-2 font-semibold">{offer.currency} {Number(offer.totalCompensation || 0).toLocaleString('en-IN')}</p>
+            </div>
+            <div className="rounded-2xl border border-[var(--line)] p-4">
+              <p className="text-[var(--muted)]">Joining date</p>
+              <p className="mt-2 font-semibold">{formatDateTime(offer.proposedJoiningDate)}</p>
+            </div>
+            <div className="rounded-2xl border border-[var(--line)] p-4">
+              <p className="text-[var(--muted)]">Expiry</p>
+              <p className="mt-2 font-semibold">{formatDateTime(offer.expiryAt)}</p>
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link href={`/candidate/offers/${offer.id}`} className="rounded-2xl bg-[var(--brand)] px-4 py-3 font-semibold text-white">View offer</Link>
+            <a href={offer.pdfDownloadUrl} className="rounded-2xl border border-[var(--line)] px-4 py-3 font-semibold">Download PDF</a>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <Card>

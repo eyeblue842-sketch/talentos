@@ -2,12 +2,27 @@ import { prisma } from '../config/db.js';
 import { serializeApplication, serializeJob } from '../serializers/index.js';
 import { requireOrganisationContext } from './organisationAccessService.js';
 
+function missingRelationTable(error) {
+  return error?.code === 'P2021' || error?.message?.includes('does not exist in the current database');
+}
+
+async function countOrZero(query) {
+  try {
+    return await query();
+  } catch (error) {
+    if (missingRelationTable(error)) {
+      return 0;
+    }
+    throw error;
+  }
+}
+
 export async function getRecruiterDashboard(actorUser, organisationId = null) {
   const context = await requireOrganisationContext(actorUser, organisationId);
   const closingSoonDate = new Date();
   closingSoonDate.setDate(closingSoonDate.getDate() + 14);
 
-  const [jobsCount, activeJobsCount, applicantsCount, recentApplications, pipelineCounts, upcomingInterviews, openRequisitions, savedCandidatesCount, jobsClosingSoon] = await Promise.all([
+  const [jobsCount, activeJobsCount, applicantsCount, recentApplications, pipelineCounts, upcomingInterviews, openRequisitions, savedCandidatesCount, jobsClosingSoon, pendingInvitationsCount, offersDraftCount, offersPendingApprovalCount, offersReleasedCount, offersAcceptedCount, upcomingJoinersCount] = await Promise.all([
     prisma.job.count({ where: { organisationId: context.organisationId } }),
     prisma.job.count({ where: { organisationId: context.organisationId, status: { in: ['OPEN', 'ON_HOLD'] } } }),
     prisma.application.count({ where: { organisationId: context.organisationId } }),
@@ -60,6 +75,18 @@ export async function getRecruiterDashboard(actorUser, organisationId = null) {
       take: 5,
       include: { requisition: true, recruiter: true, hiringManager: true },
     }),
+    countOrZero(() => prisma.organisationInvitation.count({
+      where: {
+        organisationId: context.organisationId,
+        status: 'PENDING',
+        expiresAt: { gt: new Date() },
+      },
+    })),
+    countOrZero(() => prisma.offer.count({ where: { organisationId: context.organisationId, status: 'DRAFT' } })),
+    countOrZero(() => prisma.offer.count({ where: { organisationId: context.organisationId, status: 'PENDING_APPROVAL' } })),
+    countOrZero(() => prisma.offer.count({ where: { organisationId: context.organisationId, status: { in: ['RELEASED', 'VIEWED'] } } })),
+    countOrZero(() => prisma.offer.count({ where: { organisationId: context.organisationId, status: 'ACCEPTED' } })),
+    countOrZero(() => prisma.offer.count({ where: { organisationId: context.organisationId, status: { in: ['ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED'] } } })),
   ]);
 
   return {
@@ -82,6 +109,12 @@ export async function getRecruiterDashboard(actorUser, organisationId = null) {
     })),
     openRequisitions,
     savedCandidatesCount,
+    pendingInvitationsCount,
+    offersDraftCount,
+    offersPendingApprovalCount,
+    offersReleasedCount,
+    offersAcceptedCount,
+    upcomingJoinersCount,
     jobsClosingSoon: jobsClosingSoon.map((job) => serializeJob(job, { includeRequisition: true })),
   };
 }

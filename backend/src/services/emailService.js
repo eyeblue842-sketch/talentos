@@ -171,3 +171,15 @@ export async function sendOrganisationInvitationEmail({ to, organisationName, ro
     text: `You were invited to join ${organisationName} on Careeriz Hire as ${role}. Use this link before ${dayjs(expiresAt).format('DD MMM YYYY, hh:mm A')}: ${invitationUrl}`,
   });
 }
+
+export async function sendOfferReleasedEmail({ to, candidateName, jobTitle, organisationName, offerUrl, expiryAt }) {
+  await sendTransactionalEmail({
+    to,
+    subject: `Your offer from ${organisationName} is ready`,
+    text: `Hello ${candidateName}, your offer for ${jobTitle} is ready to review. Access it here before ${dayjs(expiryAt).format('DD MMM YYYY, hh:mm A')}: ${offerUrl}`,
+  });
+}
+
+export async function sendOfferStatusEmail(to, subject, text) {
+  await sendTransactionalEmail({ to, subject, text });
+}

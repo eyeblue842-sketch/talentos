@@ -181,6 +181,50 @@ enum NotificationType {
   SYSTEM
 }
 
+enum OfferStatus {
+  DRAFT
+  PENDING_APPROVAL
+  CHANGES_REQUESTED
+  APPROVED
+  RELEASED
+  VIEWED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  SUPERSEDED
+  JOINING_CONFIRMED
+  JOINED
+  NO_SHOW
+  DEFERRED
+}
+
+enum OfferApprovalStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  CANCELLED
+}
+
+enum OfferActorType {
+  RECRUITER
+  CANDIDATE
+  SYSTEM
+}
+
+enum OfferCommentVisibility {
+  INTERNAL
+  CANDIDATE
+}
+
+enum OfferComponentFrequency {
+  ANNUAL
+  MONTHLY
+  ONE_TIME
+  OTHER
+}
+
 enum JobVisibility {
   EXTERNAL
   INTERNAL
@@ -294,6 +338,11 @@ model User {
   resumeAssets               ResumeAsset[]               @relation("ResumeAssetOwner")
   sentOrganisationInvites    OrganisationInvitation[]    @relation("OrganisationInvitationInvitedBy")
   acceptedOrganisationInvites OrganisationInvitation[]   @relation("OrganisationInvitationAcceptedBy")
+  createdOffers              Offer[]                     @relation("OfferCreatedBy")
+  updatedOffers              Offer[]                     @relation("OfferUpdatedBy")
+  releasedOffers             Offer[]                     @relation("OfferReleasedBy")
+  offerApprovals             OfferApproval[]             @relation("OfferApprover")
+  offerComments              OfferComment[]              @relation("OfferCommentAuthor")
 }
 
 model Organisation {
@@ -337,6 +386,7 @@ model Organisation {
   applicationResumeSnapshots ApplicationResumeSnapshot[]
   applicationTimelines       ApplicationTimeline[]
   invitations                OrganisationInvitation[]
+  offers                     Offer[]
 
   @@index([status])
 }
@@ -468,6 +518,7 @@ model CandidateProfile {
   activities                  CandidateActivity[]
   resumeAssets                ResumeAsset[]       @relation("CandidateResumeAssets")
   latestResumeAsset           ResumeAsset?        @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  offers                      Offer[]
 
   @@index([recommendationEnabled, updatedAt])
 }
@@ -519,6 +570,7 @@ model Job {
   candidateViews        CandidateJobView[]
   screeningQuestions    JobScreeningQuestion[]
   submittedApplications JobApplication[]
+  offers                Offer[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status])
@@ -570,6 +622,7 @@ model Application {
   activities           ApplicationActivity[]
   interviewProcesses   InterviewProcess[]
   submittedApplication JobApplication?
+  offers               Offer[]
 
   @@unique([jobId, candidateId])
   @@index([organisationId, updatedAt])
@@ -1075,6 +1128,152 @@ model Notification {
 
   @@index([recipientUserId, readAt, createdAt])
   @@index([organisationId, recipientUserId])
+}
+
+model Offer {
+  id                      String        @id @default(cuid())
+  organisationId          String
+  applicationId           String
+  jobId                   String
+  candidateId             String
+  previousOfferId         String?
+  supersededByOfferId     String?
+  referenceNumber         String        @unique
+  version                 Int
+  status                  OfferStatus   @default(DRAFT)
+  currency                String
+  annualCompensation      Decimal?      @db.Decimal(14, 2)
+  fixedCompensation       Decimal?      @db.Decimal(14, 2)
+  variableCompensation    Decimal?      @db.Decimal(14, 2)
+  joiningBonus            Decimal?      @db.Decimal(14, 2)
+  retentionBonus          Decimal?      @db.Decimal(14, 2)
+  allowancesAmount        Decimal?      @db.Decimal(14, 2)
+  otherCompensation       Decimal?      @db.Decimal(14, 2)
+  totalCompensation       Decimal?      @db.Decimal(14, 2)
+  benefitsSummary         String?
+  compensationNotes       String?
+  proposedJoiningDate     DateTime?
+  actualJoiningDate       DateTime?
+  probationPeriodMonths   Int?
+  noticeOrBuyoutNote      String?
+  workMode                WorkplaceType?
+  workLocation            String?
+  reportingManagerName    String?
+  departmentSnapshot      String?
+  employmentTypeSnapshot  EmploymentType?
+  recruiterNameSnapshot   String?
+  hiringManagerNameSnapshot String?
+  offerExpiryDays         Int?
+  expiryAt                DateTime?
+  approvalRequestedAt     DateTime?
+  approvedAt              DateTime?
+  releasedAt              DateTime?
+  viewedAt                DateTime?
+  acceptedAt              DateTime?
+  rejectedAt              DateTime?
+  withdrawnAt             DateTime?
+  supersededAt            DateTime?
+  joiningConfirmedAt      DateTime?
+  deferredAt              DateTime?
+  noShowAt                DateTime?
+  revisionReason          String?
+  candidateResponseReason String?
+  withdrawalReason        String?
+  deferredReason          String?
+  noShowReason            String?
+  termsAndConditions      String?
+  internalNotes           String?
+  createdByUserId         String
+  updatedByUserId         String
+  releasedByUserId        String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  organisation            Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  application             Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  job                     Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate               CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  previousOffer           Offer?        @relation("OfferRevisionChain", fields: [previousOfferId], references: [id], onDelete: SetNull)
+  supersededByOffer       Offer?        @relation("OfferSupersededBy", fields: [supersededByOfferId], references: [id], onDelete: SetNull)
+  revisionChildren        Offer[]       @relation("OfferRevisionChain")
+  supersededOffers        Offer[]       @relation("OfferSupersededBy")
+  createdBy               User          @relation("OfferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy               User          @relation("OfferUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  releasedBy              User?         @relation("OfferReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
+  components              OfferComponent[]
+  approvals               OfferApproval[]
+  accessTokens            OfferAccessToken[]
+  comments                OfferComment[]
+
+  @@unique([applicationId, version])
+  @@index([organisationId, status, updatedAt])
+  @@index([organisationId, expiryAt, status])
+  @@index([candidateId, status, updatedAt])
+  @@index([applicationId, status, version])
+  @@index([jobId, status, updatedAt])
+}
+
+model OfferComponent {
+  id           String                  @id @default(cuid())
+  offerId      String
+  type         String
+  label        String
+  amount       Decimal                @db.Decimal(14, 2)
+  frequency    OfferComponentFrequency @default(ONE_TIME)
+  taxable      Boolean                @default(true)
+  displayOrder Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  offer        Offer                  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, displayOrder])
+}
+
+model OfferApproval {
+  id             String              @id @default(cuid())
+  offerId        String
+  approverUserId String
+  sequence       Int
+  status         OfferApprovalStatus @default(PENDING)
+  comments       String?
+  actedAt        DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  offer          Offer               @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  approver       User                @relation("OfferApprover", fields: [approverUserId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, sequence])
+  @@unique([offerId, approverUserId])
+  @@index([approverUserId, status, createdAt])
+  @@index([offerId, status, sequence])
+}
+
+model OfferAccessToken {
+  id         String   @id @default(cuid())
+  offerId    String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  offer      Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, expiresAt])
+  @@index([offerId, revokedAt, consumedAt])
+}
+
+model OfferComment {
+  id          String                 @id @default(cuid())
+  offerId     String
+  authorUserId String?
+  authorType  OfferActorType
+  visibility  OfferCommentVisibility @default(INTERNAL)
+  comment     String
+  createdAt   DateTime               @default(now())
+  offer       Offer                  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  authorUser  User?                  @relation("OfferCommentAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([offerId, visibility, createdAt])
 }
 
 model AuditLog {

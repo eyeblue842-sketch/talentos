@@ -4,18 +4,16 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
 import { JobsTable } from '@/components/sections/jobs-table';
 import { recruiterNav } from '@/lib/navigation';
-import { getCurrentOrganisation, getOrganisationInvitations, getRecruiterDashboard, getRecruiterJobs } from '@/lib/api';
+import { getCurrentOrganisation, getRecruiterDashboard, getRecruiterJobs } from '@/lib/api';
 import { PageHeader } from '@/components/ui/page-header';
 
 export default async function RecruiterDashboardPage() {
-  const [organisation, dashboard, jobs, invitations] = await Promise.all([
+  const [organisation, dashboard, jobs] = await Promise.all([
     getCurrentOrganisation(),
     getRecruiterDashboard(),
     getRecruiterJobs(),
-    getOrganisationInvitations(),
   ]);
   const draftJobsCount = jobs.filter((job) => job.status === 'DRAFT').length;
-  const pendingInvitationsCount = invitations.filter((invitation) => invitation.status === 'PENDING').length;
   const showEmptyState = dashboard.jobsCount === 0 && dashboard.openRequisitions === 0;
 
   return (
@@ -26,10 +24,11 @@ export default async function RecruiterDashboardPage() {
         description="Manage organisation roles, requisitions, candidate flow, and hiring execution inside Careeriz."
         breadcrumb={[{ label: 'Recruiter' }, { label: 'Dashboard' }]}
       />
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <StatCard label="Active jobs" value={dashboard.activeJobsCount} helper={`Total jobs: ${dashboard.jobsCount}`} />
           <StatCard label="Draft jobs" value={draftJobsCount} helper={`Open requisitions: ${dashboard.openRequisitions}`} />
-          <StatCard label="Candidates in ATS" value={dashboard.applicantsCount} helper={`Pending invitations: ${pendingInvitationsCount}`} />
+          <StatCard label="Candidates in ATS" value={dashboard.applicantsCount} helper={`Pending invitations: ${dashboard.pendingInvitationsCount}`} />
+          <StatCard label="Offers in flight" value={dashboard.offersReleasedCount + dashboard.offersPendingApprovalCount} helper={`${dashboard.upcomingJoinersCount} upcoming joiners`} />
         </div>
         <Card>
           <h3 className="font-[var(--font-display)] text-xl font-semibold">Continue workflow</h3>
@@ -77,15 +76,24 @@ export default async function RecruiterDashboardPage() {
             </div>
           </Card>
           <Card>
-            <h3 className="font-[var(--font-display)] text-xl font-semibold">Jobs closing soon</h3>
+            <h3 className="font-[var(--font-display)] text-xl font-semibold">Offer pipeline</h3>
             <div className="mt-4 space-y-3">
-              {dashboard.jobsClosingSoon?.length ? dashboard.jobsClosingSoon.map((job) => (
-                <div key={job.id} className="rounded-2xl border border-[var(--line)] p-4">
-                  <p className="font-semibold">{job.title}</p>
-                  <p className="text-sm text-[var(--muted)]">{job.location}</p>
-                  <p className="text-sm text-[var(--muted)]">{job.applicationDeadline ? new Date(job.applicationDeadline).toLocaleString() : 'No deadline'}</p>
-                </div>
-              )) : <p className="text-sm text-[var(--muted)]">No open jobs are closing in the next two weeks.</p>}
+              <div className="rounded-2xl border border-[var(--line)] p-4">
+                <p className="font-semibold">Draft offers</p>
+                <p className="text-sm text-[var(--muted)]">{dashboard.offersDraftCount} drafts ready for review</p>
+              </div>
+              <div className="rounded-2xl border border-[var(--line)] p-4">
+                <p className="font-semibold">Pending approval</p>
+                <p className="text-sm text-[var(--muted)]">{dashboard.offersPendingApprovalCount} offers waiting on approvers</p>
+              </div>
+              <div className="rounded-2xl border border-[var(--line)] p-4">
+                <p className="font-semibold">Accepted offers</p>
+                <p className="text-sm text-[var(--muted)]">{dashboard.offersAcceptedCount} candidates accepted</p>
+              </div>
+              <div className="rounded-2xl border border-[var(--line)] p-4">
+                <p className="font-semibold">Upcoming joiners</p>
+                <p className="text-sm text-[var(--muted)]">{dashboard.upcomingJoinersCount} hires moving toward joining</p>
+              </div>
             </div>
           </Card>
         </div>

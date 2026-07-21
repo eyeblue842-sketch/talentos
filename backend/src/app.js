@@ -13,6 +13,7 @@ import { organisationRouter } from './routes/organisationRoutes.js';
 import { requisitionRouter } from './routes/requisitionRoutes.js';
 import { interviewRouter } from './routes/interviewRoutes.js';
 import { notificationRouter } from './routes/notificationRoutes.js';
+import { offerRouter } from './routes/offerRoutes.js';
 import { publicRouter } from './routes/publicRoutes.js';
 import { candidateRouter } from './routes/candidateRoutes.js';
 import { applicationWorkflowRouter } from './routes/applicationWorkflowRoutes.js';
@@ -43,5 +44,6 @@ app.use('/api/organisations', organisationRouter);
 app.use('/api/requisitions', requisitionRouter);
 app.use('/api/interviews', interviewRouter);
 app.use('/api/notifications', notificationRouter);
+app.use('/api/offers', offerRouter);
 
 app.use(errorHandler);

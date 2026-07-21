@@ -2,35 +2,52 @@ import Link from 'next/link';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { RecruiterApplicationDetailView } from '@/components/sections/recruiter-application-detail-view';
+import { RecruiterOfferWorkflowPanel } from '@/components/sections/recruiter-offer-workflow-panel';
 import { PageHeader } from '@/components/ui/page-header';
 import { recruiterNav } from '@/lib/navigation';
-import { getCurrentOrganisation, getOrganisationMembers, getRecruiterApplicationV2 } from '@/lib/api';
+import { getCurrentOrganisation, getOrganisationMembers, getRecruiterApplicationV2, getRecruiterOffersByApplication } from '@/lib/api';
 import {
   addInterviewRoundAction,
   addNoteAction,
   cancelInterviewAction,
+  createOfferDraftAction,
   createInterviewPlanAction,
   deleteNoteAction,
   decideInterviewRoundAction,
   duplicateInterviewRoundAction,
   editNoteAction,
+  actOnOfferApprovalAction,
+  createOfferRevisionAction,
   moveApplicationStageAction,
+  releaseOfferAction,
+  requestOfferApprovalAction,
   scheduleInterviewAction,
   submitInterviewFeedbackAction,
+  updateOfferDraftAction,
+  updateOfferJoiningAction,
+  withdrawOfferAction,
 } from '../../actions';
 
 const actions = {
   addInterviewRoundAction,
   addNoteAction,
+  actOnOfferApprovalAction,
   cancelInterviewAction,
+  createOfferDraftAction,
+  createOfferRevisionAction,
   createInterviewPlanAction,
   deleteNoteAction,
   decideInterviewRoundAction,
   duplicateInterviewRoundAction,
   editNoteAction,
   moveApplicationStageAction,
+  releaseOfferAction,
+  requestOfferApprovalAction,
   scheduleInterviewAction,
   submitInterviewFeedbackAction,
+  updateOfferDraftAction,
+  updateOfferJoiningAction,
+  withdrawOfferAction,
 };
 
 export default async function RecruiterApplicationDetailPage({ params }) {
@@ -39,6 +56,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
   let application = null;
   let organisation = null;
   let members = [];
+  let offers = [];
   let error = '';
 
   try {
@@ -47,6 +65,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
       getRecruiterApplicationV2(applicationId),
       getOrganisationMembers(),
     ]);
+    offers = application?.applicationId ? await getRecruiterOffersByApplication(application.applicationId) : [];
   } catch (caught) {
     error = caught.message;
   }
@@ -62,6 +81,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
       />
         {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
         {application ? <RecruiterApplicationDetailView application={application} members={members} actions={actions} /> : null}
+        {application ? <RecruiterOfferWorkflowPanel application={application} members={members} offers={offers} actions={actions} /> : null}
     </WorkspaceShell>
   );
 }

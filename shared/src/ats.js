@@ -111,6 +111,39 @@ export const notificationTypeSchema = z.enum([
   'SYSTEM',
 ]);
 
+export const offerStatusSchema = z.enum([
+  'DRAFT',
+  'PENDING_APPROVAL',
+  'CHANGES_REQUESTED',
+  'APPROVED',
+  'RELEASED',
+  'VIEWED',
+  'ACCEPTED',
+  'REJECTED',
+  'WITHDRAWN',
+  'EXPIRED',
+  'SUPERSEDED',
+  'JOINING_CONFIRMED',
+  'JOINED',
+  'NO_SHOW',
+  'DEFERRED',
+]);
+
+export const offerApprovalStatusSchema = z.enum([
+  'PENDING',
+  'APPROVED',
+  'CHANGES_REQUESTED',
+  'REJECTED',
+  'CANCELLED',
+]);
+
+export const offerComponentFrequencySchema = z.enum([
+  'ANNUAL',
+  'MONTHLY',
+  'ONE_TIME',
+  'OTHER',
+]);
+
 export const availabilityStatusSchema = z.enum([
   'IMMEDIATE',
   'TWO_WEEKS',
@@ -283,6 +316,131 @@ export const recruiterResumeEmailActionSchema = z.object({
 export const recruiterResumeTagActionSchema = z.object({
   candidateIds: z.array(z.string().min(1)).min(1).max(100),
   tag: candidateTagSchema,
+});
+
+const currencyCodeSchema = z.string().trim().min(3).max(10);
+const moneyValueSchema = z.coerce.number().min(0).max(1000000000);
+const nullableMoneyValueSchema = moneyValueSchema.nullish();
+
+export const offerComponentInputSchema = z.object({
+  type: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(120),
+  amount: moneyValueSchema,
+  frequency: offerComponentFrequencySchema.optional(),
+  taxable: z.boolean().optional(),
+  displayOrder: z.coerce.number().int().min(0).max(1000).optional(),
+});
+
+export const offerApprovalInputSchema = z.object({
+  approverUserId: z.string().min(1),
+  sequence: z.coerce.number().int().min(1).max(50),
+});
+
+const offerDraftBaseSchema = z.object({
+  applicationId: z.string().min(1),
+  currency: currencyCodeSchema,
+  annualCompensation: nullableMoneyValueSchema,
+  fixedCompensation: nullableMoneyValueSchema,
+  variableCompensation: nullableMoneyValueSchema,
+  joiningBonus: nullableMoneyValueSchema,
+  retentionBonus: nullableMoneyValueSchema,
+  allowancesAmount: nullableMoneyValueSchema,
+  otherCompensation: nullableMoneyValueSchema,
+  benefitsSummary: z.string().trim().max(2000).optional().nullable(),
+  compensationNotes: z.string().trim().max(2000).optional().nullable(),
+  proposedJoiningDate: z.string().datetime().optional().nullable(),
+  probationPeriodMonths: z.coerce.number().int().min(0).max(36).optional().nullable(),
+  noticeOrBuyoutNote: z.string().trim().max(1000).optional().nullable(),
+  workMode: workplaceTypeSchema.optional().nullable(),
+  workLocation: z.string().trim().max(160).optional().nullable(),
+  reportingManagerName: z.string().trim().max(160).optional().nullable(),
+  offerExpiryDays: z.coerce.number().int().min(1).max(90).optional().nullable(),
+  termsAndConditions: z.string().trim().max(20000).optional().nullable(),
+  internalNotes: z.string().trim().max(5000).optional().nullable(),
+  revisionReason: z.string().trim().max(1000).optional().nullable(),
+  components: z.array(offerComponentInputSchema).max(50).optional(),
+  approvals: z.array(offerApprovalInputSchema).max(20).optional(),
+});
+
+function validateOfferDraft(value, ctx) {
+  const numericFields = [
+    'annualCompensation',
+    'fixedCompensation',
+    'variableCompensation',
+    'joiningBonus',
+    'retentionBonus',
+    'allowancesAmount',
+    'otherCompensation',
+  ];
+
+  for (const field of numericFields) {
+    if (value[field] != null && Number(value[field]) < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Compensation values cannot be negative.',
+        path: [field],
+      });
+    }
+  }
+
+  if (
+    value.annualCompensation != null
+    && value.fixedCompensation != null
+    && value.variableCompensation != null
+    && Number(value.annualCompensation) < Number(value.fixedCompensation) + Number(value.variableCompensation)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Annual compensation must be at least the sum of fixed and variable compensation.',
+      path: ['annualCompensation'],
+    });
+  }
+}
+
+export const offerDraftCreateSchema = offerDraftBaseSchema.superRefine(validateOfferDraft);
+
+export const offerDraftUpdateSchema = offerDraftBaseSchema.omit({ applicationId: true }).partial().superRefine(validateOfferDraft);
+
+export const offerRequestApprovalSchema = z.object({
+  approvals: z.array(offerApprovalInputSchema).min(1).max(20),
+});
+
+export const offerApprovalActionSchema = z.object({
+  comments: z.string().trim().max(2000).optional().nullable(),
+});
+
+export const offerReleaseSchema = z.object({
+  expiryAt: z.string().datetime().optional().nullable(),
+});
+
+export const offerWithdrawSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+});
+
+export const offerRevisionCreateSchema = offerDraftBaseSchema.extend({
+  sourceOfferId: z.string().min(1),
+  revisionReason: z.string().trim().min(3).max(1000),
+}).superRefine(validateOfferDraft);
+
+export const offerCandidateAcceptSchema = z.object({
+  confirmation: z.literal(true),
+  comment: z.string().trim().max(2000).optional().nullable(),
+});
+
+export const offerCandidateRejectSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+  comment: z.string().trim().max(2000).optional().nullable(),
+});
+
+export const offerCandidateRevisionRequestSchema = z.object({
+  comment: z.string().trim().min(3).max(3000),
+});
+
+export const offerJoiningUpdateSchema = z.object({
+  status: z.enum(['JOINING_CONFIRMED', 'JOINED', 'DEFERRED', 'NO_SHOW']),
+  actualJoiningDate: z.string().datetime().optional().nullable(),
+  proposedJoiningDate: z.string().datetime().optional().nullable(),
+  reason: z.string().trim().max(1000).optional().nullable(),
 });
 
 export const organisationCreateSchema = z.object({

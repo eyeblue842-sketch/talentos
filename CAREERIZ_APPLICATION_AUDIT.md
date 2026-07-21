@@ -2,7 +2,7 @@
 
 Date: Tuesday, July 21, 2026
 Repository: `C:\Users\vinoj\Desktop\sivanta-website\New folder\Careeriz`
-Current baseline: after Milestone 1 Foundation Stabilization, Milestone 2 Recruiter Workflow Completion, and Milestone 3 Enterprise Interview Management System
+Current baseline: after Milestone 1 Foundation Stabilization, Milestone 2 Recruiter Workflow Completion, Milestone 3 Enterprise Interview Management System, and Milestone 4 Offer & Hiring Lifecycle
 
 ## Historical Context
 
@@ -40,34 +40,40 @@ Current interpretation:
   - interview decision recording in ATS history and candidate timeline
   - ICS calendar export baseline
 
+- `Resolved in Milestone 4`
+  - offer domain model and lifecycle
+  - recruiter offer drafting, approval, release, revision, withdrawal, and joining continuity
+  - secure candidate offer access with hashed expiring tokens
+  - offer PDF generation
+  - ATS and candidate timeline integration for offer events
+
 - `Still Outstanding`
-  - offer module
   - admin module
   - candidate onboarding depth
   - resume builder demo limitations
   - footer encoding issue
-  - background reminder automation for future interview reminder dispatch
+  - background reminder automation for future interview and offer reminder dispatch
 
 ## Executive Summary
 
-Careeriz now has a coherent recruiter workflow from registration through workspace completion, team invitation, requisition review, job creation, Resume Search, ATS, interview planning, interview execution, and hiring-decision handoff. The strongest current areas are authentication, organisation isolation, recruiter job/ATS/search/interview foundations, and repository health. The remaining gaps are now concentrated in the offer lifecycle, admin module depth, and final production-hardening work rather than in core recruiter workflow architecture.
+Careeriz now has a coherent recruiter workflow from registration through workspace completion, team invitation, requisition review, job creation, Resume Search, ATS, interview planning, interview execution, offer drafting, approval, release, candidate response, and joining-state continuity. The strongest current areas are authentication, organisation isolation, recruiter job/ATS/search/interview/offer foundations, and repository health. The remaining gaps are now concentrated in admin depth, candidate onboarding depth, reminder automation, and final production-hardening work.
 
 ## Overall Completion Estimate
 
 | Area | Estimate | Current state |
 |---|---:|---|
-| Frontend | 85% | Recruiter and candidate interview surfaces are connected; admin and offer depth still lag |
-| Backend | 90% | Recruiter workflow endpoints are coherent through interview decision; offer/admin domains remain incomplete |
-| Database / Prisma | 89% | Stable schema, migrations, invitation flow, and interview extensions are in place |
-| Candidate journey | 82% | Core job/application/interview flow works; onboarding and offer depth remain incomplete |
-| Recruiter journey | 91% | Coherent through ATS, interview lifecycle, and decision handoff |
-| ATS | 88% | Strong baseline with interview continuity; offer stage still absent |
+| Frontend | 89% | Recruiter and candidate offer surfaces are now connected; admin depth still lags |
+| Backend | 93% | Recruiter workflow endpoints are coherent through offer release and joining continuity; admin remains incomplete |
+| Database / Prisma | 92% | Stable schema, migrations, invitation flow, interview extensions, and offer lifecycle models are in place |
+| Candidate journey | 88% | Core job/application/interview/offer flow works; onboarding depth still remains |
+| Recruiter journey | 94% | Coherent from onboarding through ATS, interview lifecycle, offer lifecycle, and joining continuity |
+| ATS | 92% | Strong baseline with interview and offer continuity on the existing application model |
 | Resume Search | 83% | Real backend, privacy-safe, bulk-safe, job-context aware, needs UX polish |
-| Interview | 86% | Functionally complete with plan/schedule/panel/feedback/decision flow; background reminder automation still open |
-| Offer | 14% | Missing module |
+| Interview | 88% | Functionally complete with plan/schedule/panel/feedback/decision flow; background reminder automation still open |
+| Offer | 84% | Functionally complete with UI polish, template depth, and reminder automation still open |
 | Admin | 20% | Placeholder-oriented |
-| Testing | 91% | Lint, type-check, tests, builds, Prisma validate/generate all pass |
-| Production readiness | 74% | Recruiter workflow is strong; offer/admin/manual QA still block final readiness |
+| Testing | 93% | Lint, type-check, tests, builds, Prisma validate/generate all pass with direct Milestone 4 coverage added |
+| Production readiness | 81% | Recruiter and candidate offer workflow is strong; admin/manual QA/reminder automation still block final readiness |
 
 ## Module Status Matrix
 
@@ -80,14 +86,14 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
 | Recruiter workspace | Onboarding | Functionally Completed but Needs UI Polish | Yes | Yes | Reused existing org/profile models | Yes | Mostly Yes | `frontend/app/recruiter/onboarding/page.jsx`, `backend/src/services/organisationService.js` | Manual QA still pending | Broader QA |
 | Recruiter workspace | Invitations | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `frontend/app/auth/invitations/accept/page.jsx`, `backend/src/services/organisationInvitationService.js` | Multi-org invite acceptance needs more manual QA | Broader QA |
 | Recruiter workspace | Members page | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `frontend/app/recruiter/members/page.jsx` | No destructive member-removal flow yet | Defer non-essential member actions |
-| Jobs and requisitions | Requisition review and continuity | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Partial | Mostly Yes | `frontend/app/recruiter/requisitions/page.jsx`, `backend/src/services/requisitionService.js` | Status naming still somewhat thin | Offer/requisition polish in Milestone 4 |
+| Jobs and requisitions | Requisition review and continuity | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Partial | Mostly Yes | `frontend/app/recruiter/requisitions/page.jsx`, `backend/src/services/requisitionService.js` | Status naming still somewhat thin | Milestone 5 polish |
 | Jobs and requisitions | Job creation/publishing | Fully Completed | Yes | Yes | Yes | Yes | Yes | `frontend/app/recruiter/jobs/**`, `backend/src/services/jobService.js` | None major | Preserve |
-| Resume Search | Search, preview, saved/recent, pools | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `frontend/app/recruiter/database/page.jsx`, `backend/src/services/searchService.js` | UX polish remains | Milestone 4 polish |
-| ATS | Candidate add/shortlist/stage movement | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `backend/src/services/atsService.js`, recruiter ATS pages | Offer stage still missing | Milestone 4 |
-| Interview | Plan/schedule/panel/feedback/decision | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `backend/src/services/interviewService.js`, recruiter/candidate application detail pages | Reminder automation still partial | Milestone 4 |
-| Notifications | Recruiter and candidate notifications | Partially Completed | Yes | Yes | Yes | Partial | Partial | `backend/src/services/notificationService.js`, candidate/recruiter dashboards | Background reminder automation missing | Milestone 4 |
-| Candidate | Core workspace | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | candidate pages/services | Onboarding depth missing | Milestone 4 |
-| Offer | Offer lifecycle | Missing | No | No meaningful | Minimal indirect schema only | No | No | N/A | Missing module | Milestone 4 |
+| Resume Search | Search, preview, saved/recent, pools | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `frontend/app/recruiter/database/page.jsx`, `backend/src/services/searchService.js` | UX polish remains | Milestone 5 polish |
+| ATS | Candidate add/shortlist/stage movement | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `backend/src/services/atsService.js`, recruiter ATS pages | Deeper manual QA across offer and joining status labels remains | Milestone 5 |
+| Interview | Plan/schedule/panel/feedback/decision | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | `backend/src/services/interviewService.js`, recruiter/candidate application detail pages | Reminder automation still partial | Milestone 5 |
+| Notifications | Recruiter and candidate notifications | Partially Completed | Yes | Yes | Yes | Partial | Partial | `backend/src/services/notificationService.js`, candidate/recruiter dashboards | Background reminder automation missing | Milestone 5 |
+| Candidate | Core workspace | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Yes | Mostly Yes | candidate pages/services | Onboarding depth missing | Milestone 5 |
+| Offer | Offer lifecycle | Functionally Completed but Needs UI Polish | Yes | Yes | Yes | Partial | Mostly Yes | `backend/src/services/offerService.js`, `frontend/app/candidate/(workspace)/offers/[offerId]/page.jsx`, `frontend/components/sections/recruiter-offer-workflow-panel.jsx` | Reminder automation and richer template management still open | Milestone 5 |
 | Admin | Admin workspace | Stub or Mock | Placeholder | Partial | Partial | No meaningful | No | `frontend/app/admin/page.jsx` | Placeholder | Milestone 5 |
 
 ## Fully Completed Features
@@ -129,7 +135,6 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
 
 ## Missing Features
 
-- Offer release and negotiation lifecycle
 - Real admin operations surface
 - Google Calendar or Microsoft 365 provider integration
 - Broader template management and notification delivery tracking
@@ -158,7 +163,6 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
 ### Remaining cautions
 
 - Admin operations are not production-complete
-- Offer workflows do not yet exist
 - Broader multi-organisation recruiter UX needs more manual validation
 
 ## Database Findings
@@ -178,6 +182,11 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
   - `InterviewRound`
   - `InterviewPanelMember`
   - `InterviewFeedback`
+  - `Offer`
+  - `OfferComponent`
+  - `OfferApproval`
+  - `OfferAccessToken`
+  - `OfferComment`
   - `Notification`
   - `AuditLog`
   - `OrganisationInvitation`
@@ -185,6 +194,7 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
 - Migration state:
   - earlier recruiter workflow migrations remain intact
   - new migration `20260721120000_milestone3_interview_management` is generated for source control
+  - new migration `20260721044332_milestone4_offer_hiring_lifecycle` is generated for source control
 
 - Prisma validation:
   - `npx prisma validate` passed on July 21, 2026
@@ -201,19 +211,19 @@ Careeriz now has a coherent recruiter workflow from registration through workspa
 
 ## End-to-End Workflow Gaps
 
-- Candidate workflow still stops short of a real offer lifecycle
-- Recruiter workflow now reaches interview decision handoff, but the true offer lifecycle is still missing
+- Candidate workflow still needs fuller onboarding depth and broader manual QA around post-offer states
+- Recruiter workflow is now coherent through offer release and joining continuity, but admin depth and reminder automation remain incomplete
 - Admin workflow is not implemented beyond route/access placeholder behaviour
 
 ## Recommended Development Order
 
-1. Milestone 4: offer management and candidate post-interview completion
-2. Milestone 5: replace admin placeholders with real APIs and screens
-3. Milestone 6: release hardening, delivery tracking, broader manual regression evidence
+1. Milestone 5: replace admin placeholders with real APIs and screens
+2. Milestone 6: release hardening, delivery tracking, reminder automation, and broader manual regression evidence
+3. production readiness review
 
 ## Immediate Next Sprint
 
-- Offer lifecycle foundation
+- Admin module completion
 - Candidate onboarding completion
 - Background reminder automation
 - Footer cleanup and remaining UI consistency passes

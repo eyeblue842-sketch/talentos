@@ -469,3 +469,160 @@ export async function getRecruiterApplicationV2(applicationId) {
   const response = await requestBackend(`/ats/applications/${applicationId}`, { method: 'GET' }, token);
   return response.data;
 }
+
+export async function createOfferDraft(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/offers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getRecruiterOffersByApplication(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/application/${applicationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterOffer(offerId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateRecruiterOffer(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function requestRecruiterOfferApproval(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}/request-approval`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function actOnRecruiterOfferApproval(offerId, approvalId, action, payload) {
+  const token = await requireToken();
+  const path = action === 'APPROVED'
+    ? `/offers/${offerId}/approvals/${approvalId}/approve`
+    : action === 'CHANGES_REQUESTED'
+      ? `/offers/${offerId}/approvals/${approvalId}/request-changes`
+      : `/offers/${offerId}/approvals/${approvalId}/reject`;
+  const response = await requestBackend(path, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function releaseRecruiterOffer(offerId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}/release`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function createRecruiterOfferRevision(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/offers/revisions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function withdrawRecruiterOffer(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function updateRecruiterOfferJoining(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/${offerId}/joining`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getCandidateOfferForApplication(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/candidate/application/${applicationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateOffer(offerId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/candidate/${offerId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function acceptCandidateOfferResponse(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/candidate/${offerId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function rejectCandidateOfferResponse(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/candidate/${offerId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function requestCandidateOfferRevisionResponse(offerId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/offers/candidate/${offerId}/revision-request`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getPublicOfferAccess(tokenValue) {
+  const response = await requestBackend(`/offers/access/${tokenValue}`, { method: 'GET' });
+  return response.data;
+}
+
+export async function acceptPublicOfferAccess(tokenValue, payload) {
+  const response = await requestBackend(`/offers/access/${tokenValue}/accept`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return response.data;
+}
+
+export async function rejectPublicOfferAccess(tokenValue, payload) {
+  const response = await requestBackend(`/offers/access/${tokenValue}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return response.data;
+}
+
+export async function requestPublicOfferRevision(tokenValue, payload) {
+  const response = await requestBackend(`/offers/access/${tokenValue}/revision-request`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return response.data;
+}

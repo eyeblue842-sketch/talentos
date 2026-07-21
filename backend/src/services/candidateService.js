@@ -800,6 +800,21 @@ export async function markAllCandidateNotificationsRead(userId) {
   return { updated: true };
 }
 
+function missingRelationTable(error) {
+  return error?.code === 'P2021' || error?.message?.includes('does not exist in the current database');
+}
+
+async function countOrZero(query) {
+  try {
+    return await query();
+  } catch (error) {
+    if (missingRelationTable(error)) {
+      return 0;
+    }
+    throw error;
+  }
+}
+
 export async function getCandidateDashboard(candidateId, userId) {
   const profile = await prisma.candidateProfile.findUnique({
     where: { id: candidateId },
@@ -816,7 +831,7 @@ export async function getCandidateDashboard(candidateId, userId) {
   const recentViewsPromise = listCandidateJobViews(candidateId, { page: 1, pageSize: 4 });
   const recommendationPromise = getCandidateRecommendations(candidateId, { excludeSaved: true, page: 1, pageSize: 4 });
 
-  const [savedJobsCount, applicationsCount, savedJobs, applications, unreadNotificationsCount, notifications, interviews, recentViews, recommendations] = await Promise.all([
+  const [savedJobsCount, applicationsCount, savedJobs, applications, unreadNotificationsCount, notifications, interviews, offersCount, recentViews, recommendations] = await Promise.all([
     prisma.savedJob.count({ where: { candidateId } }),
     prisma.application.count({ where: { candidateId } }),
     prisma.savedJob.findMany({
@@ -861,13 +876,20 @@ export async function getCandidateDashboard(candidateId, userId) {
       orderBy: { scheduledStartAt: 'asc' },
       take: 5,
     }),
+    countOrZero(() => prisma.offer.count({
+      where: {
+        candidateId,
+        status: {
+          in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED'],
+        },
+      },
+    })),
     recentViewsPromise,
     recommendationPromise,
   ]);
 
   const activeApplicationsCount = applications.filter((item) => !['Rejected', 'Withdrawn', 'Selected'].includes(item.statusLabel)).length;
   const interviewApplicationsCount = applications.filter((item) => item.currentStage === 'INTERVIEW_SCHEDULED').length;
-  const offersCount = 0;
   const withdrawnApplicationsCount = applications.filter((item) => item.statusLabel === 'Withdrawn').length;
   const closedApplicationsCount = applications.filter((item) => ['Rejected', 'Selected'].includes(item.statusLabel)).length;
 

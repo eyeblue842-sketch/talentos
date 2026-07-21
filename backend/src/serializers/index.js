@@ -592,6 +592,14 @@ function resolveCandidateNotificationLink(notification) {
     return applicationId ? `/candidate/applications/${applicationId}` : '/candidate/applications';
   }
 
+  if (notification.entityType === 'Offer') {
+    const offerId = sanitizePathSegment(notification.metadata?.offerId || notification.entityId);
+    if (offerId) {
+      return `/candidate/offers/${offerId}`;
+    }
+    return applicationId ? `/candidate/applications/${applicationId}` : '/candidate/applications';
+  }
+
   if (notification.entityType === 'Job') {
     return jobSlug ? `/jobs/${jobSlug}` : '/candidate/saved-jobs';
   }

@@ -115,6 +115,68 @@ function buildQuestionPayload(formData) {
   };
 }
 
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  return Number(value);
+}
+
+function buildOfferComponents(formData) {
+  const labels = formData.getAll('componentLabel');
+  const amounts = formData.getAll('componentAmount');
+  const types = formData.getAll('componentType');
+  const frequencies = formData.getAll('componentFrequency');
+  const taxableValues = formData.getAll('componentTaxable');
+
+  return labels
+    .map((label, index) => ({
+      label: String(label || '').trim(),
+      amount: numberOrNull(amounts[index]),
+      type: String(types[index] || 'CUSTOM').trim(),
+      frequency: String(frequencies[index] || 'ONE_TIME').trim(),
+      taxable: String(taxableValues[index] || 'true') !== 'false',
+      displayOrder: index,
+    }))
+    .filter((item) => item.label && item.amount != null);
+}
+
+function buildOfferApprovals(formData) {
+  return formData.getAll('approvalApproverUserId')
+    .map((approverUserId, index) => ({
+      approverUserId: String(approverUserId || '').trim(),
+      sequence: index + 1,
+    }))
+    .filter((item) => item.approverUserId);
+}
+
+function buildOfferPayload(formData, options = {}) {
+  return {
+    ...(options.applicationId ? { applicationId: options.applicationId } : {}),
+    ...(options.sourceOfferId ? { sourceOfferId: options.sourceOfferId } : {}),
+    currency: String(formData.get('currency') || 'INR').trim(),
+    annualCompensation: numberOrNull(formData.get('annualCompensation')),
+    fixedCompensation: numberOrNull(formData.get('fixedCompensation')),
+    variableCompensation: numberOrNull(formData.get('variableCompensation')),
+    joiningBonus: numberOrNull(formData.get('joiningBonus')),
+    retentionBonus: numberOrNull(formData.get('retentionBonus')),
+    allowancesAmount: numberOrNull(formData.get('allowancesAmount')),
+    otherCompensation: numberOrNull(formData.get('otherCompensation')),
+    benefitsSummary: asNullableString(formData.get('benefitsSummary')),
+    compensationNotes: asNullableString(formData.get('compensationNotes')),
+    proposedJoiningDate: asNullableString(formData.get('proposedJoiningDate')),
+    probationPeriodMonths: numberOrNull(formData.get('probationPeriodMonths')),
+    noticeOrBuyoutNote: asNullableString(formData.get('noticeOrBuyoutNote')),
+    workMode: asNullableString(formData.get('workMode')),
+    workLocation: asNullableString(formData.get('workLocation')),
+    reportingManagerName: asNullableString(formData.get('reportingManagerName')),
+    offerExpiryDays: numberOrNull(formData.get('offerExpiryDays')),
+    termsAndConditions: asNullableString(formData.get('termsAndConditions')),
+    internalNotes: asNullableString(formData.get('internalNotes')),
+    revisionReason: asNullableString(formData.get('revisionReason')),
+    components: buildOfferComponents(formData),
+    approvals: buildOfferApprovals(formData),
+  };
+}
+
 export async function createJobAction(formData) {
   await recruiterRequest('/jobs', {
     method: 'POST',
@@ -379,6 +441,96 @@ export async function cancelInterviewAction(applicationId, formData) {
     body: JSON.stringify({
       roundId: String(formData.get('roundId')),
       cancelReason: String(formData.get('cancelReason') || ''),
+    }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function createOfferDraftAction(applicationId, formData) {
+  await recruiterRequest('/offers', {
+    method: 'POST',
+    body: JSON.stringify(buildOfferPayload(formData, { applicationId })),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function updateOfferDraftAction(applicationId, offerId, formData) {
+  await recruiterRequest(`/offers/${offerId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(buildOfferPayload(formData)),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function requestOfferApprovalAction(applicationId, offerId, formData) {
+  await recruiterRequest(`/offers/${offerId}/request-approval`, {
+    method: 'POST',
+    body: JSON.stringify({ approvals: buildOfferApprovals(formData) }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function actOnOfferApprovalAction(applicationId, offerId, approvalId, action, formData) {
+  const suffix = action === 'APPROVED'
+    ? 'approve'
+    : action === 'CHANGES_REQUESTED'
+      ? 'request-changes'
+      : 'reject';
+  await recruiterRequest(`/offers/${offerId}/approvals/${approvalId}/${suffix}`, {
+    method: 'POST',
+    body: JSON.stringify({ comments: asNullableString(formData.get('comments')) }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function releaseOfferAction(applicationId, offerId, formData) {
+  await recruiterRequest(`/offers/${offerId}/release`, {
+    method: 'POST',
+    body: JSON.stringify({ expiryAt: asNullableString(formData.get('expiryAt')) }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function createOfferRevisionAction(applicationId, sourceOfferId, formData) {
+  await recruiterRequest('/offers/revisions', {
+    method: 'POST',
+    body: JSON.stringify(buildOfferPayload(formData, { sourceOfferId })),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function withdrawOfferAction(applicationId, offerId, formData) {
+  await recruiterRequest(`/offers/${offerId}/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: String(formData.get('reason') || '').trim() }),
+  });
+  revalidatePath('/recruiter');
+  revalidatePath('/recruiter/ats');
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+}
+
+export async function updateOfferJoiningAction(applicationId, offerId, formData) {
+  await recruiterRequest(`/offers/${offerId}/joining`, {
+    method: 'POST',
+    body: JSON.stringify({
+      status: String(formData.get('status') || '').trim(),
+      actualJoiningDate: asNullableString(formData.get('actualJoiningDate')),
+      proposedJoiningDate: asNullableString(formData.get('proposedJoiningDate')),
+      reason: asNullableString(formData.get('reason')),
     }),
   });
   revalidatePath('/recruiter');

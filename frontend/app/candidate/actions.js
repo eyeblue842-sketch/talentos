@@ -2,8 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 import {
+  acceptCandidateOfferResponse,
   clearCandidateRecentJobs,
   getCandidateApplicationWithdrawal,
+  rejectCandidateOfferResponse,
+  requestCandidateOfferRevisionResponse,
   markAllCandidateNotificationsRead,
   markCandidateNotificationRead,
   saveCandidateJob,
@@ -211,4 +214,107 @@ export async function submitCandidateSettingsFormAction(previousState, formData)
   } catch (error) {
     return buildActionError(error);
   }
+}
+
+export async function acceptCandidateOfferAction(previousState, formData) {
+  try {
+    const offerId = String(formData.get('offerId') || '');
+    await acceptCandidateOfferResponse(offerId, {
+      confirmation: true,
+      comment: String(formData.get('comment') || '') || null,
+    });
+    revalidatePath('/candidate');
+    revalidatePath('/candidate/dashboard');
+    revalidatePath('/candidate/applications');
+    revalidatePath('/candidate/offers');
+    revalidatePath(`/candidate/offers/${offerId}`);
+    return {
+      status: 'success',
+      message: 'Offer accepted successfully.',
+      fieldErrors: {},
+    };
+  } catch (error) {
+    return buildActionError(error);
+  }
+}
+
+export async function rejectCandidateOfferAction(previousState, formData) {
+  try {
+    const offerId = String(formData.get('offerId') || '');
+    await rejectCandidateOfferResponse(offerId, {
+      reason: String(formData.get('reason') || '').trim(),
+      comment: String(formData.get('comment') || '') || null,
+    });
+    revalidatePath('/candidate');
+    revalidatePath('/candidate/dashboard');
+    revalidatePath('/candidate/applications');
+    revalidatePath('/candidate/offers');
+    revalidatePath(`/candidate/offers/${offerId}`);
+    return {
+      status: 'success',
+      message: 'Offer response recorded.',
+      fieldErrors: {},
+    };
+  } catch (error) {
+    return buildActionError(error);
+  }
+}
+
+export async function requestCandidateOfferRevisionAction(previousState, formData) {
+  try {
+    const offerId = String(formData.get('offerId') || '');
+    await requestCandidateOfferRevisionResponse(offerId, {
+      comment: String(formData.get('comment') || '').trim(),
+    });
+    revalidatePath('/candidate');
+    revalidatePath('/candidate/dashboard');
+    revalidatePath('/candidate/applications');
+    revalidatePath('/candidate/offers');
+    revalidatePath(`/candidate/offers/${offerId}`);
+    return {
+      status: 'success',
+      message: 'Revision request sent successfully.',
+      fieldErrors: {},
+    };
+  } catch (error) {
+    return buildActionError(error);
+  }
+}
+
+export async function acceptCandidateOfferDirectAction(formData) {
+  const offerId = String(formData.get('offerId') || '');
+  await acceptCandidateOfferResponse(offerId, {
+    confirmation: true,
+    comment: String(formData.get('comment') || '') || null,
+  });
+  revalidatePath('/candidate');
+  revalidatePath('/candidate/dashboard');
+  revalidatePath('/candidate/applications');
+  revalidatePath('/candidate/offers');
+  revalidatePath(`/candidate/offers/${offerId}`);
+}
+
+export async function rejectCandidateOfferDirectAction(formData) {
+  const offerId = String(formData.get('offerId') || '');
+  await rejectCandidateOfferResponse(offerId, {
+    reason: String(formData.get('reason') || '').trim(),
+    comment: String(formData.get('comment') || '') || null,
+  });
+  revalidatePath('/candidate');
+  revalidatePath('/candidate/dashboard');
+  revalidatePath('/candidate/applications');
+  revalidatePath('/candidate/offers');
+  revalidatePath(`/candidate/offers/${offerId}`);
+}
+
+export async function requestCandidateOfferRevisionDirectAction(formData) {
+  const offerId = String(formData.get('offerId') || '');
+  await requestCandidateOfferRevisionResponse(offerId, {
+    comment: String(formData.get('comment') || '').trim(),
+  });
+  revalidatePath('/candidate');
+  revalidatePath('/candidate/dashboard');
+  revalidatePath('/candidate/applications');
+  revalidatePath('/candidate/offers');
+  revalidatePath(`/candidate/offers/${offerId}`);
 }
