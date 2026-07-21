@@ -3,14 +3,20 @@
 import { revalidatePath } from 'next/cache';
 import {
   acceptCandidateOfferResponse,
+  applyCandidateResumeParsedUpdates,
   clearCandidateRecentJobs,
+  getCandidateDataExport,
   getCandidateApplicationWithdrawal,
   rejectCandidateOfferResponse,
+  requestCandidateAccountDeactivation,
   requestCandidateOfferRevisionResponse,
+  saveCandidateOnboarding,
+  saveResumeBuilderLink,
   markAllCandidateNotificationsRead,
   markCandidateNotificationRead,
   saveCandidateJob,
   unsaveCandidateJob,
+  updateCandidateResumeAssetState,
   updateCandidateProfile,
   updateCandidateSettings,
   withdrawCandidateApplication,
@@ -66,6 +72,38 @@ export async function clearRecentJobsAction() {
   revalidatePath('/candidate/dashboard');
 }
 
+export async function submitCandidateOnboardingAction(previousState, formData) {
+  try {
+    await saveCandidateOnboarding({
+      fullName: String(formData.get('fullName') || ''),
+      phoneNumber: String(formData.get('phoneNumber') || ''),
+      location: String(formData.get('location') || ''),
+      currentTitle: String(formData.get('currentTitle') || ''),
+      totalExperience: Number(formData.get('totalExperience') || 0),
+      primarySkills: collectCommaSeparated(formData, 'primarySkills'),
+      employmentStatus: String(formData.get('employmentStatus') || '') || null,
+      preferredLocations: collectCommaSeparated(formData, 'preferredLocations'),
+      workplacePreferences: collectMultiValue(formData, 'workplacePreferences'),
+      noticePeriodDays: formData.get('noticePeriodDays') ? Number(formData.get('noticePeriodDays')) : null,
+      profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
+      searchableProfile: formData.get('searchableProfile') === 'on',
+      resumeStepAction: String(formData.get('resumeStepAction') || 'UNCHANGED'),
+      currentStep: Number(formData.get('currentStep') || 1),
+    });
+    revalidatePath('/candidate/onboarding');
+    revalidatePath('/candidate');
+    revalidatePath('/candidate/dashboard');
+    revalidatePath('/candidate/profile');
+    return {
+      status: 'success',
+      message: 'Onboarding progress saved.',
+      fieldErrors: {},
+    };
+  } catch (error) {
+    return buildActionError(error);
+  }
+}
+
 function collectCommaSeparated(formData, field) {
   return String(formData.get(field) || '')
     .split(',')
@@ -77,19 +115,37 @@ function collectMultiValue(formData, field) {
   return formData.getAll(field).map((item) => String(item)).filter(Boolean);
 }
 
+function parseJsonArrayField(formData, field) {
+  const raw = String(formData.get(field) || '').trim();
+  if (!raw) return [];
+  return JSON.parse(raw);
+}
+
 export async function updateCandidateProfileAction(formData) {
   await updateCandidateProfile({
     fullName: String(formData.get('fullName') || ''),
+    phoneNumber: String(formData.get('phoneNumber') || ''),
     headline: String(formData.get('headline') || ''),
     currentTitle: String(formData.get('currentTitle') || ''),
+    currentEmployer: String(formData.get('currentEmployer') || ''),
+    currentDesignation: String(formData.get('currentDesignation') || ''),
     location: String(formData.get('location') || ''),
     totalExperience: Number(formData.get('totalExperience') || 0),
     skills: collectCommaSeparated(formData, 'skills'),
+    skillEntries: parseJsonArrayField(formData, 'skillEntries'),
+    experienceEntries: parseJsonArrayField(formData, 'experienceEntries'),
+    educationEntries: parseJsonArrayField(formData, 'educationEntries'),
+    certificationEntries: parseJsonArrayField(formData, 'certificationEntries'),
+    languageEntries: parseJsonArrayField(formData, 'languageEntries'),
+    projectEntries: parseJsonArrayField(formData, 'projectEntries'),
+    portfolioLinks: parseJsonArrayField(formData, 'portfolioLinks'),
     preferredRoles: collectCommaSeparated(formData, 'preferredRoles'),
     preferredLocations: collectCommaSeparated(formData, 'preferredLocations'),
     workplacePreferences: collectMultiValue(formData, 'workplacePreferences'),
     employmentPreferences: collectMultiValue(formData, 'employmentPreferences'),
     availability: String(formData.get('availability') || ''),
+    employmentStatus: String(formData.get('employmentStatus') || '') || null,
+    lastWorkingDate: String(formData.get('lastWorkingDate') || '') || null,
     noticePeriodDays: formData.get('noticePeriodDays') ? Number(formData.get('noticePeriodDays')) : null,
     currentCtcLpa: formData.get('currentCtcLpa') ? Number(formData.get('currentCtcLpa')) : null,
     expectedCtcLpa: formData.get('expectedCtcLpa') ? Number(formData.get('expectedCtcLpa')) : null,
@@ -98,6 +154,10 @@ export async function updateCandidateProfileAction(formData) {
     portfolioUrl: String(formData.get('portfolioUrl') || ''),
     linkedInUrl: String(formData.get('linkedInUrl') || ''),
     githubUrl: String(formData.get('githubUrl') || ''),
+    searchableProfile: formData.get('searchableProfile') === 'on',
+    phoneVisibleToRecruiters: formData.get('phoneVisibleToRecruiters') === 'on',
+    salaryVisibleToRecruiters: formData.get('salaryVisibleToRecruiters') === 'on',
+    resumeVisibleToRecruiters: formData.get('resumeVisibleToRecruiters') === 'on',
     profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
   });
 
@@ -134,12 +194,91 @@ export async function updateCandidateSettingsAction(formData) {
     notifyForOffers: formData.get('notifyForOffers') === 'on',
     notifyForProfileReminders: formData.get('notifyForProfileReminders') === 'on',
     notifyForMarketing: formData.get('notifyForMarketing') === 'on',
+    searchableProfile: formData.get('searchableProfile') === 'on',
+    phoneVisibleToRecruiters: formData.get('phoneVisibleToRecruiters') === 'on',
+    salaryVisibleToRecruiters: formData.get('salaryVisibleToRecruiters') === 'on',
+    resumeVisibleToRecruiters: formData.get('resumeVisibleToRecruiters') === 'on',
+    notificationPreferences: {
+      email: {
+        applicationUpdates: formData.get('emailApplicationUpdates') === 'on',
+        interviewUpdates: formData.get('emailInterviewUpdates') === 'on',
+        offerUpdates: formData.get('emailOfferUpdates') === 'on',
+        jobRecommendations: formData.get('emailJobRecommendations') === 'on',
+        jobAlerts: formData.get('emailJobAlerts') === 'on',
+        productAnnouncements: formData.get('emailProductAnnouncements') === 'on',
+        securityAlerts: true,
+      },
+      inApp: {
+        applicationUpdates: formData.get('inAppApplicationUpdates') === 'on',
+        interviewUpdates: formData.get('inAppInterviewUpdates') === 'on',
+        offerUpdates: formData.get('inAppOfferUpdates') === 'on',
+        jobRecommendations: formData.get('inAppJobRecommendations') === 'on',
+        jobAlerts: formData.get('inAppJobAlerts') === 'on',
+        productAnnouncements: formData.get('inAppProductAnnouncements') === 'on',
+        securityAlerts: true,
+      },
+    },
   });
 
   revalidatePath('/candidate');
   revalidatePath('/candidate/dashboard');
   revalidatePath('/candidate/settings');
   revalidatePath('/candidate/jobs');
+}
+
+export async function updateResumeAssetStateAction(formData) {
+  const assetId = String(formData.get('assetId') || '');
+  const action = String(formData.get('actionType') || '');
+  if (!assetId || !action) return;
+  await updateCandidateResumeAssetState(assetId, action);
+  revalidatePath('/candidate');
+  revalidatePath('/candidate/dashboard');
+  revalidatePath('/candidate/resumes');
+  revalidatePath('/candidate/profile');
+}
+
+export async function applyResumeParsedUpdatesAction(formData) {
+  const assetId = String(formData.get('assetId') || '');
+  if (!assetId) return;
+  await applyCandidateResumeParsedUpdates(assetId, {
+    acceptAll: formData.get('acceptAll') === 'true',
+    fields: formData.getAll('fields').map((value) => String(value)),
+  });
+  revalidatePath('/candidate');
+  revalidatePath('/candidate/dashboard');
+  revalidatePath('/candidate/resumes');
+  revalidatePath('/candidate/profile');
+}
+
+export async function linkExternalResumeBuilderAction(formData) {
+  await saveResumeBuilderLink({
+    externalResumeId: String(formData.get('externalResumeId') || '') || null,
+    externalResumeUrl: String(formData.get('externalResumeUrl') || '') || null,
+    externalResumeVersion: String(formData.get('externalResumeVersion') || '') || null,
+  });
+  revalidatePath('/candidate/resumes');
+  revalidatePath('/candidate/resume-builder');
+  revalidatePath('/candidate/dashboard');
+}
+
+export async function requestCandidateDataExportAction() {
+  return getCandidateDataExport();
+}
+
+export async function requestCandidateAccountDeactivationAction(previousState, formData) {
+  try {
+    await requestCandidateAccountDeactivation({
+      reason: String(formData.get('reason') || '').trim(),
+    });
+    revalidatePath('/candidate/settings');
+    return {
+      status: 'success',
+      message: 'Account deactivation request recorded.',
+      fieldErrors: {},
+    };
+  } catch (error) {
+    return buildActionError(error);
+  }
 }
 
 export async function withdrawCandidateApplicationAction(previousState, formData) {

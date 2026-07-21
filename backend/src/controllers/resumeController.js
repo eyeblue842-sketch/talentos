@@ -4,7 +4,6 @@ import {
   saveCandidateForRecruiter,
   removeSavedCandidate,
   getSavedCandidates,
-  generateResumePdf,
   getCandidateResumeDownload,
 } from '../services/resumeService.js';
 import {
@@ -245,13 +244,25 @@ export async function unsaveCandidate(req, res, next) {
 
 export async function downloadResumePdf(req, res, next) {
   try {
-    const candidate = await prisma.candidateProfile.findUnique({ where: { id: req.user.candidateProfile.id } });
-    const resumeBuilder = await prisma.resumeBuilder.findUnique({ where: { candidateId: req.user.candidateProfile.id } });
-    const pdf = await generateResumePdf(candidate, resumeBuilder);
+    const candidate = await prisma.candidateProfile.findUnique({
+      where: { id: req.user.candidateProfile.id },
+    });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${candidate.fullName}-resume.pdf"`);
-    res.send(pdf);
+    if (!candidate?.latestResumeAssetId) {
+      return res.status(404).json(apiError('Resume not found.'));
+    }
+
+    const file = await getCandidateResumeDownload(
+      req.user,
+      req.user.candidateProfile.id,
+      null,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', String(file.contentLength));
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    file.stream.pipe(res);
   } catch (error) {
     next(error);
   }

@@ -21,7 +21,7 @@ export default async function JobApplyPage({ params }) {
     redirect(getHomeRouteForRole(user.role));
   }
 
-  const resumes = await getCandidateResumeAssets();
+  const resumes = (await getCandidateResumeAssets()).filter((resume) => resume.status === 'ACTIVE');
   const { job, eligibility } = applyContext;
 
   if (!eligibility.canApply && eligibility.reasonCode !== 'RESUME_REQUIRED' && eligibility.reasonCode !== 'PROFILE_REQUIREMENTS_INCOMPLETE') {

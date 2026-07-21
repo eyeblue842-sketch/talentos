@@ -1,0 +1,87 @@
+name: Careeriz CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Backend install
+        run: npm ci --prefix backend
+
+      - name: Frontend install
+        run: npm ci --prefix frontend
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Backend tests
+        run: npm test --prefix backend
+
+      - name: Frontend tests
+        run: npm test --prefix frontend
+
+      - name: Build
+        run: npm run build
+
+      - name: Prisma validate
+        run: npx prisma validate
+        working-directory: backend
+
+      - name: Prisma generate
+        run: npx prisma generate
+        working-directory: backend
+
+      - name: Migration status
+        run: npx prisma migrate status --schema prisma/schema.prisma
+        working-directory: backend
+
+      - name: Security scan
+        run: npm audit --omit=dev || true
+
+      - name: Docker build backend
+        run: docker build -f backend/Dockerfile .
+
+      - name: Docker build worker
+        run: docker build -f backend/Dockerfile.worker .
+
+      - name: Docker build frontend
+        run: docker build -f frontend/Dockerfile .
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Staging deployment placeholder
+        run: echo "Run the documented staging deployment process here."
+
+  production-approval:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Production approval gate
+        run: echo "Manual approval required before any production deployment step."

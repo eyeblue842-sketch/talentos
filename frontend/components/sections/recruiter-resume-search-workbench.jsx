@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { BriefcaseBusiness, Download, Mail, Save, ShieldCheck, Tag, UserRoundCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,7 +85,18 @@ function ResultCard({ candidate, selected, previewSelected, onToggleSelect, onSe
   );
 }
 
-function PreviewPanel({ preview, previewLoading, statusMessage, talentPools, selectedPoolId, setSelectedPoolId, onSaveToPool }) {
+function PreviewPanel({
+  preview,
+  previewLoading,
+  statusMessage,
+  talentPools,
+  selectedPoolId,
+  setSelectedPoolId,
+  onSaveToPool,
+  resumeIntelligence,
+  matchIntelligence,
+  selectedJob,
+}) {
   if (!preview) {
     return (
       <Card className="sticky top-24">
@@ -109,7 +120,9 @@ function PreviewPanel({ preview, previewLoading, statusMessage, talentPools, sel
 
         <div className="mt-4 rounded-[20px] border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Resume Summary</p>
-          <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{preview.aiSummary}</p>
+          <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">
+            {resumeIntelligence?.aiSummary?.professionalSummary || resumeIntelligence?.deterministic?.professionalSummary || preview.aiSummary}
+          </p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs">
@@ -123,6 +136,25 @@ function PreviewPanel({ preview, previewLoading, statusMessage, talentPools, sel
             {statusMessage}
           </p>
         ) : null}
+      </Card>
+
+      <Card>
+        <h3 className="text-lg font-semibold text-[var(--color-text)]">Match Breakdown</h3>
+        {selectedJob ? (
+          <div className="mt-4 space-y-3 text-sm">
+            <p className="text-[var(--color-text-secondary)]">Linked to {selectedJob.title}</p>
+            <p className="text-3xl font-semibold text-[var(--color-text)]">{matchIntelligence?.deterministic?.overallScore ?? preview.matchScore}%</p>
+            <p className="text-[var(--color-text-secondary)]">{matchIntelligence?.explanation || 'Deterministic job match is unavailable for this preview.'}</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              <p>Required skills: {matchIntelligence?.deterministic?.subscores?.requiredSkillScore ?? '--'}%</p>
+              <p>Experience: {matchIntelligence?.deterministic?.subscores?.experienceScore ?? '--'}%</p>
+              <p>Location: {matchIntelligence?.deterministic?.subscores?.locationScore ?? '--'}%</p>
+              <p>Work mode: {matchIntelligence?.deterministic?.subscores?.workModeScore ?? '--'}%</p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-[var(--color-text-muted)]">Select a job requirement to generate a candidate-job match breakdown.</p>
+        )}
       </Card>
 
       <Card>
@@ -249,6 +281,8 @@ export function RecruiterResumeSearchWorkbench({
   const [previewId, setPreviewId] = useState(preview?.id || candidates[0]?.id || null);
   const [selectedPoolId, setSelectedPoolId] = useState(talentPools[0]?.id || '');
   const [statusMessage, setStatusMessage] = useState('');
+  const [resumeIntelligence, setResumeIntelligence] = useState(null);
+  const [matchIntelligence, setMatchIntelligence] = useState(null);
   const [previewPending, startPreviewTransition] = useTransition();
   const [actionPending, startActionTransition] = useTransition();
   const scrollRef = useRef(null);
@@ -256,6 +290,7 @@ export function RecruiterResumeSearchWorkbench({
 
   const requirementJobId = queryParams.jobId || '';
   const selectedJob = useMemo(() => jobs.find((job) => job.id === requirementJobId) || null, [jobs, requirementJobId]);
+  const selectedJobId = selectedJob?.id || null;
 
   const visibleCount = 4;
   const startIndex = Math.max(0, Math.floor(scrollTop / RESULT_HEIGHT) - 1);
@@ -282,17 +317,51 @@ export function RecruiterResumeSearchWorkbench({
     setPreviewId(candidateId);
     startPreviewTransition(async () => {
       try {
-        const response = await fetch(`/api/recruiter/candidate-preview/${candidateId}`, { cache: 'no-store' });
-        const body = await response.json();
-        if (!response.ok) {
-          throw new Error(body.message || 'Unable to load candidate preview.');
+        const previewResponse = await fetch(`/api/recruiter/candidate-preview/${candidateId}`, { cache: 'no-store' });
+        const previewBody = await previewResponse.json();
+        if (!previewResponse.ok) {
+          throw new Error(previewBody.message || 'Unable to load candidate preview.');
         }
-        setPreviewState(decorateResumePreview(body.data));
+        setPreviewState(decorateResumePreview(previewBody.data));
       } catch (error) {
         setStatusMessage(error.message);
       }
     });
   }
+
+  useEffect(() => {
+    if (!previewState?.id) return;
+    startPreviewTransition(async () => {
+      try {
+        const [resumeResponse, matchResponse] = await Promise.all([
+          fetch('/api/intelligence/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ candidateId: previewState.id }),
+          }),
+          selectedJobId
+            ? fetch('/api/intelligence/match', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ candidateId: previewState.id, jobId: selectedJobId }),
+              })
+            : Promise.resolve(null),
+        ]);
+
+        const resumeBody = await resumeResponse.json();
+        setResumeIntelligence(resumeResponse.ok ? resumeBody.data : null);
+        if (matchResponse) {
+          const matchBody = await matchResponse.json();
+          setMatchIntelligence(matchResponse.ok ? matchBody.data : null);
+        } else {
+          setMatchIntelligence(null);
+        }
+      } catch {
+        setResumeIntelligence(null);
+        setMatchIntelligence(null);
+      }
+    });
+  }, [previewState?.id, selectedJobId]);
 
   function summariseResult(label, result) {
     const successCount = result.items?.filter((item) => item.success).length || 0;
@@ -470,6 +539,9 @@ export function RecruiterResumeSearchWorkbench({
           selectedPoolId={selectedPoolId}
           setSelectedPoolId={setSelectedPoolId}
           onSaveToPool={handleSaveToPool}
+          resumeIntelligence={resumeIntelligence}
+          matchIntelligence={matchIntelligence}
+          selectedJob={selectedJob}
         />
       </div>
     </div>

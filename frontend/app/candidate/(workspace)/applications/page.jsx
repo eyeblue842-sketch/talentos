@@ -29,6 +29,7 @@ export default async function CandidateApplicationsPage({ searchParams }) {
                 <option value="ALL">All</option>
                 <option value="ACTIVE">Active</option>
                 <option value="INTERVIEW">Interview</option>
+                <option value="OFFER">Offer</option>
                 <option value="CLOSED">Closed</option>
                 <option value="WITHDRAWN">Withdrawn</option>
               </select>

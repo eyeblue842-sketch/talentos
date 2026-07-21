@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { ScreeningQuestionBuilder } from '@/components/sections/screening-question-builder';
+import { RecruiterJobIntelligencePanel } from '@/components/sections/recruiter-job-intelligence-panel';
 import { recruiterNav } from '@/lib/navigation';
 import { getApprovedRequisitions, getCurrentOrganisation, getOrganisationMembers, getRecruiterJob, getRecruiterScreeningTemplates } from '@/lib/api';
 import {
@@ -186,6 +187,7 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
               reorderJobQuestionsAction={reorderJobQuestionsAction}
               updateJobQuestionAction={updateJobQuestionAction}
             />
+            <RecruiterJobIntelligencePanel jobId={job.id} initialDescription={job.description} initialSkills={job.skillsRequired} />
           </>
         ) : null}
     </WorkspaceShell>

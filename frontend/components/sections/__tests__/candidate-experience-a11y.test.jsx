@@ -23,6 +23,7 @@ vi.mock('@/app/candidate/actions', () => ({
   clearRecentJobsAction: vi.fn(async () => {}),
   markAllNotificationsReadAction: vi.fn(async () => {}),
   markNotificationReadAction: vi.fn(async () => {}),
+  requestCandidateAccountDeactivationAction: vi.fn(async () => ({ status: 'success', message: 'Request recorded', fieldErrors: {} })),
   submitCandidateSettingsFormAction: vi.fn(async () => ({ status: 'success', message: 'Saved', fieldErrors: {} })),
   unsaveJobAction: vi.fn(async () => {}),
   withdrawCandidateApplicationAction: vi.fn(async () => ({ status: 'success', message: 'Withdrawn', fieldErrors: {} })),
@@ -52,6 +53,15 @@ function buildDashboard() {
       closedApplicationsCount: 0,
       withdrawnApplicationsCount: 0,
     },
+    resumeStatus: {
+      hasResume: true,
+      primaryResume: {
+        filename: 'resume.pdf',
+        parsingStatus: 'COMPLETED',
+      },
+    },
+    activeOffers: [],
+    upcomingInterviews: [],
     quickActions: [
       { label: 'Browse Jobs', href: '/candidate/jobs' },
       { label: 'Manage Preferences', href: '/candidate/settings' },

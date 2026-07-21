@@ -6,6 +6,8 @@ import { createRateLimiter } from '../middleware/rateLimit.js';
 import { validateSchema } from '../middleware/schema.js';
 import {
   candidateApplicationListQuerySchema,
+  candidateResumeParseApplySchema,
+  candidateResumeStateUpdateSchema,
   candidateApplicationWithdrawSchema,
   jobApplicationListQuerySchema,
   jobQuestionAddFromLibrarySchema,
@@ -37,6 +39,8 @@ import {
   patchJobQuestion,
   patchQuestionTemplate,
   postCandidateAnswerFile,
+  postCandidateResumeParseApply,
+  postCandidateResumeState,
   postCandidateResume,
   postJobQuestion,
   postJobQuestionDuplicate,
@@ -72,6 +76,8 @@ applicationWorkflowRouter.get('/jobs/:jobId/screening-questions/preview', auth([
 applicationWorkflowRouter.get('/candidate/resumes', auth(['CANDIDATE']), getCandidateResumes);
 applicationWorkflowRouter.post('/candidate/resumes', auth(['CANDIDATE']), upload.single('resume'), postCandidateResume);
 applicationWorkflowRouter.get('/candidate/resumes/:assetId/download', auth(['CANDIDATE']), downloadCandidateResumeFile);
+applicationWorkflowRouter.post('/candidate/resumes/:assetId/state', auth(['CANDIDATE']), validateSchema(candidateResumeStateUpdateSchema), postCandidateResumeState);
+applicationWorkflowRouter.post('/candidate/resumes/:assetId/apply-parsed', auth(['CANDIDATE']), validateSchema(candidateResumeParseApplySchema), postCandidateResumeParseApply);
 applicationWorkflowRouter.post('/candidate/application-files', auth(['CANDIDATE']), upload.single('file'), postCandidateAnswerFile);
 applicationWorkflowRouter.post('/candidate/applications/validate', auth(['CANDIDATE']), validateSchema(validateJobApplicationAnswersSchema), validateCandidateApplication);
 applicationWorkflowRouter.post('/candidate/applications', createRateLimiter({ keyPrefix: 'candidate-application-submit', limit: 10 }), auth(['CANDIDATE']), validateSchema(submitJobApplicationSchema), submitCandidateApplication);

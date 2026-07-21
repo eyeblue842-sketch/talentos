@@ -20,6 +20,40 @@ export const jobAlertFrequencySchema = z.enum([
   'DISABLED',
 ]);
 
+export const candidateEmploymentStatusSchema = z.enum([
+  'EMPLOYED',
+  'OPEN_TO_WORK',
+  'UNEMPLOYED',
+  'STUDENT',
+  'FREELANCER',
+  'CAREER_BREAK',
+]);
+
+export const resumeAssetStatusSchema = z.enum([
+  'ACTIVE',
+  'ARCHIVED',
+  'DELETED',
+]);
+
+export const resumeAssetSourceSchema = z.enum([
+  'UPLOAD',
+  'EXTERNAL_BUILDER',
+]);
+
+export const resumeParseStatusSchema = z.enum([
+  'PENDING',
+  'PROCESSING',
+  'COMPLETED',
+  'PARTIAL',
+  'FAILED',
+]);
+
+export const accountLifecycleStatusSchema = z.enum([
+  'ACTIVE',
+  'DEACTIVATION_REQUESTED',
+  'DEACTIVATED',
+]);
+
 const stringArrayField = (maxItems = 20, maxLength = 80) =>
   z.preprocess((value) => {
     if (Array.isArray(value)) {
@@ -36,19 +70,66 @@ const stringArrayField = (maxItems = 20, maxLength = 80) =>
     return [];
   }, z.array(z.string().trim().min(1).max(maxLength)).max(maxItems));
 
+const jsonArrayField = (maxItems = 100) => z.preprocess((value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    if (!value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return value;
+    }
+  }
+  return [];
+}, z.array(z.record(z.string(), z.any())).max(maxItems));
+
+const notificationPreferencesSchema = z.object({
+  email: z.object({
+    applicationUpdates: z.boolean().optional(),
+    interviewUpdates: z.boolean().optional(),
+    offerUpdates: z.boolean().optional(),
+    jobRecommendations: z.boolean().optional(),
+    jobAlerts: z.boolean().optional(),
+    productAnnouncements: z.boolean().optional(),
+    securityAlerts: z.boolean().optional(),
+  }).partial().optional(),
+  inApp: z.object({
+    applicationUpdates: z.boolean().optional(),
+    interviewUpdates: z.boolean().optional(),
+    offerUpdates: z.boolean().optional(),
+    jobRecommendations: z.boolean().optional(),
+    jobAlerts: z.boolean().optional(),
+    productAnnouncements: z.boolean().optional(),
+    securityAlerts: z.boolean().optional(),
+  }).partial().optional(),
+}).partial();
+
 export const candidateProfileUpdateSchema = z.object({
   fullName: z.string().trim().min(2).max(120).optional(),
+  phoneNumber: z.string().trim().min(7).max(30).optional().nullable(),
   headline: z.string().trim().min(2).max(160).optional().nullable(),
   currentTitle: z.string().trim().min(2).max(160).optional().nullable(),
+  currentEmployer: z.string().trim().min(2).max(160).optional().nullable(),
+  currentDesignation: z.string().trim().min(2).max(160).optional().nullable(),
   location: z.string().trim().min(2).max(160).optional().nullable(),
   totalExperience: z.coerce.number().int().min(0).max(60).optional(),
   skills: stringArrayField(50, 80).optional(),
+  skillEntries: jsonArrayField(200).optional(),
+  experienceEntries: jsonArrayField(200).optional(),
+  educationEntries: jsonArrayField(200).optional(),
+  certificationEntries: jsonArrayField(200).optional(),
+  languageEntries: jsonArrayField(200).optional(),
+  projectEntries: jsonArrayField(200).optional(),
+  portfolioLinks: jsonArrayField(100).optional(),
   preferredRoles: stringArrayField(20, 120).optional(),
   preferredLocations: stringArrayField(20, 160).optional(),
   workplacePreferences: z.array(workplaceTypeSchema).max(3).optional(),
   employmentPreferences: z.array(employmentTypeSchema).max(4).optional(),
   availability: availabilityStatusSchema.optional(),
   noticePeriodDays: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  employmentStatus: candidateEmploymentStatusSchema.optional().nullable(),
+  lastWorkingDate: z.string().datetime().optional().nullable().or(z.literal('')),
   currentCtcLpa: z.coerce.number().int().min(0).max(1000).optional().nullable(),
   expectedCtcLpa: z.coerce.number().int().min(0).max(1000).optional().nullable(),
   summary: z.string().trim().max(4000).optional().nullable(),
@@ -56,6 +137,10 @@ export const candidateProfileUpdateSchema = z.object({
   portfolioUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
   linkedInUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
   githubUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
+  searchableProfile: z.boolean().optional(),
+  phoneVisibleToRecruiters: z.boolean().optional(),
+  salaryVisibleToRecruiters: z.boolean().optional(),
+  resumeVisibleToRecruiters: z.boolean().optional(),
   profileVisibility: profileVisibilitySchema.optional(),
 }).refine((value) => {
   if (
@@ -98,6 +183,43 @@ export const candidateSettingsUpdateSchema = z.object({
   notifyForOffers: z.boolean().optional(),
   notifyForProfileReminders: z.boolean().optional(),
   notifyForMarketing: z.boolean().optional(),
+  searchableProfile: z.boolean().optional(),
+  phoneVisibleToRecruiters: z.boolean().optional(),
+  salaryVisibleToRecruiters: z.boolean().optional(),
+  resumeVisibleToRecruiters: z.boolean().optional(),
+  notificationPreferences: notificationPreferencesSchema.optional(),
+});
+
+export const candidateOnboardingUpdateSchema = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  phoneNumber: z.string().trim().min(7).max(30).optional().nullable().or(z.literal('')),
+  location: z.string().trim().min(2).max(160),
+  currentTitle: z.string().trim().min(2).max(160),
+  totalExperience: z.coerce.number().int().min(0).max(60),
+  primarySkills: stringArrayField(30, 80).optional(),
+  employmentStatus: candidateEmploymentStatusSchema.optional().nullable(),
+  preferredLocations: stringArrayField(20, 160).optional(),
+  workplacePreferences: z.array(workplaceTypeSchema).max(3).optional(),
+  noticePeriodDays: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  profileVisibility: profileVisibilitySchema.optional(),
+  resumeStepAction: z.enum(['UPLOAD', 'SKIP', 'UNCHANGED']).optional(),
+  searchableProfile: z.boolean().optional(),
+  currentStep: z.coerce.number().int().min(1).max(4).optional(),
+});
+
+export const candidateResumeStateUpdateSchema = z.object({
+  assetId: z.string().min(1),
+  action: z.enum(['SET_PRIMARY', 'ARCHIVE', 'DELETE', 'RESTORE', 'RETRY_PARSE']),
+});
+
+export const candidateResumeParseApplySchema = z.object({
+  assetId: z.string().min(1),
+  acceptAll: z.boolean().optional(),
+  fields: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
+});
+
+export const candidateAccountDeactivationSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
 });
 
 export const publicJobSearchQuerySchema = z.object({
@@ -115,7 +237,7 @@ export const publicJobSearchQuerySchema = z.object({
   postedWithinDays: z.coerce.number().int().min(1).max(365).optional(),
   organisation: z.string().trim().max(120).optional(),
   organisationSlug: z.string().trim().regex(/^[a-z0-9-]+$/).optional(),
-  sort: z.enum(['relevance', 'newest', 'oldest', 'salary_high']).optional(),
+  sort: z.enum(['relevance', 'newest', 'oldest', 'salary_high', 'closing_date']).optional(),
   page: z.coerce.number().int().min(1).max(1000).optional(),
   pageSize: z.coerce.number().int().min(1).max(50).optional(),
 });

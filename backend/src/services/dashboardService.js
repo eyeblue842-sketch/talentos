@@ -3,7 +3,12 @@ import { serializeApplication, serializeJob } from '../serializers/index.js';
 import { requireOrganisationContext } from './organisationAccessService.js';
 
 function missingRelationTable(error) {
-  return error?.code === 'P2021' || error?.message?.includes('does not exist in the current database');
+  return error?.code === 'P2021'
+    || error?.code === 'P1001'
+    || error?.code === 'P1002'
+    || error?.code === 'P1008'
+    || error?.code === 'P1017'
+    || error?.message?.includes('does not exist in the current database');
 }
 
 async function countOrZero(query) {

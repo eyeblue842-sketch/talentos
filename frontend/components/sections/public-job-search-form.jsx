@@ -132,6 +132,7 @@ export function PublicJobSearchForm({
             { value: 'relevance', label: 'Relevance' },
             { value: 'newest', label: 'Newest' },
             { value: 'oldest', label: 'Oldest' },
+            { value: 'closing_date', label: 'Closing date' },
             { value: 'salary_high', label: 'Salary high to low' },
           ]}
         />

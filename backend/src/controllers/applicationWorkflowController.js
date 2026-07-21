@@ -5,6 +5,7 @@ import {
   createScreeningTemplate,
   duplicateJobScreeningQuestion,
   duplicateScreeningTemplate,
+  applyCandidateResumeParsedUpdates,
   getCandidateApplicationWithdrawalEligibility,
   getCandidateApplicationDetail,
   getOwnedResumeDownload,
@@ -21,6 +22,7 @@ import {
   removeJobScreeningQuestion,
   reorderJobScreeningQuestions,
   submitJobApplication,
+  updateCandidateResumeAssetState,
   updateJobScreeningQuestion,
   updateScreeningTemplate,
   uploadCandidateResumeAsset,
@@ -284,6 +286,32 @@ export async function downloadCandidateResumeFile(req, res, next) {
   try {
     const result = await getOwnedResumeDownload(req.user, req.params.assetId);
     pipeDownload(res, result.asset.originalFilename, result.asset.mimeType, result.file.contentLength, result.file.stream);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateResumeState(req, res, next) {
+  try {
+    const result = await updateCandidateResumeAssetState(req.user, req.params.assetId, req.body.action, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateResumeParseApply(req, res, next) {
+  try {
+    const result = await applyCandidateResumeParsedUpdates(req.user, req.params.assetId, req.body, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

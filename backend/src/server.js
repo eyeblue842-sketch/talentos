@@ -1,6 +1,7 @@
 import { app } from './app.js';
 import { env } from './config/env.js';
 import { ensureResumeIndex, isElasticsearchEnabled } from './config/elastic.js';
+import { getRedisClient, isRedisEnabled } from './config/redis.js';
 import { pathToFileURL } from 'url';
 
 export function createServerStarter({
@@ -8,11 +9,19 @@ export function createServerStarter({
   runtimeEnv = env,
   ensureResumeIndexFn = ensureResumeIndex,
   elasticsearchEnabled = isElasticsearchEnabled,
+  redisEnabled = isRedisEnabled,
+  connectRedis = getRedisClient,
   logger = console,
   exit = (code) => process.exit(code),
 } = {}) {
   return async function start() {
     try {
+      if (redisEnabled()) {
+        await connectRedis().catch((error) => {
+          logger.warn('Redis is unavailable. Falling back to degraded runtime behavior.', error);
+        });
+      }
+
       if (elasticsearchEnabled()) {
         await ensureResumeIndexFn();
       } else {

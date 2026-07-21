@@ -161,6 +161,21 @@ export async function getCandidateDashboard() {
   return response.data;
 }
 
+export async function getCandidateOnboarding() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/onboarding', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function saveCandidateOnboarding(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/onboarding', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
 export async function getCandidateProfile() {
   const token = await requireToken();
   const response = await requestBackend('/candidate/profile', { method: 'GET' }, token);
@@ -224,6 +239,18 @@ export async function getCandidateNotifications(filters = {}) {
     items: response.data,
     meta: response.meta,
   };
+}
+
+export async function getCandidateInterviews() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/interviews', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateOffers() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/offers', { method: 'GET' }, token);
+  return response.data;
 }
 
 export async function markCandidateNotificationRead(notificationId) {
@@ -417,6 +444,54 @@ export async function withdrawCandidateApplication(applicationId, payload) {
 export async function getCandidateResumeAssets() {
   const token = await requireToken();
   const response = await requestBackend('/candidate/resumes', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateCandidateResumeAssetState(assetId, action) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/resumes/${assetId}/state`, {
+    method: 'POST',
+    body: JSON.stringify({ assetId, action }),
+  }, token);
+  return response.data;
+}
+
+export async function applyCandidateResumeParsedUpdates(assetId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/candidate/resumes/${assetId}/apply-parsed`, {
+    method: 'POST',
+    body: JSON.stringify({ assetId, ...payload }),
+  }, token);
+  return response.data;
+}
+
+export async function getResumeBuilderState() {
+  const token = await requireToken();
+  const response = await requestBackend('/resume-builder', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function saveResumeBuilderLink(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/resume-builder', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getCandidateDataExport() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/data-export', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function requestCandidateAccountDeactivation(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/account-deactivation', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
   return response.data;
 }
 
@@ -624,5 +699,260 @@ export async function requestPublicOfferRevision(tokenValue, payload) {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  return response.data;
+}
+
+export async function getAdminOverview() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/overview', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getAdminOrganisation() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/organisation', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateAdminOrganisation(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/organisation', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function archiveAdminOrganisation(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/organisation/archive', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function saveAdminOrganisationUnit(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/organisation/units', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function archiveAdminOrganisationUnit(unitId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/admin/organisation/units/${unitId}/archive`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminUsers(query = '') {
+  const token = await requireToken();
+  const response = await requestBackend(`/admin/users${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function updateAdminUserMembership(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/users/membership', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function bulkInviteAdminUsers(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/users/bulk-invite', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function bulkUpdateAdminUsers(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/users/bulk-update', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function transferAdminOwnership(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/users/transfer-ownership', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminRoles() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/roles', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function saveAdminRole(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/roles', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminSettings() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/settings', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateAdminSettings(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminWorkflow() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/workflow', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateAdminWorkflow(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/workflow', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminAudit(query = '') {
+  const token = await requireToken();
+  const response = await requestBackend(`/admin/audit${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function getAdminNotificationTemplates() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/notification-templates', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function saveAdminNotificationTemplate(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/notification-templates', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminBackgroundJobs() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/background-jobs', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getAdminAnalytics() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/analytics', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getAdminFeatureFlags() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/feature-flags', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function saveAdminFeatureFlag(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/feature-flags', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAdminLookups() {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/lookups', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateAdminLookups(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/admin/lookups', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getIntelligenceGovernance() {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/governance', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getIntelligenceHealth() {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/health', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getResumeIntelligence(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/resume', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getCandidateMatchIntelligence(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/match', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getJobIntelligence(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/job', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getInterviewIntelligence(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/interview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getAnalyticsInsight(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/analytics/insight', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
   return response.data;
 }

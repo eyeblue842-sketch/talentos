@@ -1,7 +1,10 @@
 import {
   clearCandidateJobViews,
+  getCandidateInterviewCenter,
   getCandidateDashboard,
   getCandidateJobViews,
+  getCandidateOfferCenter,
+  getCandidateOnboardingState,
   getCandidateRecommendations,
   getCandidateSelfProfile,
   getCandidateSettings,
@@ -11,6 +14,9 @@ import {
   markCandidateNotificationRead,
   removeSavedJob,
   recordCandidateJobView,
+  requestCandidateDataExport,
+  requestCandidateAccountDeactivation,
+  saveCandidateOnboarding,
   saveJobForCandidate,
   updateCandidateSelfProfile,
   updateCandidateSettings,
@@ -135,6 +141,70 @@ export async function getCandidateHomeDashboard(req, res, next) {
 export async function getCandidateSuggestedJobs(req, res, next) {
   try {
     const result = await getCandidateRecommendations(req.user.candidateProfile.id, { ...req.query, excludeSaved: true });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidateOnboarding(req, res, next) {
+  try {
+    const result = await getCandidateOnboardingState(req.user.candidateProfile.id);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateOnboarding(req, res, next) {
+  try {
+    const result = await saveCandidateOnboarding(req.user.candidateProfile.id, req.body, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidateInterviews(req, res, next) {
+  try {
+    const result = await getCandidateInterviewCenter(req.user.candidateProfile.id);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidateOffers(req, res, next) {
+  try {
+    const result = await getCandidateOfferCenter(req.user.candidateProfile.id);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function exportCandidateData(req, res, next) {
+  try {
+    const result = await requestCandidateDataExport(req.user.candidateProfile.id, req.user.id, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateAccountDeactivation(req, res, next) {
+  try {
+    const result = await requestCandidateAccountDeactivation(req.user.candidateProfile.id, req.user.id, req.body, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

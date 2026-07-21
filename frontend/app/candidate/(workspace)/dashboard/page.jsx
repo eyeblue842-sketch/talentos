@@ -9,6 +9,10 @@ import { PageHeader } from '@/components/ui/page-header';
 
 export default async function CandidateDashboardPage() {
   const dashboard = await getCandidateDashboard();
+  const resumeStatus = dashboard.resumeStatus || {
+    hasResume: false,
+    primaryResume: null,
+  };
   const completionUpdatedLabel = dashboard.completion.updatedAt
     ? new Date(dashboard.completion.updatedAt).toLocaleDateString()
     : 'Not available';
@@ -71,6 +75,33 @@ export default async function CandidateDashboardPage() {
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <Card>
             <div className="flex items-center justify-between gap-4">
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Resume status</h2>
+              <Link href="/candidate/resumes" className="text-sm font-semibold text-[var(--brand)]">Manage resumes</Link>
+            </div>
+            <div className="mt-5 space-y-3 text-sm">
+              <p><span className="font-semibold">Resume uploaded:</span> {resumeStatus.hasResume ? 'Yes' : 'No'}</p>
+              <p><span className="font-semibold">Primary resume:</span> {resumeStatus.primaryResume?.filename || 'Not set'}</p>
+              <p><span className="font-semibold">Parsing status:</span> {resumeStatus.primaryResume?.parsingStatus || 'Not available'}</p>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Active offers</h2>
+              <Link href="/candidate/offers" className="text-sm font-semibold text-[var(--brand)]">Open offer center</Link>
+            </div>
+            <div className="mt-5 space-y-3">
+              {dashboard.activeOffers?.length ? dashboard.activeOffers.map((offer) => (
+                <Link key={offer.id} href={`/candidate/offers/${offer.id}`} className="block rounded-2xl border border-[var(--line)] p-4 transition hover:border-[var(--brand)]">
+                  <p className="font-semibold">{offer.job?.title || 'Offer'} | {offer.referenceNumber}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">{offer.status} | {offer.currency} {Number(offer.totalCompensation || 0).toLocaleString('en-IN')}</p>
+                </Link>
+              )) : <p className="text-sm text-[var(--muted)]">No active offers right now.</p>}
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-center justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl font-semibold">Recent application updates</h2>
               <Link href="/candidate/applications" className="text-sm font-semibold text-[var(--brand)]">View all</Link>
             </div>
@@ -88,7 +119,7 @@ export default async function CandidateDashboardPage() {
           <Card>
             <div className="flex items-center justify-between gap-4">
               <h2 className="font-[var(--font-display)] text-2xl font-semibold">Upcoming interviews</h2>
-              <Link href="/candidate/applications" className="text-sm font-semibold text-[var(--brand)]">Open applications</Link>
+              <Link href="/candidate/interviews" className="text-sm font-semibold text-[var(--brand)]">Open interview center</Link>
             </div>
             <div className="mt-5 space-y-3">
               {dashboard.upcomingInterviews?.length ? dashboard.upcomingInterviews.map((item) => (

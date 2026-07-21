@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { getRedisClient, getRedisKey } from '../config/redis.js';
 import { apiError } from '../utils/response.js';
 
 const buckets = new Map();
@@ -13,13 +14,33 @@ function cleanupExpired(now) {
 
 export function createRateLimiter({ keyPrefix, limit, windowMinutes = env.rateLimitWindowMinutes }) {
   const windowMs = windowMinutes * 60 * 1000;
+  const maxRequests = limit || env.rateLimitMaxRequests;
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const now = Date.now();
-    cleanupExpired(now);
-
     const identity = `${req.ip}:${req.body?.email || req.params?.applicationId || 'anonymous'}`;
     const key = `${keyPrefix}:${identity}`;
+    const redisClient = await getRedisClient().catch(() => null);
+    if (redisClient) {
+      const redisKey = getRedisKey(`ratelimit:${key}`);
+      try {
+        const count = await redisClient.incr(redisKey);
+        if (count === 1) {
+          await redisClient.pExpire(redisKey, windowMs);
+        }
+        if (count > maxRequests) {
+          const ttl = await redisClient.pTTL(redisKey);
+          const retryAfter = ttl > 0 ? Math.ceil(ttl / 1000) : Math.ceil(windowMs / 1000);
+          res.setHeader('Retry-After', String(retryAfter));
+          return res.status(429).json(apiError('Too many requests. Please try again later.'));
+        }
+        return next();
+      } catch {
+        // Fall through to in-memory protection when Redis is unavailable.
+      }
+    }
+
+    cleanupExpired(now);
     const bucket = buckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
@@ -27,7 +48,7 @@ export function createRateLimiter({ keyPrefix, limit, windowMinutes = env.rateLi
       return next();
     }
 
-    if (bucket.count >= limit) {
+    if (bucket.count >= maxRequests) {
       const retryAfter = Math.ceil((bucket.resetAt - now) / 1000);
       res.setHeader('Retry-After', String(retryAfter));
       return res.status(429).json(apiError('Too many requests. Please try again later.'));

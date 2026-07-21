@@ -14,6 +14,7 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.js'],
     globals: true,
     css: false,
+    pool: 'threads',
     coverage: {
       reporter: ['text', 'lcov'],
     },

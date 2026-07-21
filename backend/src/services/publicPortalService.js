@@ -143,6 +143,7 @@ export function buildPublicJobWhere(filters = {}) {
 
 function buildPublicJobOrder(sort = 'relevance') {
   if (sort === 'oldest') return [{ createdAt: 'asc' }, { id: 'asc' }];
+  if (sort === 'closing_date') return [{ applicationClosesAt: 'asc' }, { applicationDeadline: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }];
   if (sort === 'salary_high') return [{ salaryMax: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }];
   if (sort === 'relevance') return [{ featuredInPortal: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }];
   return [{ createdAt: 'desc' }, { id: 'asc' }];

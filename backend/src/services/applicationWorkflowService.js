@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { storePrivateFile, readPrivateFileNodeStream } from '../config/storage.js';
 import { requireOrganisationRole, requireOrganisationContext } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
+import { enqueueBackgroundTask } from './backgroundTaskService.js';
 
 const recruiterWritableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const recruiterReadableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -20,6 +21,21 @@ const candidateVisibleStatusMap = {
   SELECTED: { code: 'SELECTED', label: 'Selected', group: 'CLOSED' },
   REJECTED: { code: 'APPLICATION_CLOSED', label: 'Application Closed', group: 'CLOSED' },
   WITHDRAWN: { code: 'APPLICATION_WITHDRAWN', label: 'Application Withdrawn', group: 'WITHDRAWN' },
+};
+
+const candidateStatusLabelMap = {
+  'Ready for Offer': { code: 'READY_FOR_OFFER', label: 'Ready for Offer', group: 'OFFER' },
+  'Offer Draft': { code: 'OFFER_DRAFT', label: 'Offer Draft', group: 'OFFER' },
+  'Offer Pending Approval': { code: 'OFFER_PENDING_APPROVAL', label: 'Approval Pending', group: 'OFFER' },
+  'Offer Released': { code: 'OFFER_RELEASED', label: 'Offer Released', group: 'OFFER' },
+  'Offer Accepted': { code: 'OFFER_ACCEPTED', label: 'Offer Accepted', group: 'OFFER' },
+  'Offer Rejected': { code: 'OFFER_REJECTED', label: 'Offer Rejected', group: 'CLOSED' },
+  'Offer Withdrawn': { code: 'OFFER_WITHDRAWN', label: 'Offer Withdrawn', group: 'CLOSED' },
+  'Offer Expired': { code: 'OFFER_EXPIRED', label: 'Offer Expired', group: 'CLOSED' },
+  'Joining Confirmed': { code: 'JOINING_CONFIRMED', label: 'Joining Confirmed', group: 'OFFER' },
+  'Joining Deferred': { code: 'JOINING_DEFERRED', label: 'Joining Deferred', group: 'OFFER' },
+  Joined: { code: 'JOINED', label: 'Joined', group: 'CLOSED' },
+  'No Show': { code: 'NO_SHOW', label: 'No Show', group: 'CLOSED' },
 };
 
 function iso(value) {
@@ -40,7 +56,10 @@ function clampPage(page, pageSize, total) {
   return Math.min(Math.max(1, page), pageCount);
 }
 
-function getCandidateVisibleStatus(stage) {
+function getCandidateVisibleStatus(stage, statusLabel = null) {
+  if (statusLabel && candidateStatusLabelMap[statusLabel]) {
+    return candidateStatusLabelMap[statusLabel];
+  }
   return candidateVisibleStatusMap[stage] || candidateVisibleStatusMap.APPLIED;
 }
 
@@ -74,7 +93,7 @@ function buildCandidateSafeTimelineItem(item) {
 }
 
 function buildCandidateApplicationStatus(application) {
-  const visible = getCandidateVisibleStatus(application.application?.currentStage || 'APPLIED');
+  const visible = getCandidateVisibleStatus(application.application?.currentStage || 'APPLIED', application.application?.statusLabel || null);
   return {
     candidateStatus: visible.code,
     candidateStatusLabel: visible.label,
@@ -285,8 +304,78 @@ function serializeResumeAsset(asset) {
     filename: asset.originalFilename,
     mimeType: asset.mimeType,
     sizeBytes: asset.sizeBytes,
+    source: asset.source,
+    status: asset.status,
+    isPrimary: asset.isPrimary,
+    parsingStatus: asset.parsingStatus,
+    parsedData: asset.parsedData || null,
     createdAt: iso(asset.createdAt),
+    updatedAt: iso(asset.updatedAt),
+    archivedAt: iso(asset.archivedAt),
+    externalResumeId: asset.externalResumeId,
+    externalResumeUrl: asset.externalResumeUrl,
+    externalResumeVersion: asset.externalResumeVersion,
+    lastSynchronizedAt: iso(asset.lastSynchronizedAt),
     downloadUrl: `/api/candidate/resumes/${asset.id}/download`,
+  };
+}
+
+function normalizeResumeFilename(filename) {
+  return String(filename || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inferResumeSkills(filename) {
+  const normalized = normalizeResumeFilename(filename).toLowerCase();
+  const knownSkills = ['react', 'nextjs', 'next js', 'node', 'nodejs', 'javascript', 'typescript', 'java', 'spring', 'aws', 'python', 'sql', 'docker', 'kubernetes'];
+  return knownSkills
+    .filter((skill) => normalized.includes(skill))
+    .map((skill) => skill.replace('nextjs', 'Next.js').replace('nodejs', 'Node.js'))
+    .slice(0, 8);
+}
+
+function inferResumeTitle(filename) {
+  const normalized = normalizeResumeFilename(filename).toLowerCase();
+  const titleMap = [
+    ['frontend', 'Frontend Developer'],
+    ['backend', 'Backend Developer'],
+    ['full stack', 'Full Stack Developer'],
+    ['java', 'Java Developer'],
+    ['python', 'Python Developer'],
+    ['react', 'React Developer'],
+    ['data analyst', 'Data Analyst'],
+    ['product manager', 'Product Manager'],
+  ];
+  const match = titleMap.find(([token]) => normalized.includes(token));
+  return match?.[1] || null;
+}
+
+function buildDeterministicParse(filename, candidateProfile) {
+  const inferredSkills = inferResumeSkills(filename);
+  const inferredTitle = inferResumeTitle(filename);
+  const suggestedUpdates = {
+    currentTitle: !candidateProfile?.currentTitle && inferredTitle ? inferredTitle : null,
+    skills: inferredSkills.length ? inferredSkills : null,
+  };
+
+  const availableFields = Object.entries(suggestedUpdates)
+    .filter(([, value]) => value && (!Array.isArray(value) || value.length))
+    .map(([field]) => field);
+
+  return {
+    parsingStatus: availableFields.length ? 'PARTIAL' : 'FAILED',
+    parsedData: {
+      parser: 'careeriz-metadata-fallback',
+      extractedTextAvailable: false,
+      summary: availableFields.length
+        ? 'Careeriz created limited metadata-based suggestions from the uploaded resume filename.'
+        : 'No structured parse suggestions were available for this upload.',
+      suggestedUpdates,
+      availableFields,
+    },
   };
 }
 
@@ -493,6 +582,7 @@ async function ensureOwnedResumeAsset(candidateId, assetId) {
       id: assetId,
       candidateId,
       kind: 'RESUME',
+      status: { not: 'DELETED' },
     },
   });
   if (!asset) {
@@ -893,8 +983,9 @@ export async function listCandidateResumeAssets(candidateUser) {
     where: {
       candidateId: candidateUser.candidateProfile.id,
       kind: 'RESUME',
+      status: { not: 'DELETED' },
     },
-    orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
   });
   return rows.map(serializeResumeAsset);
 }
@@ -919,19 +1010,40 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
     throw error;
   }
   const stored = await storePrivateFile(file, { prefix: kind === 'RESUME' ? 'resumes' : 'screening-files' });
+  const candidateProfile = kind === 'RESUME'
+    ? await prisma.candidateProfile.findUnique({
+        where: { id: candidateUser.candidateProfile.id },
+      })
+    : null;
+  const parsePreview = kind === 'RESUME'
+    ? buildDeterministicParse(stored.originalFilename, candidateProfile)
+    : { parsingStatus: 'PENDING', parsedData: null };
   const asset = await prisma.resumeAsset.create({
     data: {
       candidateId: candidateUser.candidateProfile.id,
       ownerUserId: candidateUser.id,
       kind,
+      status: 'ACTIVE',
+      source: 'UPLOAD',
+      isPrimary: kind === 'RESUME',
       storageKey: stored.storageKey,
       storageProvider: stored.storageProvider,
       originalFilename: stored.originalFilename,
       mimeType: stored.mimeType,
       sizeBytes: stored.sizeBytes,
+      parsingStatus: parsePreview.parsingStatus,
+      parsedData: parsePreview.parsedData,
     },
   });
   if (kind === 'RESUME') {
+    await prisma.resumeAsset.updateMany({
+      where: {
+        candidateId: candidateUser.candidateProfile.id,
+        kind: 'RESUME',
+        id: { not: asset.id },
+      },
+      data: { isPrimary: false },
+    });
     await prisma.candidateProfile.update({
       where: { id: candidateUser.candidateProfile.id },
       data: {
@@ -939,6 +1051,16 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
         resumeUrl: `/api/candidate/resumes/${asset.id}/download`,
       },
     });
+    await enqueueBackgroundTask({
+      type: 'RESUME_PARSING',
+      entityType: 'ResumeAsset',
+      entityId: asset.id,
+      idempotencyKey: `resume-parse:${asset.id}:${asset.updatedAt.toISOString()}`,
+      payload: { assetId: asset.id },
+      nextAttemptAt: new Date(),
+      createdByUserId: candidateUser.id,
+      maxAttempts: 5,
+    }).catch(() => {});
   }
   return serializeResumeAsset(asset);
 }
@@ -1676,16 +1798,13 @@ export async function listCandidateJobApplications(candidateUser, filters = {}) 
   const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
   const requestedPage = Math.max(1, Number(filters.page) || 1);
   const filter = String(filters.filter || 'ALL').toUpperCase();
-  const stageGroups = {
-    ACTIVE: ['APPLIED', 'SHORTLISTED'],
-    INTERVIEW: ['INTERVIEW_SCHEDULED'],
-    OFFER: [],
-    CLOSED: ['SELECTED', 'REJECTED'],
-    WITHDRAWN: ['WITHDRAWN'],
-  };
   const where = {
     candidateId,
-    ...(filter !== 'ALL' ? { application: { currentStage: { in: stageGroups[filter] || [] } } } : {}),
+    ...(filter === 'ACTIVE' ? { application: { currentStage: { in: ['APPLIED', 'SHORTLISTED'] } } } : {}),
+    ...(filter === 'INTERVIEW' ? { application: { currentStage: { in: ['INTERVIEW_SCHEDULED'] } } } : {}),
+    ...(filter === 'OFFER' ? { application: { statusLabel: { in: Object.keys(candidateStatusLabelMap).filter((label) => candidateStatusLabelMap[label].group === 'OFFER') } } } : {}),
+    ...(filter === 'CLOSED' ? { application: { OR: [{ currentStage: { in: ['SELECTED', 'REJECTED'] } }, { statusLabel: { in: Object.keys(candidateStatusLabelMap).filter((label) => candidateStatusLabelMap[label].group === 'CLOSED') } }] } } : {}),
+    ...(filter === 'WITHDRAWN' ? { application: { currentStage: 'WITHDRAWN' } } : {}),
   };
   const orderBy = (() => {
     switch (String(filters.sort || 'recently_updated')) {
@@ -1911,9 +2030,205 @@ export async function withdrawCandidateApplication(candidateUser, jobApplication
   return getCandidateApplicationDetail(candidateUser, jobApplicationId);
 }
 
+export async function updateCandidateResumeAssetState(candidateUser, assetId, action, requestMeta = {}) {
+  const asset = await ensureOwnedResumeAsset(candidateUser.candidateProfile.id, assetId);
+
+  if (action === 'SET_PRIMARY') {
+    await prisma.$transaction([
+      prisma.resumeAsset.updateMany({
+        where: {
+          candidateId: candidateUser.candidateProfile.id,
+          kind: 'RESUME',
+          id: { not: asset.id },
+        },
+        data: { isPrimary: false },
+      }),
+      prisma.resumeAsset.update({
+        where: { id: asset.id },
+        data: {
+          isPrimary: true,
+          status: 'ACTIVE',
+          archivedAt: null,
+        },
+      }),
+      prisma.candidateProfile.update({
+        where: { id: candidateUser.candidateProfile.id },
+        data: {
+          latestResumeAssetId: asset.id,
+          resumeUrl: `/api/candidate/resumes/${asset.id}/download`,
+          onboardingSkippedResume: false,
+        },
+      }),
+    ]);
+  } else if (action === 'ARCHIVE') {
+    if (asset.isPrimary) {
+      const replacement = await prisma.resumeAsset.findFirst({
+        where: {
+          candidateId: candidateUser.candidateProfile.id,
+          kind: 'RESUME',
+          status: 'ACTIVE',
+          id: { not: asset.id },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      });
+      if (!replacement) {
+        const error = new Error('Upload another resume before archiving your primary resume.');
+        error.statusCode = 409;
+        throw error;
+      }
+      await prisma.resumeAsset.update({
+        where: { id: replacement.id },
+        data: { isPrimary: true },
+      });
+      await prisma.candidateProfile.update({
+        where: { id: candidateUser.candidateProfile.id },
+        data: {
+          latestResumeAssetId: replacement.id,
+          resumeUrl: `/api/candidate/resumes/${replacement.id}/download`,
+        },
+      });
+    }
+
+    await prisma.resumeAsset.update({
+      where: { id: asset.id },
+      data: {
+        status: 'ARCHIVED',
+        isPrimary: false,
+        archivedAt: new Date(),
+      },
+    });
+  } else if (action === 'DELETE') {
+    const applicationReferences = await prisma.applicationResumeSnapshot.count({
+      where: { resumeAssetId: asset.id },
+    });
+    if (applicationReferences > 0) {
+      const error = new Error('This resume is referenced by an application snapshot and cannot be deleted.');
+      error.statusCode = 409;
+      throw error;
+    }
+    if (asset.isPrimary) {
+      const replacement = await prisma.resumeAsset.findFirst({
+        where: {
+          candidateId: candidateUser.candidateProfile.id,
+          kind: 'RESUME',
+          status: 'ACTIVE',
+          id: { not: asset.id },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      });
+      await prisma.candidateProfile.update({
+        where: { id: candidateUser.candidateProfile.id },
+        data: {
+          latestResumeAssetId: replacement?.id || null,
+          resumeUrl: replacement ? `/api/candidate/resumes/${replacement.id}/download` : null,
+        },
+      });
+      if (replacement) {
+        await prisma.resumeAsset.update({
+          where: { id: replacement.id },
+          data: { isPrimary: true },
+        });
+      }
+    }
+
+    await prisma.resumeAsset.update({
+      where: { id: asset.id },
+      data: {
+        status: 'DELETED',
+        isPrimary: false,
+        archivedAt: new Date(),
+      },
+    });
+  } else if (action === 'RESTORE') {
+    await prisma.resumeAsset.update({
+      where: { id: asset.id },
+      data: {
+        status: 'ACTIVE',
+        archivedAt: null,
+      },
+    });
+  } else if (action === 'RETRY_PARSE') {
+    const nextParse = buildDeterministicParse(asset.originalFilename, candidateUser.candidateProfile);
+    await prisma.resumeAsset.update({
+      where: { id: asset.id },
+      data: {
+        parsingStatus: nextParse.parsingStatus,
+        parsedData: nextParse.parsedData,
+      },
+    });
+  }
+
+  await recordAuditLog({
+    actorUserId: candidateUser.id,
+    action: `candidate.resume.${action.toLowerCase()}`,
+    entityType: 'ResumeAsset',
+    entityId: asset.id,
+    metadata: {
+      candidateId: candidateUser.candidateProfile.id,
+      action,
+    },
+    ...requestMeta,
+  });
+
+  return listCandidateResumeAssets(candidateUser);
+}
+
+export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, payload = {}, requestMeta = {}) {
+  const asset = await ensureOwnedResumeAsset(candidateUser.candidateProfile.id, assetId);
+  const suggestedUpdates = asset.parsedData?.suggestedUpdates || {};
+  const fields = payload.acceptAll
+    ? Object.keys(suggestedUpdates)
+    : Array.isArray(payload.fields)
+      ? payload.fields
+      : [];
+
+  const updateData = {};
+  if (fields.includes('currentTitle') && suggestedUpdates.currentTitle) {
+    updateData.currentTitle = suggestedUpdates.currentTitle;
+  }
+  if (fields.includes('skills') && Array.isArray(suggestedUpdates.skills)) {
+    updateData.skills = [...new Set([...(candidateUser.candidateProfile.skills || []), ...suggestedUpdates.skills])];
+  }
+
+  if (Object.keys(updateData).length) {
+    await prisma.candidateProfile.update({
+      where: { id: candidateUser.candidateProfile.id },
+      data: updateData,
+    });
+  }
+
+  await prisma.resumeAsset.update({
+    where: { id: asset.id },
+    data: {
+      parsingStatus: asset.parsedData?.availableFields?.length ? 'PARTIAL' : asset.parsingStatus,
+      parsedData: {
+        ...(asset.parsedData || {}),
+        acceptedFields: fields,
+        lastReviewedAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  await recordAuditLog({
+    actorUserId: candidateUser.id,
+    action: 'candidate.resume.apply-parsed-updates',
+    entityType: 'ResumeAsset',
+    entityId: asset.id,
+    metadata: {
+      candidateId: candidateUser.candidateProfile.id,
+      fields,
+    },
+    ...requestMeta,
+  });
+
+  return {
+    resumes: await listCandidateResumeAssets(candidateUser),
+  };
+}
+
 export async function getOwnedResumeDownload(candidateUser, assetId) {
   const asset = await prisma.resumeAsset.findFirst({
-    where: { id: assetId, candidateId: candidateUser.candidateProfile.id },
+    where: { id: assetId, candidateId: candidateUser.candidateProfile.id, status: { not: 'DELETED' } },
   });
   if (!asset) {
     const error = new Error('File not found.');

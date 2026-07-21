@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import { validateSchema } from '../middleware/schema.js';
 import {
+  candidateAccountDeactivationSchema,
+  candidateOnboardingUpdateSchema,
   candidateJobViewCreateSchema,
   candidateRecentJobListQuerySchema,
   candidateNotificationReadSchema,
@@ -16,8 +18,12 @@ import {
   createSavedJob,
   deleteSavedJob,
   deleteCandidateRecentJobs,
+  exportCandidateData,
   getCandidateHomeDashboard,
+  getCandidateInterviews,
   getCandidateNotificationList,
+  getCandidateOffers,
+  getCandidateOnboarding,
   getCandidatePreferenceSettings,
   getCandidateProfile,
   getCandidateRecentJobs,
@@ -27,16 +33,24 @@ import {
   markCandidateNotifications,
   patchCandidateProfile,
   patchCandidateSettings,
+  postCandidateAccountDeactivation,
+  postCandidateOnboarding,
 } from '../controllers/candidateController.js';
 
 export const candidateRouter = Router();
 
 candidateRouter.use(auth(['CANDIDATE']));
 candidateRouter.get('/dashboard', getCandidateHomeDashboard);
+candidateRouter.get('/onboarding', getCandidateOnboarding);
+candidateRouter.post('/onboarding', validateSchema(candidateOnboardingUpdateSchema), postCandidateOnboarding);
 candidateRouter.get('/profile', getCandidateProfile);
 candidateRouter.patch('/profile', validateSchema(candidateProfileUpdateSchema), patchCandidateProfile);
 candidateRouter.get('/settings', getCandidatePreferenceSettings);
 candidateRouter.patch('/settings', validateSchema(candidateSettingsUpdateSchema), patchCandidateSettings);
+candidateRouter.get('/interviews', getCandidateInterviews);
+candidateRouter.get('/offers', getCandidateOffers);
+candidateRouter.get('/data-export', exportCandidateData);
+candidateRouter.post('/account-deactivation', validateSchema(candidateAccountDeactivationSchema), postCandidateAccountDeactivation);
 candidateRouter.get('/saved-jobs', validateSchema(candidateSavedJobListQuerySchema.partial(), 'query'), getCandidateSavedJobs);
 candidateRouter.post('/saved-jobs', validateSchema(savedJobCreateSchema), createSavedJob);
 candidateRouter.delete('/saved-jobs/:jobId', deleteSavedJob);

@@ -5,6 +5,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { buildSavedSearchHref, resumeSearchFilterSections } from '@/lib/recruiter-resume-search';
+import { RecruiterTalentSearchAssistant } from '@/components/sections/recruiter-talent-search-assistant';
 
 function Field({ field, value }) {
   if (field.type === 'select') {
@@ -48,6 +49,8 @@ function Field({ field, value }) {
 export function RecruiterResumeSearchFilters({ params, savedSearches, recentSearches, jobs = [], requisitions = [] }) {
   return (
     <div className="space-y-4">
+      <RecruiterTalentSearchAssistant jobId={params.jobId || ''} requisitionId={params.requisitionId || ''} />
+
       <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-md)]">
         <div className="flex items-start gap-3">
           <span className="rounded-[16px] bg-[var(--color-primary-soft)] p-3 text-[var(--color-primary)]">

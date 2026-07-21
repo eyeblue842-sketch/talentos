@@ -1,77 +1,84 @@
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
-import { adminNav } from '@/lib/navigation';
 import { PageHeader } from '@/components/ui/page-header';
+import { adminNav } from '@/lib/navigation';
+import { getAdminOverview } from '@/lib/api';
 
-const metrics = [
-  { label: 'Total users', value: '12.4K', helper: 'Candidates, recruiters, and admins' },
-  { label: 'AI generations', value: '89K', helper: 'Resume, ATS, cover letter, and coaching prompts' },
-  { label: 'Monthly revenue', value: '$48.2K', helper: 'Subscriptions and premium exports' },
-  { label: 'Conversion rate', value: '7.8%', helper: 'Free to paid upgrade rate' },
-];
+export default async function AdminPage() {
+  let overview = null;
+  let error = '';
 
-const modules = [
-  'User management and role-based access control',
-  'Template library management and content operations',
-  'Subscription and monetization reporting',
-  'AI usage monitoring, prompt control, and limits',
-  'System configuration, audit visibility, and analytics',
-];
+  try {
+    overview = await getAdminOverview();
+  } catch (caught) {
+    error = caught.message;
+  }
 
-export default function AdminPage() {
   return (
-    <WorkspaceShell brand="Admin Control" items={adminNav}>
+    <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav}>
       <PageHeader
-        eyebrow="Admin portal"
-        title="Operate Careeriz from one control center"
-        description="This admin workspace covers user management, subscriptions, content, AI monitoring, analytics, and system settings."
+        eyebrow="Enterprise administration"
+        title="Operate the organization platform from one workspace"
+        description="Manage organization configuration, roles, users, workflows, audit visibility, feature flags, and hiring analytics on top of the existing Careeriz platform."
         breadcrumb={[{ label: 'Admin' }, { label: 'Overview' }]}
       />
-        <Card className="bg-[linear-gradient(135deg,#102418_0%,#173c28_58%,#1e5a38_100%)] text-white">
-          <p className="text-sm uppercase tracking-[0.24em] text-emerald-200">AI-Powered Talent Intelligence Platform</p>
-          <h2 className="mt-3 text-3xl font-semibold">Enterprise oversight, AI usage visibility, and platform controls</h2>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/76 md:text-base">
-            Use this workspace to manage the platform side of Careeriz without exposing admin functionality elsewhere.
-          </p>
-        </Card>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((metric) => (
-            <StatCard key={metric.label} {...metric} />
-          ))}
-        </div>
+      {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
 
-        <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-          <Card>
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold">Operations modules</h2>
-            <div className="mt-5 space-y-3">
-              {modules.map((module) => (
-                <div key={module} className="rounded-2xl border border-[var(--line)] px-4 py-4 text-sm text-[var(--muted)]">
-                  {module}
-                </div>
-              ))}
-            </div>
-          </Card>
+      {overview ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Active members" value={overview.metrics.activeMembers} helper={`${overview.metrics.pendingInvitations} pending invitations`} />
+            <StatCard label="Active jobs" value={overview.metrics.activeJobs} helper={`${overview.metrics.applications} applications`} />
+            <StatCard label="Interviews and offers" value={`${overview.metrics.interviews} / ${overview.metrics.offers}`} helper="Live interview and offer volume" />
+            <StatCard label="Flags and roles" value={`${overview.metrics.featureFlags} / ${overview.metrics.customRoles}`} helper={`${overview.metrics.structureNodes} structure nodes`} />
+          </div>
 
-          <Card>
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold">Revenue and usage snapshot</h2>
-            <div className="mt-5 grid gap-4">
-              <div className="rounded-[22px] bg-[var(--soft)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Professional plan</p>
-                <p className="mt-2 text-2xl font-semibold">4,280 active</p>
+          <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <Card>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Organization snapshot</h2>
+              <div className="mt-5 grid gap-3 text-sm">
+                <div><span className="font-semibold">Name:</span> {overview.organisation?.name}</div>
+                <div><span className="font-semibold">Slug:</span> {overview.organisation?.slug}</div>
+                <div><span className="font-semibold">Status:</span> {overview.organisation?.status}</div>
+                <div><span className="font-semibold">Industry:</span> {overview.organisation?.industry || 'Not set'}</div>
+                <div><span className="font-semibold">Headquarters:</span> {overview.organisation?.headquarters || 'Not set'}</div>
               </div>
-              <div className="rounded-[22px] bg-[var(--soft)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Premium plan</p>
-                <p className="mt-2 text-2xl font-semibold">1,140 active</p>
+            </Card>
+
+            <Card>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Permission snapshot</h2>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {(overview.permissions || []).map((permission) => (
+                  <span key={permission} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--muted)]">{permission}</span>
+                ))}
               </div>
-              <div className="rounded-[22px] bg-[var(--soft)] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Avg AI cost per user</p>
-                <p className="mt-2 text-2xl font-semibold">$1.82</p>
+            </Card>
+
+            <Card>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Operational links</h2>
+              <div className="mt-5 grid gap-3 text-sm">
+                {adminNav.slice(1).map((item) => (
+                  <a key={item.href} href={item.href} className="rounded-2xl border border-[var(--line)] px-4 py-3 transition hover:border-[var(--brand)]">
+                    {item.label}
+                  </a>
+                ))}
               </div>
-            </div>
-          </Card>
-        </div>
+            </Card>
+
+            <Card>
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Settings baseline</h2>
+              <div className="mt-5 grid gap-3 text-sm">
+                <div><span className="font-semibold">Timezone:</span> {overview.settings?.timezone || 'Not set'}</div>
+                <div><span className="font-semibold">Currency:</span> {overview.settings?.currency || 'Not set'}</div>
+                <div><span className="font-semibold">Language:</span> {overview.settings?.language || 'Not set'}</div>
+                <div><span className="font-semibold">Date format:</span> {overview.settings?.dateFormat || 'Not set'}</div>
+              </div>
+            </Card>
+          </div>
+        </>
+      ) : null}
     </WorkspaceShell>
   );
 }

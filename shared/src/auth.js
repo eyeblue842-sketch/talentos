@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
-export const userRoleSchema = z.enum(['RECRUITER', 'CANDIDATE']);
+export const userRoleSchema = z.enum(['RECRUITER', 'CANDIDATE', 'ADMIN']);
+export const signupUserRoleSchema = z.enum(['RECRUITER', 'CANDIDATE']);
 
 export const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(72),
-  role: userRoleSchema,
+  role: signupUserRoleSchema,
   fullName: z.string().trim().min(1).optional(),
   location: z.string().trim().optional(),
   totalExperience: z.coerce.number().int().min(0).max(50).optional(),

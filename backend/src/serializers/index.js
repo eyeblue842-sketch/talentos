@@ -19,6 +19,12 @@ export function serializeOrganisation(organisation) {
     industry: organisation.industry,
     organisationSize: organisation.organisationSize,
     headquarters: organisation.headquarters,
+    publicDescription: organisation.publicDescription,
+    publicLocations: organisation.publicLocations || [],
+    cultureSummary: organisation.cultureSummary,
+    benefitsSummary: organisation.benefitsSummary,
+    careersEnabled: organisation.careersEnabled,
+    onboardingCompletedAt: iso(organisation.onboardingCompletedAt),
     createdAt: iso(organisation.createdAt),
     updatedAt: iso(organisation.updatedAt),
   };
@@ -53,14 +59,118 @@ export function serializeOrganisationMembership(membership) {
     createdAt: iso(membership.createdAt),
     updatedAt: iso(membership.updatedAt),
     organisation: serializeOrganisation(membership.organisation),
+    customRoleDefinition: membership.customRoleDefinition
+      ? {
+          id: membership.customRoleDefinition.id,
+          name: membership.customRoleDefinition.name,
+          slug: membership.customRoleDefinition.slug,
+        }
+      : undefined,
     user: membership.user
       ? {
           id: membership.user.id,
           email: membership.user.email,
           role: membership.user.role,
           isActive: membership.user.isActive,
+          accountStatus: membership.user.accountStatus,
+          lastLoginAt: iso(membership.user.lastLoginAt),
+          mfaEnabled: membership.user.mfaEnabled,
         }
       : undefined,
+  };
+}
+
+export function serializeOrganisationUnit(unit) {
+  if (!unit) return null;
+  return {
+    id: unit.id,
+    organisationId: unit.organisationId,
+    type: unit.type,
+    name: unit.name,
+    code: unit.code,
+    description: unit.description,
+    parentId: unit.parentId,
+    status: unit.status,
+    metadata: unit.metadata || {},
+    archivedAt: iso(unit.archivedAt),
+    createdAt: iso(unit.createdAt),
+    updatedAt: iso(unit.updatedAt),
+  };
+}
+
+export function serializeOrganisationSettings(settings) {
+  if (!settings) return null;
+  return {
+    id: settings.id,
+    organisationId: settings.organisationId,
+    timezone: settings.timezone,
+    currency: settings.currency,
+    language: settings.language,
+    dateFormat: settings.dateFormat,
+    employmentTypes: settings.employmentTypes || [],
+    workModes: settings.workModes || [],
+    experienceBands: settings.experienceBands || [],
+    defaultHiringWorkflow: settings.defaultHiringWorkflow || {},
+    defaultOfferWorkflow: settings.defaultOfferWorkflow || {},
+    interviewTemplates: settings.interviewTemplates || [],
+    offerTemplates: settings.offerTemplates || [],
+    careerPageSettings: settings.careerPageSettings || {},
+    emailBranding: settings.emailBranding || {},
+    notificationDefaults: settings.notificationDefaults || {},
+    lookupSettings: settings.lookupSettings || {},
+    updatedByUserId: settings.updatedByUserId,
+    createdAt: iso(settings.createdAt),
+    updatedAt: iso(settings.updatedAt),
+  };
+}
+
+export function serializeOrganisationRoleDefinition(roleDefinition) {
+  if (!roleDefinition) return null;
+  return {
+    id: roleDefinition.id,
+    organisationId: roleDefinition.organisationId,
+    name: roleDefinition.name,
+    slug: roleDefinition.slug,
+    description: roleDefinition.description,
+    isSystem: roleDefinition.isSystem,
+    baseRole: roleDefinition.baseRole,
+    permissions: roleDefinition.permissions || [],
+    archivedAt: iso(roleDefinition.archivedAt),
+    createdByUserId: roleDefinition.createdByUserId,
+    updatedByUserId: roleDefinition.updatedByUserId,
+    createdAt: iso(roleDefinition.createdAt),
+    updatedAt: iso(roleDefinition.updatedAt),
+  };
+}
+
+export function serializeNotificationTemplate(template) {
+  if (!template) return null;
+  return {
+    id: template.id,
+    organisationId: template.organisationId,
+    key: template.key,
+    category: template.category,
+    channel: template.channel,
+    subject: template.subject,
+    body: template.body,
+    enabled: template.enabled,
+    updatedByUserId: template.updatedByUserId,
+    createdAt: iso(template.createdAt),
+    updatedAt: iso(template.updatedAt),
+  };
+}
+
+export function serializeFeatureFlag(flag) {
+  if (!flag) return null;
+  return {
+    id: flag.id,
+    organisationId: flag.organisationId,
+    key: flag.key,
+    description: flag.description,
+    enabled: flag.enabled,
+    updatedByUserId: flag.updatedByUserId,
+    createdAt: iso(flag.createdAt),
+    updatedAt: iso(flag.updatedAt),
   };
 }
 
@@ -118,8 +228,11 @@ export function serializeCandidateProfile(profile, options = {}) {
   return {
     id: profile.id,
     fullName: profile.fullName,
+    phoneNumber: includePrivate ? profile.phoneNumber : undefined,
     headline: profile.headline,
     currentTitle: profile.currentTitle,
+    currentEmployer: includePrivate ? profile.currentEmployer : undefined,
+    currentDesignation: includePrivate ? profile.currentDesignation : undefined,
     location: profile.location,
     preferredLocations: profile.preferredLocations,
     preferredRoles: profile.preferredRoles,
@@ -127,9 +240,18 @@ export function serializeCandidateProfile(profile, options = {}) {
     workplacePreferences: profile.workplacePreferences,
     employmentPreferences: profile.employmentPreferences,
     availability: profile.availability,
+    employmentStatus: includePrivate ? profile.employmentStatus : undefined,
+    lastWorkingDate: includePrivate ? iso(profile.lastWorkingDate) : undefined,
     willingToRelocate: includePrivate ? profile.willingToRelocate : undefined,
     noticePeriodDays: includePrivate ? profile.noticePeriodDays : undefined,
     skills: profile.skills,
+    skillEntries: includePrivate ? profile.skillEntries || [] : undefined,
+    experienceEntries: includePrivate ? profile.experienceEntries || [] : undefined,
+    educationEntries: includePrivate ? profile.educationEntries || [] : undefined,
+    certificationEntries: includePrivate ? profile.certificationEntries || [] : undefined,
+    languageEntries: includePrivate ? profile.languageEntries || [] : undefined,
+    projectEntries: includePrivate ? profile.projectEntries || [] : undefined,
+    portfolioLinks: includePrivate ? profile.portfolioLinks || [] : undefined,
     summary: profile.summary,
     profileImageUrl: profile.profileImageUrl,
     portfolioUrl: profile.portfolioUrl,
@@ -155,6 +277,16 @@ export function serializeCandidateProfile(profile, options = {}) {
     travelWillingness: includePrivate ? profile.travelWillingness : undefined,
     jobAlertEnabled: includePrivate ? profile.jobAlertEnabled : undefined,
     jobAlertFrequency: includePrivate ? profile.jobAlertFrequency : undefined,
+    searchableProfile: includePrivate ? profile.searchableProfile : undefined,
+    phoneVisibleToRecruiters: includePrivate ? profile.phoneVisibleToRecruiters : undefined,
+    salaryVisibleToRecruiters: includePrivate ? profile.salaryVisibleToRecruiters : undefined,
+    resumeVisibleToRecruiters: includePrivate ? profile.resumeVisibleToRecruiters : undefined,
+    notificationPreferences: includePrivate ? profile.notificationPreferences : undefined,
+    accountLifecycleStatus: includePrivate ? profile.accountLifecycleStatus : undefined,
+    accountDeactivationRequestedAt: includePrivate ? iso(profile.accountDeactivationRequestedAt) : undefined,
+    onboardingStep: includePrivate ? profile.onboardingStep : undefined,
+    onboardingCompletedAt: includePrivate ? iso(profile.onboardingCompletedAt) : undefined,
+    onboardingSkippedResume: includePrivate ? profile.onboardingSkippedResume : undefined,
     resumeUrl: includePrivate ? resumeDownloadUrl(profile) : undefined,
     sharedResumeSlug: profile.sharedResumeSlug,
     profileViews: includePrivate ? profile.profileViews : undefined,
@@ -204,7 +336,10 @@ export function serializeUser(user, options = {}) {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+    accountStatus: user.accountStatus,
     emailVerified: Boolean(user.emailVerifiedAt),
+    lastLoginAt: iso(user.lastLoginAt),
+    mfaEnabled: user.mfaEnabled,
     createdAt: iso(user.createdAt),
     updatedAt: iso(user.updatedAt),
     recruiterProfile: serializeRecruiterProfile(user.recruiterProfile),

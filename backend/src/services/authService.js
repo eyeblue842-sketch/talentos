@@ -193,11 +193,20 @@ export async function loginUser(email, password) {
 
   ensureVerifiedUser(user);
 
-  const token = signToken({ userId: user.id, role: user.role, sessionVersion: user.sessionVersion });
-  const { activeMembership } = await resolveMembershipForRequest(user);
+  const updatedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+    include: {
+      recruiterProfile: { include: { organisation: true } },
+      candidateProfile: true,
+    },
+  });
+
+  const token = signToken({ userId: updatedUser.id, role: updatedUser.role, sessionVersion: updatedUser.sessionVersion });
+  const { activeMembership } = await resolveMembershipForRequest(updatedUser);
   return {
     token,
-    session: serializeAuthSession(user, getTokenExpiryIso(), activeMembership),
+    session: serializeAuthSession(updatedUser, getTokenExpiryIso(), activeMembership),
   };
 }
 

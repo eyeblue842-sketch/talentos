@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import dayjs from 'dayjs';
 import { env } from '../config/env.js';
+import { enqueueBackgroundTask } from './backgroundTaskService.js';
 
 const sentEmails = [];
 
@@ -106,7 +107,7 @@ export async function sendPipelineEmail(to, stage, jobTitle, metadata = {}) {
   });
 }
 
-async function sendTransactionalEmail({ to, subject, text }) {
+async function deliverEmail({ to, subject, text }) {
   if (!transporter) {
     if (env.isProduction) {
       const error = new Error('Email delivery is not configured.');
@@ -126,8 +127,37 @@ async function sendTransactionalEmail({ to, subject, text }) {
   });
 }
 
-export async function sendRecruiterOutreachEmail(to, subject, text) {
-  await sendTransactionalEmail({ to, subject, text });
+async function queueEmailRetry({ to, subject, text }) {
+  return enqueueBackgroundTask({
+    type: 'EMAIL_RETRY',
+    entityType: 'Email',
+    entityId: to,
+    idempotencyKey: `email-retry:${to}:${subject}:${Buffer.from(text).toString('base64').slice(0, 32)}`,
+    payload: {
+      message: { to, subject, text },
+    },
+    nextAttemptAt: new Date(),
+    maxAttempts: 5,
+  });
+}
+
+async function sendTransactionalEmail({ to, subject, text }, { queueOnFailure = true } = {}) {
+  try {
+    await deliverEmail({ to, subject, text });
+  } catch (error) {
+    if (queueOnFailure) {
+      await queueEmailRetry({ to, subject, text }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+export async function sendRecruiterOutreachEmail(to, subject, text, options = {}) {
+  await sendTransactionalEmail({ to, subject, text }, options);
+}
+
+export async function sendQueuedEmailPayload(message) {
+  await sendTransactionalEmail(message, { queueOnFailure: false });
 }
 
 export function __getSentEmails() {
@@ -180,6 +210,6 @@ export async function sendOfferReleasedEmail({ to, candidateName, jobTitle, orga
   });
 }
 
-export async function sendOfferStatusEmail(to, subject, text) {
-  await sendTransactionalEmail({ to, subject, text });
+export async function sendOfferStatusEmail(to, subject, text, options = {}) {
+  await sendTransactionalEmail({ to, subject, text }, options);
 }

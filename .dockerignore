@@ -1,0 +1,16 @@
+node_modules
+frontend/node_modules
+backend/node_modules
+frontend/.next
+backend/storage/resumes/*
+!backend/storage/resumes/.gitkeep
+.git
+coverage
+backend-dev.log
+backend-dev.err.log
+frontend-dev.log
+frontend-dev.err.log
+.env
+.env.local
+frontend/.env.local
+frontend/.next
