@@ -12,18 +12,16 @@ import { Badge } from '@/components/ui/badge';
 import { resolvePostAuthRoute, safeInternalPath } from '@/lib/roles';
 import { buildPathWithParams, candidateAuthRoutes, employerAuthRoutes } from '@/lib/auth-experience';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
-
 const passwordHelpText = 'Use at least 8 characters. Choose a password you do not reuse elsewhere.';
 
 function getOAuthHref(provider, mode, nextHref) {
-  const url = new URL(`${API_BASE_URL}/auth/oauth/${provider}/start`);
+  const url = new URL(`/api/auth/${provider}`, 'http://localhost');
   url.searchParams.set('role', 'CANDIDATE');
   url.searchParams.set('mode', mode);
   if (nextHref) {
     url.searchParams.set('next', nextHref);
   }
-  return url.toString();
+  return `${url.pathname}${url.search}`;
 }
 
 async function postJson(path, payload) {
@@ -42,13 +40,13 @@ async function postJson(path, payload) {
 }
 
 function SocialButtons({ mode, nextHref, providers }) {
-  if (!providers.googleConfigured && !providers.linkedinConfigured) {
+  if (providers.googleVisible === false && !providers.linkedinConfigured) {
     return null;
   }
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {providers.googleConfigured ? (
+      {providers.googleVisible !== false ? (
         <Button as="a" href={getOAuthHref('google', mode, nextHref)} variant="outline" className="justify-center">
           Continue with Google
         </Button>
@@ -156,7 +154,7 @@ function HeroPanel({ audience, mode }) {
 export function AuthExperience({
   audience,
   mode,
-  providers = { googleConfigured: false, linkedinConfigured: false },
+  providers = { googleVisible: true, linkedinConfigured: false },
   initialSearchParams = {},
 }) {
   const [registerForm, setRegisterForm] = useState({
@@ -342,7 +340,7 @@ export function AuthExperience({
                 {audience === 'candidate' ? (
                   <SocialButtons mode="signup" nextHref={nextHref} providers={providers} />
                 ) : null}
-                {audience === 'candidate' && (providers.googleConfigured || providers.linkedinConfigured) ? (
+                {audience === 'candidate' && (providers.googleVisible !== false || providers.linkedinConfigured) ? (
                   <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                     or continue with email
@@ -411,7 +409,7 @@ export function AuthExperience({
                 {audience === 'candidate' ? (
                   <SocialButtons mode="login" nextHref={nextHref} providers={providers} />
                 ) : null}
-                {audience === 'candidate' && (providers.googleConfigured || providers.linkedinConfigured) ? (
+                {audience === 'candidate' && (providers.googleVisible !== false || providers.linkedinConfigured) ? (
                   <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                     or continue with email

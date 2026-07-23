@@ -20,6 +20,7 @@ import { validateSchema } from '../middleware/schema.js';
 import { isPersonalEmail } from '../utils/email.js';
 import {
   loginSchema,
+  oauthCallbackSchema,
   passwordResetConfirmSchema,
   passwordResetRequestSchema,
   signupSchema,
@@ -75,6 +76,12 @@ authRouter.post(
 );
 authRouter.get('/oauth/:provider/start', startOAuth);
 authRouter.get('/oauth/:provider/callback', oauthCallback);
+authRouter.post(
+  '/oauth/callback',
+  createRateLimiter({ keyPrefix: 'auth:oauth-callback', limit: 10 }),
+  validateSchema(oauthCallbackSchema),
+  oauthCallback
+);
 authRouter.post('/oauth/exchange', createRateLimiter({ keyPrefix: 'auth:oauth-exchange', limit: 10 }), validateSchema(tokenConfirmationSchema), oauthExchange);
 authRouter.post('/logout', auth(), logout);
 authRouter.patch('/recruiter-profile', auth(['RECRUITER']), saveRecruiterProfile);

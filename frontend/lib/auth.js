@@ -5,7 +5,7 @@ import { getHomeRouteForRole } from '@/lib/roles';
 export const SESSION_COOKIE = 'careeriz_session';
 export const RESET_SESSION_COOKIE = 'careeriz_reset_session';
 export const ORGANISATION_COOKIE = 'careeriz_org';
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
+const BACKEND_API_BASE_URL = process.env.BACKEND_API_BASE_URL || 'http://127.0.0.1:5000/api';
 
 export function sessionCookieOptions(maxAge = 60 * 60 * 12) {
   return {
@@ -28,7 +28,7 @@ async function parseJson(response) {
 export async function requestBackend(path, options = {}, token) {
   const cookieStore = await cookies();
   const activeOrganisationId = cookieStore.get(ORGANISATION_COOKIE)?.value || null;
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${BACKEND_API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -48,6 +48,10 @@ export async function requestBackend(path, options = {}, token) {
   }
 
   return body;
+}
+
+export function getBackendApiBaseUrl() {
+  return BACKEND_API_BASE_URL;
 }
 
 export async function getSessionToken() {

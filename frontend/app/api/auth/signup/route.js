@@ -6,7 +6,10 @@ export async function POST(request) {
     const payload = await request.json();
     const response = await requestBackend('/auth/signup', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        role: payload.role || 'CANDIDATE',
+      }),
     });
 
     return NextResponse.json(response);

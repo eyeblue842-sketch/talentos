@@ -26,11 +26,6 @@ export function buildPathWithParams(path, params = {}) {
 }
 
 export function getConfiguredSocialProviders() {
-  const googleConfigured = Boolean(
-    process.env.GOOGLE_CLIENT_ID &&
-    process.env.GOOGLE_CLIENT_SECRET &&
-    process.env.GOOGLE_REDIRECT_URI
-  );
   const linkedinConfigured = Boolean(
     process.env.LINKEDIN_CLIENT_ID &&
     process.env.LINKEDIN_CLIENT_SECRET &&
@@ -38,7 +33,7 @@ export function getConfiguredSocialProviders() {
   );
 
   return {
-    googleConfigured,
+    googleVisible: true,
     linkedinConfigured,
   };
 }

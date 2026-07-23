@@ -11,9 +11,10 @@ import {
 } from '../services/authService.js';
 import {
   buildOAuthErrorRedirect,
+  completeOAuthSignIn,
   exchangeOAuthSessionToken,
   getOAuthAuthorizationUrl,
-  handleOAuthCallback,
+  handleOAuthCallbackRedirect,
 } from '../services/oauthService.js';
 import { serializeUser } from '../serializers/index.js';
 import { sendSuccess } from '../utils/response.js';
@@ -108,6 +109,7 @@ export async function startOAuth(req, res) {
     const url = await getOAuthAuthorizationUrl(req.params.provider, {
       role: req.query.role,
       mode: req.query.mode,
+      next: req.query.next,
     });
     res.redirect(url);
   } catch (error) {
@@ -115,12 +117,22 @@ export async function startOAuth(req, res) {
   }
 }
 
-export async function oauthCallback(req, res) {
+export async function oauthCallback(req, res, next) {
+  if (req.method === 'GET') {
+    try {
+      const result = await handleOAuthCallbackRedirect(req.params.provider, req.query.code, req.query.state);
+      res.redirect(result.redirectUrl);
+    } catch (error) {
+      res.redirect(buildOAuthErrorRedirect(error.message));
+    }
+    return;
+  }
+
   try {
-    const result = await handleOAuthCallback(req.params.provider, req.query.code, req.query.state);
-    res.redirect(result.redirectUrl);
+    const result = await completeOAuthSignIn(req.body.provider, req.body.code, req.body.state);
+    sendSuccess(res, 200, result);
   } catch (error) {
-    res.redirect(buildOAuthErrorRedirect(error.message));
+    next(error);
   }
 }
 

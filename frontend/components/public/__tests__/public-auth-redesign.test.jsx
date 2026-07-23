@@ -51,7 +51,7 @@ describe('public landing and authentication redesign', () => {
       <AuthExperience
         audience="candidate"
         mode="login"
-        providers={{ googleConfigured: false, linkedinConfigured: false }}
+        providers={{ googleVisible: true, linkedinConfigured: false }}
       />,
     );
 
@@ -107,11 +107,11 @@ describe('public landing and authentication redesign', () => {
       <AuthExperience
         audience="candidate"
         mode="login"
-        providers={{ googleConfigured: false, linkedinConfigured: false }}
+        providers={{ googleVisible: true, linkedinConfigured: false }}
       />,
     );
 
-    expect(screen.queryByText(/continue with google/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/continue with google/i)).toBeInTheDocument();
     expect(screen.queryByText(/continue with linkedin/i)).not.toBeInTheDocument();
   });
 

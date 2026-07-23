@@ -64,7 +64,9 @@ function ensureVerifiedUser(user) {
 export async function registerUser(payload) {
   await assertInitialSetupCompleted();
 
-  if (payload.role === 'RECRUITER' && isPersonalEmail(payload.email)) {
+  const role = payload.role === 'RECRUITER' ? 'RECRUITER' : 'CANDIDATE';
+
+  if (role === 'RECRUITER' && isPersonalEmail(payload.email)) {
     const error = new Error('Recruiters must register with a company email address.');
     error.statusCode = 422;
     throw error;
@@ -74,7 +76,7 @@ export async function registerUser(payload) {
   const existingUser = await getUserByEmail(normalizedEmail);
 
   if (existingUser) {
-    const error = new Error('This company email is already registered with us. Please login instead.');
+    const error = new Error('This email is already registered. Please sign in instead.');
     error.statusCode = 409;
     throw error;
   }
@@ -82,7 +84,7 @@ export async function registerUser(payload) {
   const hashedPassword = await bcrypt.hash(payload.password, 12);
 
   const user = await prisma.$transaction(async (tx) => {
-    const organisation = payload.role === 'RECRUITER'
+    const organisation = role === 'RECRUITER'
       ? await tx.organisation.create({ data: await buildRecruiterOrganisationData(payload) })
       : null;
 
@@ -90,8 +92,8 @@ export async function registerUser(payload) {
       data: {
         email: normalizedEmail,
         passwordHash: hashedPassword,
-        role: payload.role,
-        recruiterProfile: payload.role === 'RECRUITER'
+        role,
+        recruiterProfile: role === 'RECRUITER'
           ? {
               create: {
                 organisationId: organisation.id,
@@ -101,7 +103,7 @@ export async function registerUser(payload) {
               },
             }
           : undefined,
-        candidateProfile: payload.role === 'CANDIDATE'
+        candidateProfile: role === 'CANDIDATE'
           ? { create: buildCandidateProfileData(payload) }
           : undefined,
       },

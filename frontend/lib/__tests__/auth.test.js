@@ -28,7 +28,28 @@ describe('auth session routing', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    process.env.BACKEND_API_BASE_URL = 'http://127.0.0.1:5000/api';
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'http://localhost:3000/api';
     global.fetch = vi.fn();
+  });
+
+  test('server-side backend requests use BACKEND_API_BASE_URL instead of NEXT_PUBLIC_API_BASE_URL', async () => {
+    cookiesMock.mockResolvedValue({
+      get: vi.fn(() => undefined),
+    });
+    global.fetch.mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ success: true, data: { ok: true } }),
+    });
+
+    const { requestBackend } = await loadAuthModule();
+    await requestBackend('/auth/me', { method: 'GET' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:5000/api/auth/me',
+      expect.objectContaining({ method: 'GET' }),
+    );
   });
 
   test('redirects authenticated recruiter sessions away from /auth and / to recruiter workspace', async () => {

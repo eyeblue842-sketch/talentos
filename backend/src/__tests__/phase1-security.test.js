@@ -544,7 +544,7 @@ before(async () => {
   process.env.SMTP_PASS = 'smtp-pass';
   process.env.GOOGLE_CLIENT_ID = 'google-client-id';
   process.env.GOOGLE_CLIENT_SECRET = 'google-client-secret';
-  process.env.GOOGLE_REDIRECT_URI = 'http://localhost:5000/api/auth/oauth/google/callback';
+  process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3000/api/auth/google/callback';
 
   ({ app } = await import('../app.js'));
   ({ prisma } = await import('../config/db.js'));
@@ -579,6 +579,30 @@ test('registration requires verification and does not expose sensitive tokens in
   assert.notEqual(state.authTokens[0].tokenHash, latestEmailLinkToken('token'));
   assert.equal(getEmailTransportInfo().kind, 'test');
   assert.equal(getSentEmails().length, 1);
+});
+
+test('candidate signup defaults to CANDIDATE when role is omitted', async () => {
+  const response = await request(app).post('/api/auth/signup').send({
+    email: 'defaultcandidate@example.com',
+    password: 'Password123',
+    fullName: 'Default Candidate',
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.data.user.role, 'CANDIDATE');
+  assert.equal(state.users.find((item) => item.email === 'defaultcandidate@example.com')?.role, 'CANDIDATE');
+  assert.ok(state.candidateProfiles.some((item) => item.fullName === 'Default Candidate'));
+});
+
+test('privileged role injection is rejected during public signup', async () => {
+  const response = await request(app).post('/api/auth/signup').send({
+    email: 'admininject@example.com',
+    password: 'Password123',
+    role: 'ADMIN',
+  });
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(state.users.some((item) => item.email === 'admininject@example.com'), false);
 });
 
 test('login is blocked before verification and succeeds after single-use email verification', async () => {

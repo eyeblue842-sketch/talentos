@@ -58,12 +58,21 @@ function normalizeMode(mode = 'login') {
   return supportedModes.has(mode) ? mode : 'login';
 }
 
+function normalizeNext(next) {
+  if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//')) {
+    return null;
+  }
+
+  return next;
+}
+
 async function buildAuthorizationUrl(provider, options = {}) {
   const config = getProviderConfig(provider);
   const stateContext = {
     provider,
     role: normalizeRole(options.role),
     mode: normalizeMode(options.mode),
+    next: normalizeNext(options.next),
   };
   const { token: state } = await issueAuthToken(null, 'OAUTH_STATE', {
     context: stateContext,
@@ -169,7 +178,7 @@ async function findOrCreateOAuthUser({ email, name, role }) {
       });
     }
 
-    return user;
+    return { user, isNewUser: false };
   }
 
   const passwordHash = await createPasswordHash();
@@ -204,22 +213,27 @@ async function findOrCreateOAuthUser({ email, name, role }) {
     include: { recruiterProfile: true, candidateProfile: true },
   });
 
-  return user;
+  return { user, isNewUser: true };
 }
 
-function resolvePostAuthPath(user) {
+function resolvePostAuthPath(user, nextPath, isNewUser = false) {
+  const safeNextPath = normalizeNext(nextPath);
+  if (safeNextPath) {
+    return safeNextPath;
+  }
+
   if (user.role === 'RECRUITER') {
     return user.recruiterProfile?.profileCompleted ? '/recruiter' : '/recruiter/onboarding';
   }
 
-  return '/candidate/onboarding';
+  return isNewUser ? '/candidate/onboarding' : '/candidate/dashboard';
 }
 
 export async function getOAuthAuthorizationUrl(provider, options) {
   return buildAuthorizationUrl(provider, options);
 }
 
-export async function handleOAuthCallback(provider, code, stateValue) {
+async function finalizeOAuthCallback(provider, code, stateValue) {
   const stateToken = await consumeAuthToken(stateValue, 'OAUTH_STATE');
   const state = stateToken.context || {};
 
@@ -239,21 +253,30 @@ export async function handleOAuthCallback(provider, code, stateValue) {
     throw error;
   }
 
-  const user = await findOrCreateOAuthUser({
+  const { user, isNewUser } = await findOrCreateOAuthUser({
     email: profile.email,
     name: profile.name,
     role,
   });
 
-  const { token } = await issueAuthToken(user.id, 'OAUTH_HANDOFF');
-  const redirectPath = resolvePostAuthPath(user);
+  return {
+    user,
+    state,
+    isNewUser,
+    nextPath: resolvePostAuthPath(user, state.next, isNewUser),
+  };
+}
+
+export async function handleOAuthCallbackRedirect(provider, code, stateValue) {
+  const result = await finalizeOAuthCallback(provider, code, stateValue);
+  const { token } = await issueAuthToken(result.user.id, 'OAUTH_HANDOFF');
 
   return {
     redirectUrl: buildFrontendRedirect('/api/auth/oauth/callback', {
       code: token,
-      next: redirectPath,
+      next: result.nextPath,
     }),
-    user: serializeUser(user, { includePrivate: true }),
+    user: serializeUser(result.user, { includePrivate: true }),
   };
 }
 
@@ -271,6 +294,21 @@ export async function exchangeOAuthSessionToken(token) {
   };
 }
 
+export async function completeOAuthSignIn(provider, code, stateValue) {
+  const { user, nextPath } = await finalizeOAuthCallback(provider, code, stateValue);
+  const jwt = signToken({
+    userId: user.id,
+    role: user.role,
+    sessionVersion: user.sessionVersion,
+  });
+
+  return {
+    token: jwt,
+    session: serializeAuthSession(user, getTokenExpiryIso()),
+    nextPath,
+  };
+}
+
 export function buildOAuthErrorRedirect(message) {
-  return buildFrontendRedirect('/auth', { oauthError: message });
+  return buildFrontendRedirect('/auth/candidate/login', { oauthError: message });
 }

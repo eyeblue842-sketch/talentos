@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSessionToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
+import { getBackendApiBaseUrl, getSessionToken } from '@/lib/auth';
 
 export async function POST(request) {
   const token = await getSessionToken();
@@ -10,7 +8,7 @@ export async function POST(request) {
   }
 
   const formData = await request.formData();
-  const response = await fetch(`${API_BASE}/candidate/resumes`, {
+  const response = await fetch(`${getBackendApiBaseUrl()}/candidate/resumes`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

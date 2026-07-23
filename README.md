@@ -55,6 +55,22 @@ Copy:
 - `backend/.env.example` to `backend/.env`
 - `frontend/.env.example` to `frontend/.env.local`
 
+Frontend local auth values:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
+BACKEND_API_BASE_URL=http://127.0.0.1:5000/api
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+```
+
+Backend local auth values:
+
+```env
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://127.0.0.1:5000
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+```
+
 For local development without Elasticsearch, add:
 
 ```env
@@ -87,7 +103,16 @@ npm run dev
 ```
 
 - Frontend: `http://localhost:3000`
-- Backend: `http://localhost:5000/api`
+- Backend: `http://127.0.0.1:5000/api`
+
+Production standalone frontend start:
+
+```bash
+npm run build --prefix frontend
+npm run start --prefix frontend
+```
+
+This uses `node .next/standalone/server.js`.
 
 ## Deployment Targets
 
@@ -97,6 +122,6 @@ npm run dev
 
 ## Notes
 
-- Google OAuth is left as an optional extension point.
+- Rotate any previously exposed Google OAuth client secret in Google Cloud Console before reusing this integration.
 - Resume PDF generation is modeled via structured template data and backend PDF endpoint wiring.
 - Elasticsearch is explicitly controlled by `ELASTICSEARCH_ENABLED`. When disabled, recruiter resume search is unavailable instead of falling back to PostgreSQL filtering.
