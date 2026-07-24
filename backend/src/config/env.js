@@ -28,8 +28,20 @@ const envSchema = z.object({
   LOCAL_STORAGE_PATH: z.string().default('./storage/resumes'),
   AWS_REGION: z.string().optional(),
   AWS_S3_BUCKET: z.string().optional(),
+  AWS_S3_ENDPOINT: z.string().url().optional(),
+  AWS_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  QUEUE_PROVIDER: z.enum(['database', 'sqs']).default('database'),
+  AWS_SQS_RESUME_IMPORT_QUEUE_URL: z.string().url().optional(),
+  AWS_SQS_RESUME_IMPORT_DLQ_URL: z.string().url().optional(),
+  RESUME_IMPORT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+  RESUME_IMPORT_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
+  RESUME_IMPORT_MAX_FILES: z.coerce.number().int().min(1).max(1000).default(100),
+  RESUME_MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(10),
+  RESUME_IMPORT_MAX_ZIP_SIZE_MB: z.coerce.number().int().min(1).max(1000).default(100),
+  RESUME_IMPORT_MAX_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(5000).default(500),
+  RESUME_IMPORT_MAX_TEXT_CHARS: z.coerce.number().int().min(1000).max(1000000).default(120000),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
@@ -65,6 +77,12 @@ const envSchema = z.object({
   INTELLIGENCE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   INTELLIGENCE_MAX_INPUT_CHARS: z.coerce.number().int().min(500).max(200000).default(30000),
   INTELLIGENCE_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(8000).default(1200),
+  AI_PROVIDER: z.enum(['disabled', 'mock', 'bedrock']).default('disabled'),
+  AI_RESUME_PARSING_ENABLED: z.enum(['true', 'false']).default('false'),
+  AWS_BEDROCK_REGION: z.string().optional(),
+  AWS_BEDROCK_MODEL_ID: z.string().optional(),
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
+  AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(30000),
@@ -122,7 +140,7 @@ const envSchema = z.object({
   }
 
   if (data.STORAGE_PROVIDER === 's3') {
-    for (const field of ['AWS_REGION', 'AWS_S3_BUCKET', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']) {
+    for (const field of ['AWS_REGION', 'AWS_S3_BUCKET']) {
       if (!data[field]) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -131,6 +149,24 @@ const envSchema = z.object({
         });
       }
     }
+
+    const hasAccessKey = Boolean(data.AWS_ACCESS_KEY_ID);
+    const hasSecretKey = Boolean(data.AWS_SECRET_ACCESS_KEY);
+    if (hasAccessKey !== hasSecretKey) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AWS_ACCESS_KEY_ID'],
+        message: 'AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be provided together when using static credentials.',
+      });
+    }
+  }
+
+  if (data.QUEUE_PROVIDER === 'sqs' && !data.AWS_SQS_RESUME_IMPORT_QUEUE_URL) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AWS_SQS_RESUME_IMPORT_QUEUE_URL'],
+      message: 'AWS_SQS_RESUME_IMPORT_QUEUE_URL is required when QUEUE_PROVIDER=sqs.',
+    });
   }
 
   const smtpValues = [data.SMTP_HOST, data.SMTP_USER, data.SMTP_PASS].filter(Boolean).length;
@@ -171,6 +207,22 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['MEETING_TOKEN_ENCRYPTION_KEY'],
       message: 'MEETING_TOKEN_ENCRYPTION_KEY is required in production when a meeting provider integration is enabled.',
+    });
+  }
+
+  if (data.AI_PROVIDER === 'bedrock' && !data.AWS_BEDROCK_MODEL_ID) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AWS_BEDROCK_MODEL_ID'],
+      message: 'AWS_BEDROCK_MODEL_ID is required when AI_PROVIDER=bedrock.',
+    });
+  }
+
+  if (data.AI_PROVIDER === 'mock' && data.NODE_ENV === 'production') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AI_PROVIDER'],
+      message: 'AI_PROVIDER=mock is not allowed in production.',
     });
   }
 });
@@ -218,8 +270,20 @@ export const env = {
   localStoragePath: parsed.data.LOCAL_STORAGE_PATH,
   awsRegion: parsed.data.AWS_REGION,
   awsBucket: parsed.data.AWS_S3_BUCKET,
+  awsS3Endpoint: parsed.data.AWS_S3_ENDPOINT,
+  awsS3ForcePathStyle: parsed.data.AWS_S3_FORCE_PATH_STYLE === 'true',
   awsAccessKeyId: parsed.data.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: parsed.data.AWS_SECRET_ACCESS_KEY,
+  queueProvider: parsed.data.QUEUE_PROVIDER,
+  awsSqsResumeImportQueueUrl: parsed.data.AWS_SQS_RESUME_IMPORT_QUEUE_URL,
+  awsSqsResumeImportDlqUrl: parsed.data.AWS_SQS_RESUME_IMPORT_DLQ_URL,
+  resumeImportWorkerConcurrency: parsed.data.RESUME_IMPORT_WORKER_CONCURRENCY,
+  resumeImportMaxRetries: parsed.data.RESUME_IMPORT_MAX_RETRIES,
+  resumeImportMaxFiles: parsed.data.RESUME_IMPORT_MAX_FILES,
+  resumeMaxFileSizeMb: parsed.data.RESUME_MAX_FILE_SIZE_MB,
+  resumeImportMaxZipSizeMb: parsed.data.RESUME_IMPORT_MAX_ZIP_SIZE_MB,
+  resumeImportMaxUncompressedMb: parsed.data.RESUME_IMPORT_MAX_UNCOMPRESSED_MB,
+  resumeImportMaxTextChars: parsed.data.RESUME_IMPORT_MAX_TEXT_CHARS,
   smtpHost: parsed.data.SMTP_HOST,
   smtpPort: parsed.data.SMTP_PORT,
   smtpUser: parsed.data.SMTP_USER,
@@ -255,6 +319,12 @@ export const env = {
   intelligenceMaxRetries: parsed.data.INTELLIGENCE_MAX_RETRIES,
   intelligenceMaxInputChars: parsed.data.INTELLIGENCE_MAX_INPUT_CHARS,
   intelligenceMaxOutputTokens: parsed.data.INTELLIGENCE_MAX_OUTPUT_TOKENS,
+  aiProvider: parsed.data.AI_PROVIDER,
+  aiResumeParsingEnabled: parsed.data.AI_RESUME_PARSING_ENABLED === 'true',
+  awsBedrockRegion: parsed.data.AWS_BEDROCK_REGION || parsed.data.AWS_REGION,
+  awsBedrockModelId: parsed.data.AWS_BEDROCK_MODEL_ID,
+  aiRequestTimeoutMs: parsed.data.AI_REQUEST_TIMEOUT_MS,
+  aiMaxRetries: parsed.data.AI_MAX_RETRIES,
   workerConcurrency: parsed.data.WORKER_CONCURRENCY,
   workerPollIntervalMs: parsed.data.WORKER_POLL_INTERVAL_MS,
   workerSchedulerIntervalMs: parsed.data.WORKER_SCHEDULER_INTERVAL_MS,

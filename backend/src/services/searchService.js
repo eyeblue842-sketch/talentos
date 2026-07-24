@@ -68,9 +68,13 @@ function buildDbWhere(filters = {}) {
   const maxExperience = normalizeNumber(filters.maxExperience);
   const currentSalary = normalizeNumber(filters.currentSalary);
   const expectedSalary = normalizeNumber(filters.expectedSalary);
+  const source = normalizeString(filters.source);
+  const profileStatus = normalizeString(filters.profileStatus);
 
   return {
     OR: or.length ? or : undefined,
+    source: source || undefined,
+    profileStatus: profileStatus || undefined,
     location: location ? { contains: location, mode: 'insensitive' } : undefined,
     totalExperience: minExperience != null || maxExperience != null
       ? {
@@ -103,6 +107,9 @@ function buildDbWhere(filters = {}) {
         : normalizeString(filters.lastActive) === 'Last 30 days'
           ? { gte: daysAgo(30) }
           : undefined,
+    importedAt: normalizeString(filters.importedSince)
+      ? { gte: new Date(filters.importedSince) }
+      : undefined,
   };
 }
 
@@ -724,8 +731,8 @@ export async function getRecruiterCandidatePreview(actorUser, candidateId, organ
     expectedSalary: canRevealPrivateFields ? candidate.expectedCtcLpa : null,
     salaryVisible: canRevealPrivateFields,
     emailVisible: canRevealPrivateFields,
-    contact: canRevealPrivateFields && candidate.user
-      ? { email: candidate.user.email }
+    contact: canRevealPrivateFields && (candidate.user?.email || candidate.email)
+      ? { email: candidate.user?.email || candidate.email }
       : null,
     resumeDownloadUrl: canRevealPrivateFields && (candidate.resumeUrl || candidate.latestResumeAssetId)
       ? `/api/resumes/candidate/${candidate.id}/download`

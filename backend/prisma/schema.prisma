@@ -84,6 +84,7 @@ enum BackgroundTaskType {
   EMAIL_RETRY
   NOTIFICATION_RETRY
   RESUME_PARSING
+  RESUME_IMPORT_PROCESSING
   INTELLIGENCE_EXECUTION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
@@ -464,6 +465,57 @@ enum AccountLifecycleStatus {
   DEACTIVATED
 }
 
+enum CandidateProfileSource {
+  DIRECT_SIGNUP
+  GOOGLE_OAUTH
+  BULK_IMPORT
+  RECRUITER_CREATED
+  ADMIN_CREATED
+}
+
+enum CandidateProfileStatus {
+  IMPORTED
+  REVIEW_REQUIRED
+  INVITED
+  ACTIVE
+  ARCHIVED
+}
+
+enum ResumeImportBatchStatus {
+  QUEUED
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum ResumeImportItemStatus {
+  QUEUED
+  UPLOADING
+  UPLOADED
+  EXTRACTING
+  PARSING
+  REVIEW_REQUIRED
+  DUPLICATE
+  READY
+  IMPORTED
+  FAILED
+  CANCELLED
+}
+
+enum ResumeImportDuplicateResolution {
+  PENDING
+  SKIPPED
+  ATTACHED_TO_EXISTING
+  UPDATE_EMPTY_FIELDS
+  REPLACE_SELECTED_FIELDS
+  CREATED_SEPARATE
+  REJECTED
+}
+
 enum CandidateActivityType {
   PROFILE_UPDATED
   RESUME_UPLOADED
@@ -541,6 +593,9 @@ model User {
   intelligenceFeedbacks      IntelligenceFeedback[]
   backgroundTasksCreated     BackgroundTask[]            @relation("BackgroundTaskCreatedBy")
   backgroundTasksUpdated     BackgroundTask[]            @relation("BackgroundTaskUpdatedBy")
+  createdResumeImportBatches ResumeImportBatch[]         @relation("ResumeImportBatchCreatedBy")
+  importedCandidates         CandidateProfile[]          @relation("CandidateProfileImportedBy")
+  resolvedResumeImportItems  ResumeImportItem[]          @relation("ResumeImportItemResolvedBy")
   completedPlatformSetupStates PlatformSetupState[]      @relation("PlatformSetupCompletedBy")
   resetPlatformSetupStates   PlatformSetupState[]        @relation("PlatformSetupResetBy")
 }
@@ -602,6 +657,9 @@ model Organisation {
   intelligenceExecutions     IntelligenceExecution[]
   intelligenceResults        IntelligenceResult[]
   backgroundTasks            BackgroundTask[]
+  resumeImportBatches        ResumeImportBatch[]
+  importedCandidates         CandidateProfile[]
+  resumeImportItems          ResumeImportItem[]
 
   @@index([status])
 }
@@ -907,27 +965,44 @@ model RecruiterProfile {
 }
 
 model CandidateProfile {
-  id                          String              @id @default(cuid())
-  userId                      String              @unique
+  id                          String                 @id @default(cuid())
+  userId                      String?                @unique
+  organisationId              String?
+  importBatchId               String?
+  importedByUserId            String?
+  source                      CandidateProfileSource @default(DIRECT_SIGNUP)
+  profileStatus               CandidateProfileStatus @default(ACTIVE)
   fullName                    String
+  email                       String?
   phoneNumber                 String?
+  normalizedPhoneNumber       String?
   headline                    String?
   currentTitle                String?
   currentEmployer             String?
   currentDesignation          String?
   location                    String?
+  currentCity                 String?
+  currentState                String?
+  currentCountry              String?
+  postalCode                  String?
   preferredLocations          String[]
-  preferredRoles              String[]            @default([])
-  totalExperience             Int                 @default(0)
-  workplacePreferences        WorkplaceType[]     @default([])
-  employmentPreferences       EmploymentType[]    @default([])
+  preferredRoles              String[]               @default([])
+  totalExperience             Int                    @default(0)
+  workplacePreferences        WorkplaceType[]        @default([])
+  employmentPreferences       EmploymentType[]       @default([])
   currentCtcLpa               Int?
   expectedCtcLpa              Int?
-  availability                AvailabilityStatus  @default(IMMEDIATE)
+  availability                AvailabilityStatus     @default(IMMEDIATE)
   noticePeriodDays            Int?
   employmentStatus            CandidateEmploymentStatus?
   lastWorkingDate             DateTime?
   skills                      String[]
+  functionalSkills            String[]               @default([])
+  tools                       String[]               @default([])
+  frameworks                  String[]               @default([])
+  cloudPlatforms              String[]               @default([])
+  databases                   String[]               @default([])
+  softSkills                  String[]               @default([])
   skillEntries                Json?
   experienceEntries           Json?
   educationEntries            Json?
@@ -941,46 +1016,61 @@ model CandidateProfile {
   profileImageUrl             String?
   portfolioUrl                String?
   linkedInUrl                 String?
+  linkedInUrlNormalized       String?
   githubUrl                   String?
-  profileVisibility           ProfileVisibility   @default(PRIVATE)
-  recommendationEnabled       Boolean             @default(true)
-  notifyForSavedJobUpdates    Boolean             @default(true)
-  notifyForRecommendations    Boolean             @default(true)
-  notifyForInterviews         Boolean             @default(true)
-  notifyForApplicationUpdates Boolean             @default(true)
-  notifyForOffers             Boolean             @default(true)
-  notifyForProfileReminders   Boolean             @default(true)
-  notifyForMarketing          Boolean             @default(false)
-  willingToRelocate           Boolean             @default(false)
+  profileVisibility           ProfileVisibility      @default(PRIVATE)
+  recommendationEnabled       Boolean                @default(true)
+  notifyForSavedJobUpdates    Boolean                @default(true)
+  notifyForRecommendations    Boolean                @default(true)
+  notifyForInterviews         Boolean                @default(true)
+  notifyForApplicationUpdates Boolean                @default(true)
+  notifyForOffers             Boolean                @default(true)
+  notifyForProfileReminders   Boolean                @default(true)
+  notifyForMarketing          Boolean                @default(false)
+  willingToRelocate           Boolean                @default(false)
   minExpectedSalary           Int?
   preferredCurrency           String?
   workAuthorization           String?
-  requiresVisaSponsorship     Boolean             @default(false)
-  preferredIndustries         String[]            @default([])
-  preferredCompanySizes       String[]            @default([])
+  requiresVisaSponsorship     Boolean                @default(false)
+  preferredIndustries         String[]               @default([])
+  preferredCompanySizes       String[]               @default([])
   travelWillingness           String?
-  jobAlertEnabled             Boolean             @default(true)
-  jobAlertFrequency           JobAlertFrequency   @default(WEEKLY)
-  searchableProfile           Boolean             @default(false)
-  phoneVisibleToRecruiters    Boolean             @default(false)
-  salaryVisibleToRecruiters   Boolean             @default(false)
-  resumeVisibleToRecruiters   Boolean             @default(true)
-  onboardingStep              Int                 @default(0)
+  jobAlertEnabled             Boolean                @default(true)
+  jobAlertFrequency           JobAlertFrequency      @default(WEEKLY)
+  searchableProfile           Boolean                @default(false)
+  phoneVisibleToRecruiters    Boolean                @default(false)
+  salaryVisibleToRecruiters   Boolean                @default(false)
+  resumeVisibleToRecruiters   Boolean                @default(true)
+  onboardingStep              Int                    @default(0)
   onboardingLastSavedAt       DateTime?
   onboardingCompletedAt       DateTime?
-  onboardingSkippedResume     Boolean             @default(false)
+  onboardingSkippedResume     Boolean                @default(false)
   notificationPreferences     Json?
   accountLifecycleStatus      AccountLifecycleStatus @default(ACTIVE)
   accountDeactivationRequestedAt DateTime?
   accountDeactivatedAt        DateTime?
   accountDeactivationReason   String?
+  invitationSentAt            DateTime?
+  invitedAt                   DateTime?
+  activatedAt                 DateTime?
+  importedAt                  DateTime?
   dataExportRequestedAt       DateTime?
   dataExportCompletedAt       DateTime?
-  sharedResumeSlug            String?             @unique
-  profileViews                Int                 @default(0)
+  sharedResumeSlug            String?                @unique
+  profileViews                Int                    @default(0)
+  rawResumeText               String?
+  parserVersion               String?
+  parserMetadata              Json?
+  profileCompletenessScore    Int?
+  consentMetadata             Json?
+  provenanceMetadata          Json?
   lastActiveAt                DateTime?
-  updatedAt                   DateTime            @updatedAt
-  user                        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime               @updatedAt
+  user                        User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organisation                Organisation?          @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  importBatch                 ResumeImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  importedByUser              User?                  @relation("CandidateProfileImportedBy", fields: [importedByUserId], references: [id], onDelete: SetNull)
   applications                Application[]
   submittedApplications       JobApplication[]
   resumeBuilder               ResumeBuilder?
@@ -994,7 +1084,14 @@ model CandidateProfile {
   offers                      Offer[]
   meetingParticipants         MeetingParticipant[]
   rescheduleRequests          InterviewRescheduleRequest[]
+  duplicateImportItems        ResumeImportItem[]     @relation("ResumeImportDuplicateCandidate")
+  importedFromItems           ResumeImportItem[]     @relation("ResumeImportCreatedCandidate")
 
+  @@index([organisationId, profileStatus, createdAt])
+  @@index([organisationId, source, createdAt])
+  @@index([email])
+  @@index([normalizedPhoneNumber])
+  @@index([linkedInUrlNormalized])
   @@index([recommendationEnabled, updatedAt])
 }
 
@@ -1193,6 +1290,79 @@ model ResumeAsset {
   @@index([candidateId, isPrimary, kind])
   @@index([ownerUserId, createdAt])
   @@index([source, parsingStatus, createdAt])
+}
+
+model ResumeImportBatch {
+  id                String                 @id @default(cuid())
+  organisationId    String
+  createdByUserId   String
+  originalFileCount Int                    @default(0)
+  totalItemCount    Int                    @default(0)
+  processedCount    Int                    @default(0)
+  successCount      Int                    @default(0)
+  duplicateCount    Int                    @default(0)
+  reviewCount       Int                    @default(0)
+  failedCount       Int                    @default(0)
+  status            ResumeImportBatchStatus @default(QUEUED)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  metadata          Json?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  organisation      Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByUser     User                   @relation("ResumeImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  items             ResumeImportItem[]
+  importedCandidates CandidateProfile[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([createdByUserId, createdAt])
+}
+
+model ResumeImportItem {
+  id                          String                          @id @default(cuid())
+  batchId                     String
+  organisationId              String
+  originalFilename            String
+  sanitizedFilename           String
+  storedObjectKey             String
+  storageProvider             String
+  mimeType                    String
+  fileExtension               String
+  fileSizeBytes               Int
+  checksumSha256              String?
+  status                      ResumeImportItemStatus         @default(QUEUED)
+  extractedText               String?
+  parsedData                  Json?
+  parserVersion               String?
+  parsingConfidence           Json?
+  duplicateCandidateId        String?
+  duplicateReason             String?
+  duplicateMatchFields        Json?
+  duplicateResolution         ResumeImportDuplicateResolution @default(PENDING)
+  candidateId                 String?
+  errorCode                   String?
+  errorMessage                String?
+  retryCount                  Int                             @default(0)
+  requiresManualReview        Boolean                         @default(false)
+  reviewNotes                 String?
+  processingStartedAt         DateTime?
+  processingCompletedAt       DateTime?
+  resolvedByUserId            String?
+  resolvedAt                  DateTime?
+  metadata                    Json?
+  createdAt                   DateTime                        @default(now())
+  updatedAt                   DateTime                        @updatedAt
+  batch                       ResumeImportBatch               @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  organisation                Organisation                    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  duplicateCandidate          CandidateProfile?               @relation("ResumeImportDuplicateCandidate", fields: [duplicateCandidateId], references: [id], onDelete: SetNull)
+  candidate                   CandidateProfile?               @relation("ResumeImportCreatedCandidate", fields: [candidateId], references: [id], onDelete: SetNull)
+  resolvedByUser              User?                           @relation("ResumeImportItemResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([batchId, status, createdAt])
+  @@index([organisationId, status, createdAt])
+  @@index([duplicateCandidateId])
+  @@index([candidateId])
+  @@index([checksumSha256])
 }
 
 model JobApplication {

@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { closePrisma } from './config/db.js';
 import { closeRedisClient } from './config/redis.js';
 import {
+  claimBackgroundTaskById,
   claimDueBackgroundTasks,
   markBackgroundTaskCancelled,
   markBackgroundTaskFailed,
@@ -10,15 +11,21 @@ import {
 } from './services/backgroundTaskService.js';
 import { processBackgroundTask } from './services/backgroundTaskHandlers.js';
 import { scheduleProductionBackgroundTasks } from './services/backgroundTaskScheduler.js';
+import {
+  deleteResumeImportTaskMessage,
+  receiveResumeImportTaskMessages,
+} from './services/resumeImportQueueService.js';
 
 const workerId = `worker-${crypto.randomBytes(4).toString('hex')}`;
+
+let shuttingDown = false;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function runSchedulerLoop() {
-  while (true) {
+  while (!shuttingDown) {
     await scheduleProductionBackgroundTasks().catch((error) => {
       console.error(JSON.stringify({
         level: 'error',
@@ -32,11 +39,30 @@ async function runSchedulerLoop() {
 }
 
 async function runWorkerLoop() {
-  while (true) {
-    const tasks = await claimDueBackgroundTasks({
-      limit: env.workerConcurrency,
-      workerId,
-    });
+  while (!shuttingDown) {
+    let tasks = [];
+    let queueMessages = [];
+
+    if (env.queueProvider === 'sqs') {
+      queueMessages = await receiveResumeImportTaskMessages(env.workerConcurrency).catch(() => []);
+      tasks = (await Promise.all(queueMessages.map((message) => {
+        let taskId = null;
+        try {
+          taskId = JSON.parse(message.Body || '{}').taskId || null;
+        } catch {
+          taskId = null;
+        }
+        if (!taskId) return null;
+        return claimBackgroundTaskById(taskId, workerId);
+      }))).filter(Boolean);
+    }
+
+    if (!tasks.length) {
+      tasks = await claimDueBackgroundTasks({
+        limit: env.queueProvider === 'sqs' ? Math.max(1, env.resumeImportWorkerConcurrency) : env.workerConcurrency,
+        workerId,
+      });
+    }
 
     if (!tasks.length) {
       await sleep(env.workerPollIntervalMs);
@@ -44,15 +70,31 @@ async function runWorkerLoop() {
     }
 
     await Promise.all(tasks.map(async (task) => {
+      const queueMessage = queueMessages.find((message) => {
+        try {
+          return JSON.parse(message.Body || '{}').taskId === task.id;
+        } catch {
+          return false;
+        }
+      });
       try {
         const result = await processBackgroundTask(task);
         if (result === 'cancelled') {
           await markBackgroundTaskCancelled(task.id, workerId, 'Task no longer applicable.');
+          if (queueMessage?.ReceiptHandle) {
+            await deleteResumeImportTaskMessage(queueMessage.ReceiptHandle).catch(() => {});
+          }
           return;
         }
         await markBackgroundTaskSucceeded(task.id, workerId);
+        if (queueMessage?.ReceiptHandle) {
+          await deleteResumeImportTaskMessage(queueMessage.ReceiptHandle).catch(() => {});
+        }
       } catch (error) {
         await markBackgroundTaskFailed(task, error, workerId);
+        if (queueMessage?.ReceiptHandle) {
+          await deleteResumeImportTaskMessage(queueMessage.ReceiptHandle).catch(() => {});
+        }
         console.error(JSON.stringify({
           level: 'error',
           event: 'worker.task.error',
@@ -67,6 +109,7 @@ async function runWorkerLoop() {
 }
 
 async function shutdown(signal) {
+  shuttingDown = true;
   console.log(JSON.stringify({
     level: 'info',
     event: 'worker.shutdown',
@@ -85,6 +128,7 @@ console.log(JSON.stringify({
   event: 'worker.start',
   workerId,
   concurrency: env.workerConcurrency,
+  queueProvider: env.queueProvider,
 }));
 
 await Promise.all([

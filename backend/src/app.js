@@ -20,6 +20,7 @@ import { applicationWorkflowRouter } from './routes/applicationWorkflowRoutes.js
 import { intelligenceRouter } from './routes/intelligenceRoutes.js';
 import { meetingProviderRouter } from './routes/meetingProviderRoutes.js';
 import { setupRouter } from './routes/setupRoutes.js';
+import { resumeImportRouter } from './routes/resumeImportRoutes.js';
 import { requestContext } from './middleware/requestContext.js';
 import { errorHandler } from './middleware/error.js';
 import { getApplicationHealth } from './services/healthService.js';
@@ -83,5 +84,6 @@ app.use('/api/notifications', notificationRouter);
 app.use('/api/offers', offerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/intelligence', intelligenceRouter);
+app.use('/api/resume-imports', resumeImportRouter);
 
 app.use(errorHandler);

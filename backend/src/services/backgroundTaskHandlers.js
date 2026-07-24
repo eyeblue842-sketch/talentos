@@ -9,6 +9,7 @@ import { getJobIntelligence } from '../intelligence/services/jobIntelligenceServ
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
 import { getAnalyticsInsight } from '../intelligence/services/analyticsInsightService.js';
 import { parseTalentSearchQuery } from '../intelligence/services/talentSearchService.js';
+import { processResumeImportItem } from './resumeImportService.js';
 
 function normalizeResumeFilename(filename) {
   return String(filename || '')
@@ -90,6 +91,13 @@ async function handleResumeParsingTask(task) {
       parsedData: parsed.parsedData,
     },
   });
+  return 'success';
+}
+
+async function handleResumeImportProcessingTask(task) {
+  const itemId = task.payload?.itemId || task.entityId || '';
+  if (!itemId) return 'cancelled';
+  await processResumeImportItem(itemId, task.updatedByUserId || null);
   return 'success';
 }
 
@@ -332,6 +340,8 @@ export async function processBackgroundTask(task) {
   switch (task.type) {
     case 'RESUME_PARSING':
       return handleResumeParsingTask(task);
+    case 'RESUME_IMPORT_PROCESSING':
+      return handleResumeImportProcessingTask(task);
     case 'INTERVIEW_REMINDER':
       return handleInterviewReminderTask(task);
     case 'OFFER_REMINDER':

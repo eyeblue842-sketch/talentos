@@ -3,7 +3,7 @@ function iso(value) {
 }
 
 function resumeDownloadUrl(profile) {
-  if (!profile?.id || !profile?.resumeUrl) return undefined;
+  if (!profile?.id || (!profile?.resumeUrl && !profile?.latestResumeAssetId)) return undefined;
   return `/api/resumes/candidate/${profile.id}/download`;
 }
 
@@ -378,6 +378,9 @@ export function serializeCandidateProfile(profile, options = {}) {
     portfolioUrl: profile.portfolioUrl,
     linkedInUrl: profile.linkedInUrl,
     githubUrl: profile.githubUrl,
+    email: includePrivate ? profile.email : undefined,
+    profileStatus: includePrivate ? profile.profileStatus : undefined,
+    source: includePrivate ? profile.source : undefined,
     profileVisibility: includePrivate ? profile.profileVisibility : undefined,
     recommendationEnabled: includePrivate ? profile.recommendationEnabled : undefined,
     notifyForSavedJobUpdates: includePrivate ? profile.notifyForSavedJobUpdates : undefined,
@@ -427,7 +430,7 @@ export function serializeCandidateSearchCard(profile) {
     availability: profile.availability,
     skills: profile.skills,
     educationSummary: profile.educationSummary,
-    resumeAvailable: Boolean(profile.resumeUrl || profile.resumeBuilder),
+    resumeAvailable: Boolean(profile.resumeUrl || profile.latestResumeAssetId || profile.resumeBuilder),
     savedByOrganisation: Boolean(profile.savedByOrganisation),
     organisationTags: profile.organisationTags || [],
     updatedAt: iso(profile.updatedAt),

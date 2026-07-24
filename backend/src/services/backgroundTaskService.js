@@ -1,5 +1,6 @@
 import { prisma } from '../config/db.js';
 import { getRedisClient, getRedisKey } from '../config/redis.js';
+import { enqueueResumeImportTaskMessage } from './resumeImportQueueService.js';
 
 export const wakeQueueKey = getRedisKey('worker:wakeup');
 
@@ -36,6 +37,9 @@ export async function enqueueBackgroundTask(payload) {
   const redisClient = await getRedisClient().catch(() => null);
   if (redisClient && task && (!task.nextAttemptAt || new Date(task.nextAttemptAt) <= nowDate())) {
     await redisClient.lPush(wakeQueueKey, task.id).catch(() => {});
+  }
+  if (task?.type === 'RESUME_IMPORT_PROCESSING' && (!task.nextAttemptAt || new Date(task.nextAttemptAt) <= nowDate())) {
+    await enqueueResumeImportTaskMessage(task.id).catch(() => {});
   }
 
   return task;
@@ -85,6 +89,29 @@ export async function claimDueBackgroundTasks({ limit = 5, workerId = null } = {
   }
 
   return claimed;
+}
+
+export async function claimBackgroundTaskById(taskId, workerId = null) {
+  const task = await prisma.backgroundTask.findUnique({ where: { id: taskId } });
+  if (!task) return null;
+  if (!['PENDING', 'RETRY_SCHEDULED'].includes(task.status)) return null;
+  if (!isDue(task)) return null;
+
+  const updated = await prisma.backgroundTask.updateMany({
+    where: {
+      id: task.id,
+      status: task.status,
+    },
+    data: {
+      status: 'RUNNING',
+      attemptCount: { increment: 1 },
+      lastAttemptAt: nowDate(),
+      updatedByUserId: workerId,
+    },
+  });
+
+  if (updated.count !== 1) return null;
+  return prisma.backgroundTask.findUnique({ where: { id: task.id } });
 }
 
 export async function markBackgroundTaskSucceeded(taskId, workerId = null) {
@@ -143,7 +170,8 @@ export async function cancelBackgroundTasks(where = {}, workerId = null, reason 
 }
 
 export async function markBackgroundTaskFailed(task, error, workerId = null) {
-  const nextStatus = task.attemptCount >= task.maxAttempts ? 'DEAD_LETTER' : 'RETRY_SCHEDULED';
+  const isPermanentFailure = error?.retryable === false;
+  const nextStatus = isPermanentFailure || task.attemptCount >= task.maxAttempts ? 'DEAD_LETTER' : 'RETRY_SCHEDULED';
   const delayMinutes = Math.min(60, Math.max(1, task.attemptCount * 5));
   const nextAttemptAt = nextStatus === 'RETRY_SCHEDULED'
     ? new Date(Date.now() + (delayMinutes * 60 * 1000))

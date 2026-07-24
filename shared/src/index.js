@@ -4,3 +4,4 @@ export * from './phase4.js';
 export * from './admin.js';
 export * from './intelligence.js';
 export * from './setup.js';
+export * from './resume-import.js';
