@@ -136,6 +136,7 @@ describe('ResumeImportItemReviewExperience', () => {
     );
 
     expect(screen.getByDisplayValue('Candidate Person')).toBeInTheDocument();
+    expect(screen.getByText(/7\/27\/2026/)).toBeInTheDocument();
     expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /confirm candidate/i }));
@@ -199,4 +200,3 @@ describe('ResumeImportItemReviewExperience', () => {
     });
   });
 });
-

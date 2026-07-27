@@ -50,7 +50,15 @@ import {
 function formatDateTime(value) {
   if (!value) return 'Not available';
   try {
-    return new Date(value).toLocaleString();
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(new Date(value));
   } catch {
     return 'Not available';
   }

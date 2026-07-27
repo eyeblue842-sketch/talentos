@@ -8,6 +8,14 @@ function nowDate() {
   return new Date();
 }
 
+function buildUpdatedByUserData(actorId) {
+  if (!actorId || String(actorId).startsWith('worker-')) {
+    return {};
+  }
+
+  return { updatedByUserId: actorId };
+}
+
 export async function enqueueBackgroundTask(payload) {
   const data = {
     organisationId: payload.organisationId || null,
@@ -75,7 +83,7 @@ export async function claimDueBackgroundTasks({ limit = 5, workerId = null } = {
         status: 'RUNNING',
         attemptCount: { increment: 1 },
         lastAttemptAt: now,
-        updatedByUserId: workerId,
+        ...buildUpdatedByUserData(workerId),
       },
     });
 
@@ -106,7 +114,7 @@ export async function claimBackgroundTaskById(taskId, workerId = null) {
       status: 'RUNNING',
       attemptCount: { increment: 1 },
       lastAttemptAt: nowDate(),
-      updatedByUserId: workerId,
+      ...buildUpdatedByUserData(workerId),
     },
   });
 
@@ -119,11 +127,11 @@ export async function markBackgroundTaskSucceeded(taskId, workerId = null) {
     where: { id: taskId },
     data: {
       status: 'SUCCEEDED',
-      updatedByUserId: workerId,
       completedAt: nowDate(),
       nextAttemptAt: null,
       lastErrorCode: null,
       lastErrorMessage: null,
+      ...buildUpdatedByUserData(workerId),
     },
   });
 }
@@ -133,11 +141,11 @@ export async function markBackgroundTaskCancelled(taskId, workerId = null, reaso
     where: { id: taskId },
     data: {
       status: 'CANCELLED',
-      updatedByUserId: workerId,
       completedAt: nowDate(),
       nextAttemptAt: null,
       lastErrorCode: reason ? 'TASK_CANCELLED' : null,
       lastErrorMessage: reason,
+      ...buildUpdatedByUserData(workerId),
     },
   });
 }
@@ -158,11 +166,11 @@ export async function cancelBackgroundTasks(where = {}, workerId = null, reason 
     },
     data: {
       status: 'CANCELLED',
-      updatedByUserId: workerId,
       completedAt: nowDate(),
       nextAttemptAt: null,
       lastErrorCode: reason,
       lastErrorMessage: reason,
+      ...buildUpdatedByUserData(workerId),
     },
   });
 
@@ -181,10 +189,10 @@ export async function markBackgroundTaskFailed(task, error, workerId = null) {
     where: { id: task.id },
     data: {
       status: nextStatus,
-      updatedByUserId: workerId,
       nextAttemptAt,
       lastErrorCode: error?.code || 'TASK_FAILED',
       lastErrorMessage: error?.message ? String(error.message).slice(0, 1000) : 'Background task failed.',
+      ...buildUpdatedByUserData(workerId),
     },
   });
 }

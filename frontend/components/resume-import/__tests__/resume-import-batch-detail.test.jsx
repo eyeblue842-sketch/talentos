@@ -119,6 +119,7 @@ describe('ResumeImportBatchDetailExperience', () => {
     );
 
     expect(screen.getByText(/batch batch-1/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/7\/27\/2026/).length).toBeGreaterThan(0);
     expect(screen.getByText('candidate.pdf')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry failed/i })).toBeInTheDocument();
   });
@@ -163,4 +164,3 @@ describe('ResumeImportBatchDetailExperience', () => {
     expect(toastPush).toHaveBeenCalledWith(expect.objectContaining({ tone: 'success' }));
   });
 });
-
