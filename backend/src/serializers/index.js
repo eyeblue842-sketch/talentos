@@ -1,3 +1,5 @@
+import { getPermissionsForMembership } from '../services/enterprisePermissionService.js';
+
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -64,8 +66,10 @@ export function serializeOrganisationMembership(membership) {
           id: membership.customRoleDefinition.id,
           name: membership.customRoleDefinition.name,
           slug: membership.customRoleDefinition.slug,
+          permissions: getPermissionsForMembership(membership),
         }
       : undefined,
+    permissions: getPermissionsForMembership(membership),
     user: membership.user
       ? {
           id: membership.user.id,

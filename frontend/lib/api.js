@@ -1110,3 +1110,16 @@ export async function getResumeImportItem(batchId, itemId) {
   const response = await requestBackend(`/resume-imports/${batchId}/items/${itemId}`, { method: 'GET' }, token);
   return response.data;
 }
+
+export async function getCandidateProfileIntelligence(candidateId, filters = {}) {
+  const token = await requireToken();
+  const query = buildQueryString(filters);
+  const response = await requestBackend(`/intelligence/candidates/${candidateId}${query}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateProfileIntelligenceStatus(candidateId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/candidates/${candidateId}/status`, { method: 'GET' }, token);
+  return response.data;
+}

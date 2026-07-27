@@ -42,7 +42,7 @@ export default async function AdminResumeImportItemPage({ params }) {
           existingCandidatePreview={existingCandidatePreview}
           historyHref="/admin/candidates/import/history"
           batchHref={`/admin/candidates/import/${batchId}`}
-          candidateProfileHrefBase={null}
+          candidateProfileHrefBase="/admin/candidates"
           aiEnabled={isFeatureEnabled('aiResumeParsing')}
         />
       ) : (
@@ -51,4 +51,3 @@ export default async function AdminResumeImportItemPage({ params }) {
     </WorkspaceShell>
   );
 }
-

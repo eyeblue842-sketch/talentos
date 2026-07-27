@@ -5,24 +5,21 @@ import { CandidateInsightsPanel } from '@/components/sections/candidate-insights
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
-import { recruiterNav } from '@/lib/navigation';
+import { adminNav } from '@/lib/navigation';
 import {
   getCandidateProfileIntelligence,
   getCandidateProfileIntelligenceStatus,
-  getCurrentOrganisation,
   getRecruiterCandidatePreview,
 } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
 import { hasUserPermission } from '@/lib/enterprise-permissions';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { decorateResumePreview } from '@/lib/recruiter-resume-search';
-import { saveCandidateAction, unsaveCandidateAction } from '../../actions';
 
-export default async function RecruiterCandidateDetailPage({ params }) {
+export default async function AdminCandidateDetailPage({ params }) {
   const { candidateId } = await params;
 
   let candidate = null;
-  let organisation = null;
   let currentUser = null;
   let error = '';
   let initialIntelligence = null;
@@ -31,8 +28,7 @@ export default async function RecruiterCandidateDetailPage({ params }) {
   const candidateIntelligenceEnabled = isFeatureEnabled('candidateIntelligence');
 
   try {
-    [organisation, candidate, currentUser] = await Promise.all([
-      getCurrentOrganisation(),
+    [candidate, currentUser] = await Promise.all([
       getRecruiterCandidatePreview(candidateId).then(decorateResumePreview),
       getCurrentUser(),
     ]);
@@ -53,13 +49,13 @@ export default async function RecruiterCandidateDetailPage({ params }) {
   }
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand="Enterprise Admin" items={adminNav}>
       <PageHeader
-        eyebrow={organisation?.slug || 'Careeriz Hire'}
+        eyebrow="Enterprise Admin"
         title={candidate?.fullName || 'Candidate Profile'}
-        description={candidate?.title || 'Recruiter candidate detail'}
-        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search', href: '/recruiter/database' }, { label: 'Profile' }]}
-        secondaryActions={[{ label: 'Back to Search', href: '/recruiter/database' }]}
+        description={candidate?.title || 'Candidate profile intelligence and recruiter-safe detail'}
+        breadcrumb={[{ label: 'Admin' }, { label: 'Candidate Profile' }]}
+        secondaryActions={[{ label: 'Back to import history', href: '/admin/candidates/import/history' }]}
       />
 
       {error ? <Card><p className="text-sm text-[var(--color-text-secondary)]">{error}</p></Card> : null}
@@ -83,18 +79,6 @@ export default async function RecruiterCandidateDetailPage({ params }) {
                     Download Resume
                   </Link>
                 ) : null}
-                <form action={saveCandidateAction.bind(null, candidate.id)} className="flex gap-2">
-                  <select name="tag" defaultValue="" className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm">
-                    <option value="">Save without tag</option>
-                    <option value="SHORTLISTED">Shortlisted</option>
-                    <option value="REJECTED">Rejected</option>
-                    <option value="HOLD">Hold</option>
-                  </select>
-                  <button className="rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white">Save candidate</button>
-                </form>
-                <form action={unsaveCandidateAction.bind(null, candidate.id)}>
-                  <button className="rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">Remove saved</button>
-                </form>
               </div>
             </div>
           </Card>
@@ -110,7 +94,7 @@ export default async function RecruiterCandidateDetailPage({ params }) {
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <Card>
-              <h2 className="text-2xl font-semibold text-[var(--color-text)]">AI Summary</h2>
+              <h2 className="text-2xl font-semibold text-[var(--color-text)]">Profile Summary</h2>
               <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">{candidate.aiSummary}</p>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -164,7 +148,7 @@ export default async function RecruiterCandidateDetailPage({ params }) {
                       <Mail size={16} aria-hidden="true" />
                       {candidate.contactEmail}
                     </div>
-                    <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Visible because organisation access rules allow recruiter detail access for this candidate.</p>
+                    <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Visible because organization access rules allow admin detail access for this candidate.</p>
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--color-bg-muted)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
@@ -172,7 +156,7 @@ export default async function RecruiterCandidateDetailPage({ params }) {
                       <ShieldCheck size={16} aria-hidden="true" className="text-[var(--color-primary)]" />
                       Permission-based contact information
                     </div>
-                    <p className="mt-2">Direct contact details remain hidden for this recruiter until a permitted access path is available.</p>
+                    <p className="mt-2">Direct contact details remain hidden for this admin until a permitted access path is available.</p>
                   </div>
                 )}
               </Card>
