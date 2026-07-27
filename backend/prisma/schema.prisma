@@ -50,6 +50,8 @@ enum UserAccountStatus {
 
 enum IntelligenceProvider {
   DISABLED
+  MOCK
+  BEDROCK
   OPENAI
   ANTHROPIC
   GEMINI
@@ -62,6 +64,7 @@ enum IntelligenceFeature {
   RESUME_SUMMARY
   RESUME_SKILL_EXTRACTION
   CANDIDATE_MATCH
+  CANDIDATE_INTELLIGENCE
   JOB_DESCRIPTION
   INTERVIEW_ASSISTANT
   TALENT_SEARCH
@@ -86,8 +89,27 @@ enum BackgroundTaskType {
   RESUME_PARSING
   RESUME_IMPORT_PROCESSING
   INTELLIGENCE_EXECUTION
+  CANDIDATE_INTELLIGENCE_GENERATION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
+}
+
+enum CandidateIntelligenceKind {
+  PROFILE_OVERVIEW
+  JD_MATCH
+  INTERVIEW_GUIDE
+  CANDIDATE_RANKING
+  SEARCH_INDEX
+  CAREER_ANALYSIS
+}
+
+enum CandidateIntelligenceStatus {
+  PENDING
+  READY
+  STALE
+  FAILED
+  DISABLED
+  REVIEW_REQUIRED
 }
 
 enum BackgroundTaskStatus {
@@ -656,6 +678,7 @@ model Organisation {
   featureFlags               FeatureFlag[]
   intelligenceExecutions     IntelligenceExecution[]
   intelligenceResults        IntelligenceResult[]
+  candidateIntelligenceStates CandidateIntelligenceState[]
   backgroundTasks            BackgroundTask[]
   resumeImportBatches        ResumeImportBatch[]
   importedCandidates         CandidateProfile[]
@@ -834,6 +857,7 @@ model IntelligenceExecution {
   requestedByUser     User?                       @relation("IntelligenceExecutionRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
   results             IntelligenceResult[]
   feedback            IntelligenceFeedback[]
+  candidateIntelligenceStates CandidateIntelligenceState[]
 
   @@index([organisationId, feature, createdAt])
   @@index([organisationId, status, createdAt])
@@ -860,6 +884,7 @@ model IntelligenceResult {
   createdAt         DateTime               @default(now())
   organisation      Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   execution         IntelligenceExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  candidateIntelligenceStates CandidateIntelligenceState[]
 
   @@index([organisationId, entityType, entityId, createdAt])
   @@index([organisationId, sourceFingerprint, resultVersion])
@@ -1086,6 +1111,7 @@ model CandidateProfile {
   rescheduleRequests          InterviewRescheduleRequest[]
   duplicateImportItems        ResumeImportItem[]     @relation("ResumeImportDuplicateCandidate")
   importedFromItems           ResumeImportItem[]     @relation("ResumeImportCreatedCandidate")
+  intelligenceStates          CandidateIntelligenceState[]
 
   @@index([organisationId, profileStatus, createdAt])
   @@index([organisationId, source, createdAt])
@@ -1093,6 +1119,53 @@ model CandidateProfile {
   @@index([normalizedPhoneNumber])
   @@index([linkedInUrlNormalized])
   @@index([recommendationEnabled, updatedAt])
+}
+
+model CandidateIntelligenceState {
+  id                 String                    @id @default(cuid())
+  organisationId     String
+  candidateId        String
+  kind               CandidateIntelligenceKind
+  status             CandidateIntelligenceStatus @default(PENDING)
+  latestExecutionId  String?
+  latestResultId     String?
+  latestResumeAssetId String?
+  latestImportItemId String?
+  sourceFingerprint  String
+  sourceVersion      String
+  parserVersion      String?
+  schemaVersion      String
+  promptKey          String
+  promptVersion      String
+  resultVersion      String
+  provider           IntelligenceProvider?
+  providerVersion    String?
+  model              String?
+  modelVersion       String?
+  latencyMs          Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  estimatedCost      Decimal?                 @db.Decimal(12, 6)
+  generatedAt        DateTime?
+  lastGeneratedAt    DateTime?
+  lastSourceChangedAt DateTime?
+  staleReason        String?
+  lastErrorCode      String?
+  lastErrorMessage   String?
+  aiEnabled          Boolean                  @default(false)
+  metadata           Json?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  organisation       Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  candidate          CandidateProfile         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  latestExecution    IntelligenceExecution?   @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  latestResult       IntelligenceResult?      @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
+  latestResumeAsset  ResumeAsset?             @relation(fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  latestImportItem   ResumeImportItem?        @relation(fields: [latestImportItemId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, candidateId, kind])
+  @@index([organisationId, status, updatedAt])
+  @@index([candidateId, kind])
 }
 
 model Job {
@@ -1284,6 +1357,7 @@ model ResumeAsset {
   resumeSnapshots    ApplicationResumeSnapshot[]
   answerFiles        ApplicationScreeningAnswer[] @relation("ScreeningAnswerFileAsset")
   latestForCandidate CandidateProfile[]           @relation("CandidateLatestResumeAsset")
+  candidateIntelligenceStates CandidateIntelligenceState[]
 
   @@index([candidateId, kind, createdAt])
   @@index([candidateId, kind, status, createdAt])
@@ -1357,6 +1431,7 @@ model ResumeImportItem {
   duplicateCandidate          CandidateProfile?               @relation("ResumeImportDuplicateCandidate", fields: [duplicateCandidateId], references: [id], onDelete: SetNull)
   candidate                   CandidateProfile?               @relation("ResumeImportCreatedCandidate", fields: [candidateId], references: [id], onDelete: SetNull)
   resolvedByUser              User?                           @relation("ResumeImportItemResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  candidateIntelligenceStates CandidateIntelligenceState[]
 
   @@index([batchId, status, createdAt])
   @@index([organisationId, status, createdAt])

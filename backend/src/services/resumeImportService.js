@@ -20,6 +20,7 @@ import {
 } from './resumeImportUtils.js';
 import { parseResumeText } from './ai/resume-parser.js';
 import { env } from '../config/env.js';
+import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'VIEWER'];
@@ -743,6 +744,10 @@ export async function retryFailedResumeImportBatchItems(actorUser, batchId, { in
     ...requestMeta,
   });
 
+  if (result.candidate?.id || result.item.candidateId) {
+    await markCandidateIntelligenceStale(result.candidate?.id || result.item.candidateId, 'RESUME_IMPORT_CONFIRMED');
+  }
+
   return {
     batchId,
     retriedCount: items.length,
@@ -834,6 +839,10 @@ export async function confirmResumeImportItem(actorUser, batchId, itemId, payloa
     metadata: { batchId, candidateId: result.candidate?.id || null },
     ...requestMeta,
   });
+
+  if (result.candidateId) {
+    await markCandidateIntelligenceStale(result.candidateId, 'RESUME_IMPORT_DUPLICATE_RESOLVED');
+  }
 
   return {
     item: serializeItem(result.item),

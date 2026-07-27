@@ -35,6 +35,8 @@ export const enterprisePermissions = [
   'intelligence.resume.generate',
   'intelligence.match.read',
   'intelligence.match.generate',
+  'intelligence.candidate.read',
+  'intelligence.candidate.generate',
   'intelligence.job.generate',
   'intelligence.interview.generate',
   'intelligence.search.use',
@@ -66,6 +68,8 @@ const defaultRolePermissions = {
     'intelligence.resume.generate',
     'intelligence.match.read',
     'intelligence.match.generate',
+    'intelligence.candidate.read',
+    'intelligence.candidate.generate',
     'intelligence.job.generate',
     'intelligence.interview.generate',
     'intelligence.search.use',
@@ -85,6 +89,7 @@ const defaultRolePermissions = {
     'interview.reviewRescheduleRequest',
     'interview.overrideConflict',
     'intelligence.match.read',
+    'intelligence.candidate.read',
     'intelligence.job.generate',
     'intelligence.interview.generate',
     'intelligence.analytics.use',
@@ -101,6 +106,7 @@ const defaultRolePermissions = {
     'interview.view',
     'intelligence.match.read',
     'intelligence.resume.read',
+    'intelligence.candidate.read',
   ],
 };
 

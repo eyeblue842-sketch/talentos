@@ -7,6 +7,7 @@ import {
 } from '../serializers/index.js';
 import { buildPublicJobWhere } from './publicPortalService.js';
 import { recordAuditLog } from './auditLogService.js';
+import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
@@ -480,6 +481,8 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
     });
   }
 
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_PROFILE_UPDATED');
+
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
     completion: calculateProfileCompletion(profile),
@@ -536,6 +539,8 @@ export async function updateCandidateSettings(candidateId, payload, requestMeta 
       userAgent: requestMeta.userAgent,
     });
   }
+
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_SETTINGS_UPDATED');
 
   return {
     settings: buildSettingsResponse(profile),
@@ -1183,6 +1188,8 @@ export async function saveCandidateOnboarding(candidateId, payload, requestMeta 
       userAgent: requestMeta.userAgent,
     }, { bestEffort: true });
   }
+
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_ONBOARDING_UPDATED');
 
   return getCandidateOnboardingState(candidateId);
 }

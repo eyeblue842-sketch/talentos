@@ -4,6 +4,7 @@ import { storePrivateFile, readPrivateFileNodeStream } from '../config/storage.j
 import { requireOrganisationRole, requireOrganisationContext } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { enqueueBackgroundTask } from './backgroundTaskService.js';
+import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 
 const recruiterWritableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const recruiterReadableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -1051,6 +1052,7 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
         resumeUrl: `/api/candidate/resumes/${asset.id}/download`,
       },
     });
+    await markCandidateIntelligenceStale(candidateUser.candidateProfile.id, 'RESUME_ASSET_UPDATED');
     await enqueueBackgroundTask({
       type: 'RESUME_PARSING',
       entityType: 'ResumeAsset',

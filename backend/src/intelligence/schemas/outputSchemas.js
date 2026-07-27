@@ -3,6 +3,7 @@ import { z } from 'zod';
 const safeShortString = z.string().trim().min(1).max(400);
 const safeLongString = z.string().trim().min(1).max(4000);
 const safeStringArray = z.array(z.string().trim().min(1).max(120)).max(40);
+const boundedConfidence = z.number().min(0).max(1);
 
 export const resumeSummaryOutputSchema = z.object({
   professionalSummary: safeLongString,
@@ -89,4 +90,27 @@ export const analyticsInsightOutputSchema = z.object({
   metricReferences: safeStringArray.default([]),
   cautions: safeStringArray.default([]),
   insufficientData: z.boolean().default(false),
+}).strict();
+
+const evidenceIdsSchema = z.array(z.string().trim().min(1).max(80)).min(1).max(6);
+
+const supportedStatementSchema = z.object({
+  text: safeLongString,
+  confidence: boundedConfidence,
+  evidenceIds: evidenceIdsSchema,
+}).strict();
+
+export const candidateIntelligenceOutputSchema = z.object({
+  professionalSummary: supportedStatementSchema,
+  roleThemes: z.array(supportedStatementSchema).max(6).default([]),
+  strengths: z.array(supportedStatementSchema).max(8).default([]),
+  developmentAreas: z.array(supportedStatementSchema).max(8).default([]),
+  recommendedRoles: z.array(z.object({
+    role: safeShortString,
+    rationale: safeLongString,
+    confidence: boundedConfidence,
+    evidenceIds: evidenceIdsSchema,
+  }).strict()).max(8).default([]),
+  keywordClusters: z.array(supportedStatementSchema).max(10).default([]),
+  warnings: safeStringArray.default([]),
 }).strict();

@@ -10,6 +10,7 @@ import { recordAuditLog } from './auditLogService.js';
 import { uploadCandidateResumeAsset } from './applicationWorkflowService.js';
 import { readPrivateFileNodeStream } from '../config/storage.js';
 import { openLegacyResumeFile } from './legacyResumeService.js';
+import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 
 function normalizeStringArray(value) {
   if (Array.isArray(value)) {
@@ -49,6 +50,7 @@ export async function saveCandidateProfile(candidateId, payload) {
   });
 
   await indexCandidateResume(candidate);
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_PROFILE_UPDATED');
   return serializeCandidateProfile(candidate, { includePrivate: true });
 }
 

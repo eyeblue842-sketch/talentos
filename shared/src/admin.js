@@ -57,6 +57,8 @@ export const enterprisePermissionSchema = z.enum([
   'intelligence.resume.generate',
   'intelligence.match.read',
   'intelligence.match.generate',
+  'intelligence.candidate.read',
+  'intelligence.candidate.generate',
   'intelligence.job.generate',
   'intelligence.interview.generate',
   'intelligence.search.use',

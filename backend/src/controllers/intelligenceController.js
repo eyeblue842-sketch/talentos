@@ -1,6 +1,9 @@
 import {
   analyticsInsightRequestSchema,
   batchCandidateMatchRequestSchema,
+  candidateIntelligenceParamsSchema,
+  candidateIntelligenceRegenerateSchema,
+  candidateIntelligenceRequestSchema,
   candidateMatchRequestSchema,
   intelligenceFeedbackSchema,
   intelligenceGovernanceQuerySchema,
@@ -11,6 +14,11 @@ import {
 } from '@careeriz/shared';
 import { sendSuccess } from '../utils/response.js';
 import { getAnalyticsInsight } from '../intelligence/services/analyticsInsightService.js';
+import {
+  getCandidateIntelligence,
+  getCandidateIntelligenceStatus,
+  regenerateCandidateIntelligence,
+} from '../intelligence/services/candidateIntelligenceService.js';
 import { getBatchCandidateMatchIntelligence, getCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
 import { getIntelligenceGovernanceDashboard } from '../intelligence/services/adminIntelligenceService.js';
 import { recordIntelligenceFeedback } from '../intelligence/services/governanceService.js';
@@ -41,6 +49,45 @@ export async function postResumeIntelligence(req, res, next) {
     const payload = resumeIntelligenceRequestSchema.parse(req.body);
     const data = await getResumeIntelligence(req.user, payload, requestMeta(req));
     return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateProfileIntelligence(req, res, next) {
+  try {
+    const params = candidateIntelligenceParamsSchema.parse(req.params);
+    const payload = candidateIntelligenceRequestSchema.parse({
+      candidateId: params.candidateId,
+      kind: req.query.kind,
+      includeStale: req.query.includeStale === 'true',
+    });
+    const data = await getCandidateIntelligence(req.user, payload, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateProfileIntelligenceStatus(req, res, next) {
+  try {
+    const params = candidateIntelligenceParamsSchema.parse(req.params);
+    const data = await getCandidateIntelligenceStatus(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postCandidateProfileIntelligenceRegenerate(req, res, next) {
+  try {
+    const params = candidateIntelligenceParamsSchema.parse(req.params);
+    const payload = candidateIntelligenceRegenerateSchema.parse(req.body || {});
+    const data = await regenerateCandidateIntelligence(req.user, {
+      candidateId: params.candidateId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 202, data);
   } catch (error) {
     return next(error);
   }

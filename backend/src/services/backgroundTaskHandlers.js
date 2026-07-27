@@ -4,6 +4,7 @@ import { createNotification } from './notificationService.js';
 import { sendOfferStatusEmail, sendQueuedEmailPayload } from './emailService.js';
 import { requestCandidateDataExport } from './candidateService.js';
 import { getResumeIntelligence } from '../intelligence/services/resumeIntelligenceService.js';
+import { runCandidateIntelligenceGenerationTask } from '../intelligence/services/candidateIntelligenceService.js';
 import { getCandidateMatchIntelligence, getBatchCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
 import { getJobIntelligence } from '../intelligence/services/jobIntelligenceService.js';
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
@@ -314,6 +315,10 @@ async function handleIntelligenceExecutionTask(task) {
   return 'success';
 }
 
+async function handleCandidateIntelligenceGenerationTask(task) {
+  return runCandidateIntelligenceGenerationTask(task);
+}
+
 async function handleDataExportTask(task) {
   const candidateId = task.payload?.candidateId;
   const userId = task.payload?.userId;
@@ -354,6 +359,8 @@ export async function processBackgroundTask(task) {
       return handleNotificationRetryTask(task);
     case 'INTELLIGENCE_EXECUTION':
       return handleIntelligenceExecutionTask(task);
+    case 'CANDIDATE_INTELLIGENCE_GENERATION':
+      return handleCandidateIntelligenceGenerationTask(task);
     case 'DATA_EXPORT':
       return handleDataExportTask(task);
     case 'STALE_RESULT_CLEANUP':

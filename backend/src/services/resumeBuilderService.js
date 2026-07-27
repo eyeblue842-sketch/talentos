@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { prisma } from '../config/db.js';
 import { recordAuditLog } from './auditLogService.js';
+import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 
 function ensureHttpsOrigin(value) {
   if (!value) return null;
@@ -151,6 +152,7 @@ export async function upsertResumeBuilder(candidateUser, payload = {}, requestMe
       resumeUrl: asset.externalResumeUrl || null,
     },
   });
+  await markCandidateIntelligenceStale(candidateUser.candidateProfile.id, 'RESUME_BUILDER_UPDATED');
 
   await recordAuditLog({
     actorUserId: candidateUser.id,

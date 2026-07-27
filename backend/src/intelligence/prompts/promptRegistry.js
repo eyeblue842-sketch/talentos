@@ -1,5 +1,6 @@
 import {
   analyticsInsightOutputSchema,
+  candidateIntelligenceOutputSchema,
   candidateMatchExplanationOutputSchema,
   interviewNotesSummaryOutputSchema,
   interviewQuestionSetOutputSchema,
@@ -130,6 +131,30 @@ const promptRegistry = {
     status: 'ACTIVE',
     defaultProviderSettings: { temperature: 0.2 },
     buildPrompt: (input) => `Explain only the supplied aggregated hiring metrics. Cite them directly, avoid unsupported causality, and say when data is insufficient.\n\nInput:\n${JSON.stringify(input, null, 2)}`,
+  },
+  CANDIDATE_INTELLIGENCE_PROFILE: {
+    key: 'CANDIDATE_INTELLIGENCE_PROFILE',
+    version: '1.0.0',
+    purpose: 'Generate evidence-backed candidate insights from structured professional data and safe evidence references.',
+    outputSchema: candidateIntelligenceOutputSchema,
+    allowedDataClasses: ['CANDIDATE_PROFESSIONAL'],
+    prohibitedData: ['CANDIDATE_CONTACT', 'HIGHLY_SENSITIVE', 'PROHIBITED_FOR_AI'],
+    humanReviewRequired: true,
+    status: 'ACTIVE',
+    defaultProviderSettings: { temperature: 0.2 },
+    buildPrompt: (input) => `Create recruiter-reviewable candidate insights using only the supplied professional evidence catalog.
+
+Rules:
+- Return valid JSON only.
+- Never invent missing facts.
+- Never infer protected or sensitive traits.
+- Every generated statement must be explicitly supported by one or more evidenceIds from the provided catalog.
+- Do not include any evidenceIds that are not present in the catalog.
+- Use warnings when information is incomplete or uncertain.
+- Do not mention unavailable contact details.
+
+Input:
+${JSON.stringify(input, null, 2)}`,
   },
 };
 

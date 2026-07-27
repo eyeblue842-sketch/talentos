@@ -69,7 +69,7 @@ const envSchema = z.object({
   RESUME_BUILDER_BASE_URL: z.string().url().optional(),
   RESUME_BUILDER_CLIENT_ID: z.string().optional(),
   INTELLIGENCE_ENABLED: z.enum(['true', 'false']).default('false'),
-  INTELLIGENCE_PROVIDER: z.enum(['DISABLED', 'OPENAI', 'ANTHROPIC', 'GEMINI', 'AZURE_OPENAI', 'OLLAMA', 'CUSTOM_OPENAI_COMPATIBLE']).default('DISABLED'),
+  INTELLIGENCE_PROVIDER: z.enum(['DISABLED', 'MOCK', 'BEDROCK', 'OPENAI', 'ANTHROPIC', 'GEMINI', 'AZURE_OPENAI', 'OLLAMA', 'CUSTOM_OPENAI_COMPATIBLE']).default('DISABLED'),
   INTELLIGENCE_MODEL: z.string().trim().min(1).max(200).optional(),
   INTELLIGENCE_API_KEY: z.string().trim().min(1).optional(),
   INTELLIGENCE_BASE_URL: z.string().url().optional(),
@@ -107,7 +107,7 @@ const envSchema = z.object({
   const intelligenceEnabled = data.INTELLIGENCE_ENABLED === 'true';
   const providerEnabled = data.INTELLIGENCE_PROVIDER !== 'DISABLED';
 
-  if (intelligenceEnabled && !data.INTELLIGENCE_MODEL) {
+  if (intelligenceEnabled && !data.INTELLIGENCE_MODEL && !['MOCK'].includes(data.INTELLIGENCE_PROVIDER)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['INTELLIGENCE_MODEL'],
@@ -115,7 +115,7 @@ const envSchema = z.object({
     });
   }
 
-  if (providerEnabled && !data.INTELLIGENCE_BASE_URL) {
+  if (providerEnabled && !['MOCK', 'BEDROCK'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_BASE_URL) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['INTELLIGENCE_BASE_URL'],
@@ -123,11 +123,27 @@ const envSchema = z.object({
     });
   }
 
-  if (providerEnabled && !data.INTELLIGENCE_API_KEY && !['OLLAMA'].includes(data.INTELLIGENCE_PROVIDER)) {
+  if (providerEnabled && !['MOCK', 'BEDROCK', 'OLLAMA'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_API_KEY) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['INTELLIGENCE_API_KEY'],
       message: 'INTELLIGENCE_API_KEY is required for the configured provider.',
+    });
+  }
+
+  if (data.INTELLIGENCE_PROVIDER === 'BEDROCK' && !data.AWS_BEDROCK_MODEL_ID) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AWS_BEDROCK_MODEL_ID'],
+      message: 'AWS_BEDROCK_MODEL_ID is required when INTELLIGENCE_PROVIDER=BEDROCK.',
+    });
+  }
+
+  if (data.INTELLIGENCE_PROVIDER === 'MOCK' && data.NODE_ENV === 'production') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['INTELLIGENCE_PROVIDER'],
+      message: 'INTELLIGENCE_PROVIDER=MOCK is not allowed in production.',
     });
   }
 

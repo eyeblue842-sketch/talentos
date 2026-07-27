@@ -10,6 +10,7 @@ const INTELLIGENCE_FEATURE_FLAGS = [
   'intelligence.resume_summary',
   'intelligence.skill_extraction',
   'intelligence.candidate_matching',
+  'intelligence.candidate_intelligence',
   'intelligence.job_description',
   'intelligence.interview_assistant',
   'intelligence.talent_search',

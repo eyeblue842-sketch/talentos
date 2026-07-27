@@ -17,6 +17,12 @@ export const intelligenceFeatureConfig = {
     permissionGenerate: 'intelligence.match.generate',
     ttlHours: 24,
   },
+  CANDIDATE_INTELLIGENCE: {
+    flag: 'intelligence.candidate_intelligence',
+    permissionRead: 'intelligence.candidate.read',
+    permissionGenerate: 'intelligence.candidate.generate',
+    ttlHours: 72,
+  },
   JOB_DESCRIPTION: {
     flag: 'intelligence.job_description',
     permissionRead: 'intelligence.job.generate',

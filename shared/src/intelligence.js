@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const intelligenceProviderSchema = z.enum([
   'DISABLED',
+  'MOCK',
+  'BEDROCK',
   'OPENAI',
   'ANTHROPIC',
   'GEMINI',
@@ -14,6 +16,7 @@ export const intelligenceFeatureSchema = z.enum([
   'RESUME_SUMMARY',
   'RESUME_SKILL_EXTRACTION',
   'CANDIDATE_MATCH',
+  'CANDIDATE_INTELLIGENCE',
   'JOB_DESCRIPTION',
   'INTERVIEW_ASSISTANT',
   'TALENT_SEARCH',
@@ -34,6 +37,8 @@ export const intelligencePermissionSchema = z.enum([
   'intelligence.resume.generate',
   'intelligence.match.read',
   'intelligence.match.generate',
+  'intelligence.candidate.read',
+  'intelligence.candidate.generate',
   'intelligence.job.generate',
   'intelligence.interview.generate',
   'intelligence.search.use',
@@ -46,10 +51,29 @@ export const intelligenceFeatureFlagSchema = z.enum([
   'intelligence.resume_summary',
   'intelligence.skill_extraction',
   'intelligence.candidate_matching',
+  'intelligence.candidate_intelligence',
   'intelligence.job_description',
   'intelligence.interview_assistant',
   'intelligence.talent_search',
   'intelligence.analytics_insights',
+]);
+
+export const candidateIntelligenceKindSchema = z.enum([
+  'PROFILE_OVERVIEW',
+  'JD_MATCH',
+  'INTERVIEW_GUIDE',
+  'CANDIDATE_RANKING',
+  'SEARCH_INDEX',
+  'CAREER_ANALYSIS',
+]);
+
+export const candidateIntelligenceStatusSchema = z.enum([
+  'PENDING',
+  'READY',
+  'STALE',
+  'FAILED',
+  'DISABLED',
+  'REVIEW_REQUIRED',
 ]);
 
 export const naturalLanguageTalentSearchSchema = z.object({
@@ -70,6 +94,21 @@ export const intelligenceFeedbackSchema = z.object({
 export const resumeIntelligenceRequestSchema = z.object({
   candidateId: z.string().trim().cuid(),
   resumeAssetId: z.string().trim().cuid().optional(),
+  forceRegenerate: z.boolean().optional(),
+});
+
+export const candidateIntelligenceParamsSchema = z.object({
+  candidateId: z.string().trim().cuid(),
+});
+
+export const candidateIntelligenceRequestSchema = z.object({
+  candidateId: z.string().trim().cuid(),
+  kind: candidateIntelligenceKindSchema.default('PROFILE_OVERVIEW'),
+  includeStale: z.boolean().optional(),
+});
+
+export const candidateIntelligenceRegenerateSchema = z.object({
+  kind: candidateIntelligenceKindSchema.default('PROFILE_OVERVIEW'),
   forceRegenerate: z.boolean().optional(),
 });
 
