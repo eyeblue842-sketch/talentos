@@ -61,6 +61,8 @@ Frontend local auth values:
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
 BACKEND_API_BASE_URL=http://127.0.0.1:5000/api
 GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+NEXT_PUBLIC_FEATURE_BULK_RESUME_IMPORT=true
+NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING=true
 ```
 
 Backend local auth values:
@@ -113,6 +115,37 @@ npm run start --prefix frontend
 ```
 
 This uses `node .next/standalone/server.js`.
+
+## Bulk Resume Import
+
+The bulk resume import module is available to recruiters and administrators when `NEXT_PUBLIC_FEATURE_BULK_RESUME_IMPORT=true`.
+
+Frontend routes:
+
+- `/recruiter/candidates/import`
+- `/recruiter/candidates/import/history`
+- `/recruiter/candidates/import/:batchId`
+- `/recruiter/candidates/import/:batchId/items/:itemId`
+- `/admin/candidates/import`
+- `/admin/candidates/import/history`
+
+Current recruiter workflow:
+
+1. Upload multiple PDF, DOC, or DOCX files, or one ZIP archive.
+2. Receive a batch reference immediately after upload acceptance.
+3. Monitor item processing from the batch detail screen.
+4. Review parsed candidate fields and confidence signals.
+5. Confirm candidate creation, reject unusable items, or retry failed items.
+6. Resolve duplicate candidates by skipping, attaching to an existing profile, updating empty fields, or explicitly creating a separate candidate.
+7. Download failure CSV reports and protected original resumes when needed.
+
+Operational notes:
+
+- Frontend validation improves UX but backend validation remains authoritative.
+- ZIP uploads cannot be combined with individual resume files in one submission.
+- Secure resume access always goes through protected backend endpoints or short-lived presigned URLs.
+- When `NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING=false`, the review flow shows manual-review messaging instead of AI confidence guidance.
+- Upload limits are controlled by backend environment variables such as `RESUME_IMPORT_MAX_FILES`, `RESUME_MAX_FILE_SIZE_MB`, `RESUME_IMPORT_MAX_ZIP_SIZE_MB`, and `RESUME_IMPORT_MAX_UNCOMPRESSED_MB`.
 
 ## Deployment Targets
 

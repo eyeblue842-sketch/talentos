@@ -834,6 +834,9 @@ test('interview scheduling enforces organisation panel membership and creates si
 });
 
 test('dashboard metrics stay organisation-scoped and empty orgs return zero-like states', async () => {
+  const closingSoonDeadline = new Date();
+  closingSoonDeadline.setDate(closingSoonDeadline.getDate() + 7);
+
   await saveCandidateForRecruiter(actor('recruiter-1'), 'candidate-1', 'org-1', 'SHORTLISTED');
   state.jobs.push({
     id: 'job-3',
@@ -856,7 +859,7 @@ test('dashboard metrics stay organisation-scoped and empty orgs return zero-like
     numberOfOpenings: 1,
     department: null,
     businessUnit: null,
-    applicationDeadline: new Date('2026-07-20T00:00:00.000Z'),
+    applicationDeadline: closingSoonDeadline,
     status: 'OPEN',
     archivedAt: null,
     createdAt: now(),

@@ -1080,3 +1080,33 @@ export async function getAnalyticsInsight(payload) {
   }, token);
   return response.data;
 }
+
+export async function getResumeImportBatches(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resume-imports${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getResumeImportBatch(batchId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resume-imports/${batchId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getResumeImportBatchItems(batchId, filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resume-imports/${batchId}/items${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return {
+    items: response.data,
+    meta: response.meta,
+  };
+}
+
+export async function getResumeImportItem(batchId, itemId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/resume-imports/${batchId}/items/${itemId}`, { method: 'GET' }, token);
+  return response.data;
+}

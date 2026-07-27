@@ -1,8 +1,13 @@
+import { isFeatureEnabled } from '@/lib/feature-flags';
+
+const bulkResumeImportEnabled = isFeatureEnabled('bulkResumeImport');
+
 export const recruiterNav = [
   { label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard' },
   { label: 'Jobs', href: '/recruiter/jobs', icon: 'BriefcaseBusiness' },
   { label: 'Requisitions', href: '/recruiter/requisitions', icon: 'ClipboardList' },
   { label: 'Resume Database', href: '/recruiter/database', icon: 'Database' },
+  ...(bulkResumeImportEnabled ? [{ label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),
   { label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
   { label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
   { label: 'Members', href: '/recruiter/members', icon: 'Users' },
@@ -34,6 +39,7 @@ export const adminNav = [
   { label: 'Notifications', href: '/admin/notifications', icon: 'BellRing' },
   { label: 'Background', href: '/admin/background-jobs', icon: 'ServerCog' },
   { label: 'Analytics', href: '/admin/analytics', icon: 'BarChart3' },
+  ...(bulkResumeImportEnabled ? [{ label: 'Bulk Resume Import', href: '/admin/candidates/import', icon: 'ClipboardList' }] : []),
   { label: 'Intelligence', href: '/admin/intelligence', icon: 'Sparkles' },
   { label: 'Feature Flags', href: '/admin/feature-flags', icon: 'ToggleRight' },
   { label: 'Lookups', href: '/admin/lookups', icon: 'ListFilter' },
