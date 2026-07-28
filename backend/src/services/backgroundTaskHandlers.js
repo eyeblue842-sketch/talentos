@@ -6,6 +6,7 @@ import { requestCandidateDataExport } from './candidateService.js';
 import { getResumeIntelligence } from '../intelligence/services/resumeIntelligenceService.js';
 import { runCandidateIntelligenceGenerationTask } from '../intelligence/services/candidateIntelligenceService.js';
 import { getCandidateMatchIntelligence, getBatchCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
+import { runJobDescriptionGenerationTask } from '../intelligence/services/jobDescriptionGenerationService.js';
 import { getJobIntelligence } from '../intelligence/services/jobIntelligenceService.js';
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
 import { getAnalyticsInsight } from '../intelligence/services/analyticsInsightService.js';
@@ -319,6 +320,10 @@ async function handleCandidateIntelligenceGenerationTask(task) {
   return runCandidateIntelligenceGenerationTask(task);
 }
 
+async function handleJobDescriptionGenerationTask(task) {
+  return runJobDescriptionGenerationTask(task);
+}
+
 async function handleDataExportTask(task) {
   const candidateId = task.payload?.candidateId;
   const userId = task.payload?.userId;
@@ -361,6 +366,8 @@ export async function processBackgroundTask(task) {
       return handleIntelligenceExecutionTask(task);
     case 'CANDIDATE_INTELLIGENCE_GENERATION':
       return handleCandidateIntelligenceGenerationTask(task);
+    case 'JOB_DESCRIPTION_GENERATION':
+      return handleJobDescriptionGenerationTask(task);
     case 'DATA_EXPORT':
       return handleDataExportTask(task);
     case 'STALE_RESULT_CLEANUP':

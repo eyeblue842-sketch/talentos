@@ -60,6 +60,28 @@ const promptRegistry = {
     defaultProviderSettings: { temperature: 0.4 },
     buildPrompt: (input) => `Draft recruiter-reviewable job content only from the provided structured data. Flag assumptions explicitly. Do not invent salary, benefits, legal requirements, or locations.\n\nInput:\n${JSON.stringify(input, null, 2)}`,
   },
+  JOB_DESCRIPTION_FULL: {
+    key: 'JOB_DESCRIPTION_FULL',
+    version: '1.0.0',
+    purpose: 'Generate a full recruiter-reviewable job description payload from structured job and requisition data.',
+    outputSchema: jobDescriptionOutputSchema,
+    allowedDataClasses: ['PUBLIC_JOB_DATA', 'ORGANIZATION_INTERNAL'],
+    prohibitedData: ['CANDIDATE_CONTACT', 'HIGHLY_SENSITIVE', 'PROHIBITED_FOR_AI'],
+    humanReviewRequired: true,
+    status: 'ACTIVE',
+    defaultProviderSettings: { temperature: 0.3 },
+    buildPrompt: (input) => `Generate a structured recruiter-reviewable job description using only the supplied job and requisition data.
+
+Rules:
+- Return valid JSON only.
+- Do not invent salary, benefits, compliance requirements, visa terms, or location details.
+- Do not use HTML or Markdown.
+- Use assumptions only when the source data is incomplete.
+- Flag exclusionary or ambiguous wording when present.
+
+Input:
+${JSON.stringify(input, null, 2)}`,
+  },
   JOB_DESCRIPTION_IMPROVEMENT: {
     key: 'JOB_DESCRIPTION_IMPROVEMENT',
     version: '1.0.0',

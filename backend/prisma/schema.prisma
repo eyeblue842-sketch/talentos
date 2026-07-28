@@ -90,6 +90,7 @@ enum BackgroundTaskType {
   RESUME_IMPORT_PROCESSING
   INTELLIGENCE_EXECUTION
   CANDIDATE_INTELLIGENCE_GENERATION
+  JOB_DESCRIPTION_GENERATION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
 }
@@ -110,6 +111,31 @@ enum CandidateIntelligenceStatus {
   FAILED
   DISABLED
   REVIEW_REQUIRED
+}
+
+enum JobDescriptionGenerationKind {
+  FULL_DESCRIPTION
+}
+
+enum JobDescriptionGenerationStatus {
+  PENDING
+  READY
+  STALE
+  FAILED
+  DISABLED
+  REVIEW_REQUIRED
+}
+
+enum JobDescriptionDraftStatus {
+  DRAFT
+  APPROVED
+  APPLIED
+  ARCHIVED
+}
+
+enum JobDescriptionTemplateScope {
+  SYSTEM
+  ORGANISATION
 }
 
 enum BackgroundTaskStatus {
@@ -620,6 +646,14 @@ model User {
   resolvedResumeImportItems  ResumeImportItem[]          @relation("ResumeImportItemResolvedBy")
   completedPlatformSetupStates PlatformSetupState[]      @relation("PlatformSetupCompletedBy")
   resetPlatformSetupStates   PlatformSetupState[]        @relation("PlatformSetupResetBy")
+  createdJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftCreatedBy")
+  updatedJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftUpdatedBy")
+  approvedJobDescriptionDrafts JobDescriptionDraft[]     @relation("JobDescriptionDraftApprovedBy")
+  appliedJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftAppliedBy")
+  createdJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateCreatedBy")
+  updatedJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateUpdatedBy")
+  activatedJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateActivatedBy")
+  createdJobDescriptionTemplateVersions JobDescriptionTemplateVersion[] @relation("JobDescriptionTemplateVersionCreatedBy")
 }
 
 model Organisation {
@@ -679,10 +713,13 @@ model Organisation {
   intelligenceExecutions     IntelligenceExecution[]
   intelligenceResults        IntelligenceResult[]
   candidateIntelligenceStates CandidateIntelligenceState[]
+  jobDescriptionStates       JobDescriptionState[]
   backgroundTasks            BackgroundTask[]
   resumeImportBatches        ResumeImportBatch[]
   importedCandidates         CandidateProfile[]
   resumeImportItems          ResumeImportItem[]
+  jobDescriptionDrafts       JobDescriptionDraft[]
+  jobDescriptionTemplates    JobDescriptionTemplate[]
 
   @@index([status])
 }
@@ -858,6 +895,8 @@ model IntelligenceExecution {
   results             IntelligenceResult[]
   feedback            IntelligenceFeedback[]
   candidateIntelligenceStates CandidateIntelligenceState[]
+  jobDescriptionStates JobDescriptionState[]
+  jobDescriptionDrafts JobDescriptionDraft[]
 
   @@index([organisationId, feature, createdAt])
   @@index([organisationId, status, createdAt])
@@ -885,6 +924,9 @@ model IntelligenceResult {
   organisation      Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   execution         IntelligenceExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
   candidateIntelligenceStates CandidateIntelligenceState[]
+  jobDescriptionStates JobDescriptionState[]
+  jobDescriptionDrafts JobDescriptionDraft[]
+  jobDescriptionTemplateVersions JobDescriptionTemplateVersion[]
 
   @@index([organisationId, entityType, entityId, createdAt])
   @@index([organisationId, sourceFingerprint, resultVersion])
@@ -1168,6 +1210,144 @@ model CandidateIntelligenceState {
   @@index([candidateId, kind])
 }
 
+model JobDescriptionState {
+  id                String                        @id @default(cuid())
+  organisationId    String
+  jobId             String
+  kind              JobDescriptionGenerationKind
+  status            JobDescriptionGenerationStatus @default(PENDING)
+  latestExecutionId String?
+  latestResultId    String?
+  sourceFingerprint String
+  sourceVersion     String
+  schemaVersion     String
+  promptKey         String
+  promptVersion     String
+  resultVersion     String
+  provider          IntelligenceProvider?
+  providerVersion   String?
+  model             String?
+  modelVersion      String?
+  latencyMs         Int?
+  inputTokens       Int?
+  outputTokens      Int?
+  estimatedCost     Decimal?                     @db.Decimal(12, 6)
+  generatedAt       DateTime?
+  staleReason       String?
+  metadata          Json?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  organisation      Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job               Job                          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  latestExecution   IntelligenceExecution?       @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  latestResult      IntelligenceResult?          @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
+  drafts            JobDescriptionDraft[]
+
+  @@unique([organisationId, jobId, kind])
+  @@index([organisationId, status, updatedAt])
+  @@index([jobId, kind])
+}
+
+model JobDescriptionDraft {
+  id                 String                     @id @default(cuid())
+  organisationId     String
+  jobId              String
+  versionGroupId     String
+  version            Int
+  previousVersionId  String?
+  status             JobDescriptionDraftStatus @default(DRAFT)
+  isLatestVersion    Boolean                    @default(true)
+  title              String?
+  content            Json
+  jobSnapshot        Json?
+  sourceStateId      String?
+  sourceExecutionId  String?
+  sourceResultId     String?
+  templateId         String?
+  templateVersionId  String?
+  approvedAt         DateTime?
+  approvedByUserId   String?
+  appliedAt          DateTime?
+  appliedByUserId    String?
+  appliedJobSnapshot Json?
+  createdByUserId    String?
+  updatedByUserId    String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  organisation       Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job                Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  previousVersion    JobDescriptionDraft?       @relation("JobDescriptionDraftVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions       JobDescriptionDraft[]      @relation("JobDescriptionDraftVersionChain")
+  sourceState        JobDescriptionState?       @relation(fields: [sourceStateId], references: [id], onDelete: SetNull)
+  sourceExecution    IntelligenceExecution?     @relation(fields: [sourceExecutionId], references: [id], onDelete: SetNull)
+  sourceResult       IntelligenceResult?        @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
+  template           JobDescriptionTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateVersion    JobDescriptionTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+  approvedByUser     User?                      @relation("JobDescriptionDraftApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  appliedByUser      User?                      @relation("JobDescriptionDraftAppliedBy", fields: [appliedByUserId], references: [id], onDelete: SetNull)
+  createdByUser      User?                      @relation("JobDescriptionDraftCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser      User?                      @relation("JobDescriptionDraftUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([versionGroupId, version])
+  @@index([organisationId, jobId, isLatestVersion, createdAt])
+  @@index([organisationId, status, updatedAt])
+  @@index([jobId, versionGroupId, version])
+  @@index([templateId])
+}
+
+model JobDescriptionTemplate {
+  id                String                      @id @default(cuid())
+  organisationId    String?
+  scope             JobDescriptionTemplateScope @default(ORGANISATION)
+  key               String
+  name              String
+  description       String?
+  isActive          Boolean                     @default(true)
+  activeVersionId   String?
+  createdByUserId   String?
+  updatedByUserId   String?
+  activatedByUserId String?
+  activatedAt       DateTime?
+  archivedAt        DateTime?
+  metadata          Json?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  organisation      Organisation?               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  activeVersion     JobDescriptionTemplateVersion? @relation("JobDescriptionTemplateActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  versions          JobDescriptionTemplateVersion[] @relation("JobDescriptionTemplateVersions")
+  drafts            JobDescriptionDraft[]
+  createdByUser     User?                       @relation("JobDescriptionTemplateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser     User?                       @relation("JobDescriptionTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  activatedByUser   User?                       @relation("JobDescriptionTemplateActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, key])
+  @@index([scope, isActive, archivedAt])
+  @@index([organisationId, isActive, archivedAt])
+}
+
+model JobDescriptionTemplateVersion {
+  id              String                   @id @default(cuid())
+  templateId      String
+  version         Int
+  title           String?
+  content         Json
+  schemaVersion   String
+  promptKey       String?
+  promptVersion   String?
+  sourceResultId  String?
+  metadata        Json?
+  createdByUserId String?
+  createdAt       DateTime                 @default(now())
+  template        JobDescriptionTemplate   @relation("JobDescriptionTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  activeForTemplate JobDescriptionTemplate[] @relation("JobDescriptionTemplateActiveVersion")
+  sourceResult    IntelligenceResult?      @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
+  drafts          JobDescriptionDraft[]
+  createdByUser   User?                    @relation("JobDescriptionTemplateVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([templateId, version])
+  @@index([templateId, createdAt])
+}
+
 model Job {
   id                    String                 @id @default(cuid())
   organisationId        String?
@@ -1210,6 +1390,8 @@ model Job {
   recruiter             User                   @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
   hiringManager         User?                  @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
   requisition           JobRequisition?        @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  jobDescriptionStates  JobDescriptionState[]
+  jobDescriptionDrafts  JobDescriptionDraft[]
   applications          Application[]
   savedJobs             SavedJob[]
   candidateViews        CandidateJobView[]

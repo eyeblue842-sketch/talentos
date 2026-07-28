@@ -8,6 +8,17 @@ import {
   intelligenceFeedbackSchema,
   intelligenceGovernanceQuerySchema,
   interviewIntelligenceRequestSchema,
+  jobDescriptionParamsSchema,
+  jobDescriptionDraftApplySchema,
+  jobDescriptionDraftCreateSchema,
+  jobDescriptionDraftParamsSchema,
+  jobDescriptionDraftUpdateSchema,
+  jobDescriptionRegenerateSchema,
+  jobDescriptionRequestSchema,
+  jobDescriptionTemplateActivateSchema,
+  jobDescriptionTemplateCreateSchema,
+  jobDescriptionTemplateParamsSchema,
+  jobDescriptionTemplateVersionCreateSchema,
   jobIntelligenceRequestSchema,
   naturalLanguageTalentSearchSchema,
   resumeIntelligenceRequestSchema,
@@ -20,6 +31,24 @@ import {
   regenerateCandidateIntelligence,
 } from '../intelligence/services/candidateIntelligenceService.js';
 import { getBatchCandidateMatchIntelligence, getCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
+import {
+  getJobDescription,
+  getJobDescriptionStatus,
+  regenerateJobDescription,
+} from '../intelligence/services/jobDescriptionGenerationService.js';
+import {
+  activateJobDescriptionTemplate,
+  applyJobDescriptionDraft,
+  createJobDescriptionDraft,
+  createJobDescriptionTemplate,
+  createJobDescriptionTemplateVersion,
+  getJobDescriptionDraft,
+  getJobDescriptionHistory,
+  getJobDescriptionTemplate,
+  listJobDescriptionDrafts,
+  listJobDescriptionTemplates,
+  updateJobDescriptionDraft,
+} from '../intelligence/services/jobDescriptionManagementService.js';
 import { getIntelligenceGovernanceDashboard } from '../intelligence/services/adminIntelligenceService.js';
 import { recordIntelligenceFeedback } from '../intelligence/services/governanceService.js';
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
@@ -117,6 +146,170 @@ export async function postJobIntelligence(req, res, next) {
   try {
     const payload = jobIntelligenceRequestSchema.parse(req.body);
     const data = await getJobIntelligence(req.user, payload);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionIntelligence(req, res, next) {
+  try {
+    const params = jobDescriptionParamsSchema.parse(req.params);
+    const payload = jobDescriptionRequestSchema.parse({
+      jobId: params.jobId,
+      kind: req.query.kind,
+      includeStale: req.query.includeStale === 'true',
+    });
+    const data = await getJobDescription(req.user, payload, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionIntelligenceStatus(req, res, next) {
+  try {
+    const params = jobDescriptionParamsSchema.parse(req.params);
+    const data = await getJobDescriptionStatus(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionIntelligenceRegenerate(req, res, next) {
+  try {
+    const params = jobDescriptionParamsSchema.parse(req.params);
+    const payload = jobDescriptionRegenerateSchema.parse(req.body || {});
+    const data = await regenerateJobDescription(req.user, {
+      jobId: params.jobId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 202, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionDraftList(req, res, next) {
+  try {
+    const params = jobDescriptionParamsSchema.parse(req.params);
+    const data = await listJobDescriptionDrafts(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionDraftDetail(req, res, next) {
+  try {
+    const params = jobDescriptionDraftParamsSchema.parse(req.params);
+    const data = await getJobDescriptionDraft(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionDraft(req, res, next) {
+  try {
+    const payload = jobDescriptionDraftCreateSchema.parse(req.body);
+    const data = await createJobDescriptionDraft(req.user, payload, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function patchJobDescriptionDraft(req, res, next) {
+  try {
+    const params = jobDescriptionDraftParamsSchema.parse(req.params);
+    const payload = jobDescriptionDraftUpdateSchema.parse(req.body || {});
+    const data = await updateJobDescriptionDraft(req.user, {
+      draftId: params.draftId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionDraftApply(req, res, next) {
+  try {
+    const params = jobDescriptionDraftParamsSchema.parse(req.params);
+    const payload = jobDescriptionDraftApplySchema.parse(req.body || {});
+    const data = await applyJobDescriptionDraft(req.user, {
+      draftId: params.draftId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionTemplates(req, res, next) {
+  try {
+    const data = await listJobDescriptionTemplates(req.user);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionTemplate(req, res, next) {
+  try {
+    const payload = jobDescriptionTemplateCreateSchema.parse(req.body);
+    const data = await createJobDescriptionTemplate(req.user, payload, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionTemplateDetail(req, res, next) {
+  try {
+    const params = jobDescriptionTemplateParamsSchema.parse(req.params);
+    const data = await getJobDescriptionTemplate(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionTemplateVersion(req, res, next) {
+  try {
+    const params = jobDescriptionTemplateParamsSchema.parse(req.params);
+    const payload = jobDescriptionTemplateVersionCreateSchema.parse(req.body);
+    const data = await createJobDescriptionTemplateVersion(req.user, {
+      templateId: params.templateId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postJobDescriptionTemplateActivate(req, res, next) {
+  try {
+    const params = jobDescriptionTemplateParamsSchema.parse(req.params);
+    const payload = jobDescriptionTemplateActivateSchema.parse(req.body || {});
+    const data = await activateJobDescriptionTemplate(req.user, {
+      templateId: params.templateId,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getJobDescriptionJobHistory(req, res, next) {
+  try {
+    const params = jobDescriptionParamsSchema.parse(req.params);
+    const data = await getJobDescriptionHistory(req.user, params);
     return sendSuccess(res, 200, data);
   } catch (error) {
     return next(error);

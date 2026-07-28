@@ -76,6 +76,19 @@ export const candidateIntelligenceStatusSchema = z.enum([
   'REVIEW_REQUIRED',
 ]);
 
+export const jobDescriptionGenerationKindSchema = z.enum([
+  'FULL_DESCRIPTION',
+]);
+
+export const jobDescriptionGenerationStatusSchema = z.enum([
+  'PENDING',
+  'READY',
+  'STALE',
+  'FAILED',
+  'DISABLED',
+  'REVIEW_REQUIRED',
+]);
+
 export const candidateIntelligenceConfidenceLabelSchema = z.enum([
   'HIGH',
   'MEDIUM',
@@ -226,6 +239,231 @@ export const candidateIntelligenceStatusResponseSchema = z.object({
   sourceVersion: z.string().trim().min(1).max(80),
   promptVersion: z.string().trim().min(1).max(40),
   resultVersion: z.string().trim().min(1).max(80),
+});
+
+export const jobDescriptionParamsSchema = z.object({
+  jobId: z.string().trim().cuid(),
+});
+
+export const jobDescriptionRequestSchema = z.object({
+  jobId: z.string().trim().cuid(),
+  kind: jobDescriptionGenerationKindSchema.default('FULL_DESCRIPTION'),
+  includeStale: z.boolean().optional(),
+});
+
+export const jobDescriptionRegenerateSchema = z.object({
+  kind: jobDescriptionGenerationKindSchema.default('FULL_DESCRIPTION'),
+  forceRegenerate: z.boolean().optional(),
+});
+
+export const jobDescriptionResultSchema = z.object({
+  jobId: z.string().trim().min(1).max(120),
+  kind: jobDescriptionGenerationKindSchema,
+  summary: z.string().trim().min(1).max(4000),
+  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
+  requiredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
+  preferredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
+  screeningQuestions: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
+  assumptions: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  exclusionaryWordingWarnings: z.array(z.string().trim().min(1).max(400)).max(20).default([]),
+  missingFields: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  interviewFocus: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  execution: z.object({
+    stateId: z.string().trim().min(1).max(120).nullable(),
+    executionId: z.string().trim().min(1).max(120).nullable(),
+    resultId: z.string().trim().min(1).max(120).nullable(),
+    status: jobDescriptionGenerationStatusSchema,
+    cacheHit: z.boolean(),
+    stale: z.boolean(),
+    generatedAt: z.string().datetime().nullable(),
+    provider: intelligenceProviderSchema,
+    providerVersion: z.string().trim().min(1).max(120).nullable(),
+    model: z.string().trim().min(1).max(200).nullable(),
+    modelVersion: z.string().trim().min(1).max(200).nullable(),
+    schemaVersion: z.string().trim().min(1).max(40),
+    promptKey: z.string().trim().min(1).max(120),
+    promptVersion: z.string().trim().min(1).max(40),
+    resultVersion: z.string().trim().min(1).max(80),
+    sourceVersion: z.string().trim().min(1).max(80),
+    latencyMs: z.number().int().min(0),
+    inputTokens: z.number().int().min(0).nullable(),
+    outputTokens: z.number().int().min(0).nullable(),
+    estimatedCost: z.number().nullable(),
+  }),
+});
+
+export const jobDescriptionStatusResponseSchema = z.object({
+  jobId: z.string().trim().min(1).max(120),
+  kind: jobDescriptionGenerationKindSchema,
+  status: jobDescriptionGenerationStatusSchema,
+  stale: z.boolean(),
+  generatedAt: z.string().datetime().nullable(),
+  latestExecutionId: z.string().trim().min(1).max(120).nullable(),
+  latestResultId: z.string().trim().min(1).max(120).nullable(),
+  sourceVersion: z.string().trim().min(1).max(80),
+  promptVersion: z.string().trim().min(1).max(40),
+  resultVersion: z.string().trim().min(1).max(80),
+});
+
+export const jobDescriptionDraftStatusSchema = z.enum([
+  'DRAFT',
+  'APPROVED',
+  'APPLIED',
+  'ARCHIVED',
+]);
+
+export const jobDescriptionTemplateScopeSchema = z.enum([
+  'SYSTEM',
+  'ORGANISATION',
+]);
+
+export const jobDescriptionDraftContentSchema = z.object({
+  title: z.string().trim().min(1).max(240).nullable().optional(),
+  summary: z.string().trim().min(1).max(4000),
+  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
+  requiredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
+  preferredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
+  screeningQuestions: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
+  assumptions: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  exclusionaryWordingWarnings: z.array(z.string().trim().min(1).max(400)).max(20).default([]),
+  missingFields: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  interviewFocus: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+});
+
+export const jobDescriptionDraftSnapshotSchema = z.object({
+  title: z.string().trim().min(1).max(240),
+  description: z.string().trim().min(1).max(4000),
+  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
+  requirements: z.array(z.string().trim().min(1).max(400)).max(60).default([]),
+  skillsRequired: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
+});
+
+export const jobDescriptionDraftCreateSchema = z.object({
+  jobId: z.string().trim().cuid(),
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  content: jobDescriptionDraftContentSchema,
+  sourceStateId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceExecutionId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceResultId: z.string().trim().cuid().optional().or(z.literal('')),
+  templateId: z.string().trim().cuid().optional().or(z.literal('')),
+  templateVersionId: z.string().trim().cuid().optional().or(z.literal('')),
+  approve: z.boolean().optional(),
+});
+
+export const jobDescriptionDraftUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  content: jobDescriptionDraftContentSchema.partial().optional(),
+  approve: z.boolean().optional(),
+  archive: z.boolean().optional(),
+});
+
+export const jobDescriptionDraftApplySchema = z.object({
+  applyTitle: z.boolean().optional(),
+  publishStatus: z.enum(['DRAFT', 'OPEN', 'ON_HOLD', 'CLOSED']).optional(),
+});
+
+export const jobDescriptionDraftParamsSchema = z.object({
+  draftId: z.string().trim().cuid(),
+});
+
+export const jobDescriptionTemplateParamsSchema = z.object({
+  templateId: z.string().trim().cuid(),
+});
+
+export const jobDescriptionTemplateCreateSchema = z.object({
+  key: z.string().trim().min(2).max(120).regex(/^[a-z0-9._-]+$/i),
+  name: z.string().trim().min(2).max(240),
+  description: z.string().trim().max(1000).optional().or(z.literal('')),
+  isActive: z.boolean().optional(),
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  content: jobDescriptionDraftContentSchema,
+});
+
+export const jobDescriptionTemplateVersionCreateSchema = z.object({
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  content: jobDescriptionDraftContentSchema,
+  promptKey: z.string().trim().min(1).max(120).optional().or(z.literal('')),
+  promptVersion: z.string().trim().min(1).max(40).optional().or(z.literal('')),
+  sourceResultId: z.string().trim().cuid().optional().or(z.literal('')),
+  activate: z.boolean().optional(),
+});
+
+export const jobDescriptionTemplateActivateSchema = z.object({
+  versionId: z.string().trim().cuid().optional().or(z.literal('')),
+  active: z.boolean().optional(),
+});
+
+export const jobDescriptionDraftResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  jobId: z.string().trim().min(1).max(120),
+  versionGroupId: z.string().trim().min(1).max(120),
+  version: z.number().int().min(1),
+  previousVersionId: z.string().trim().min(1).max(120).nullable(),
+  status: jobDescriptionDraftStatusSchema,
+  isLatestVersion: z.boolean(),
+  title: z.string().trim().min(1).max(240).nullable(),
+  content: jobDescriptionDraftContentSchema,
+  jobSnapshot: jobDescriptionDraftSnapshotSchema.nullable(),
+  sourceStateId: z.string().trim().min(1).max(120).nullable(),
+  sourceExecutionId: z.string().trim().min(1).max(120).nullable(),
+  sourceResultId: z.string().trim().min(1).max(120).nullable(),
+  templateId: z.string().trim().min(1).max(120).nullable(),
+  templateVersionId: z.string().trim().min(1).max(120).nullable(),
+  approvedAt: z.string().datetime().nullable(),
+  approvedByUserId: z.string().trim().min(1).max(120).nullable(),
+  appliedAt: z.string().datetime().nullable(),
+  appliedByUserId: z.string().trim().min(1).max(120).nullable(),
+  createdByUserId: z.string().trim().min(1).max(120).nullable(),
+  updatedByUserId: z.string().trim().min(1).max(120).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const jobDescriptionTemplateVersionResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  templateId: z.string().trim().min(1).max(120),
+  version: z.number().int().min(1),
+  title: z.string().trim().min(1).max(240).nullable(),
+  content: jobDescriptionDraftContentSchema,
+  schemaVersion: z.string().trim().min(1).max(40),
+  promptKey: z.string().trim().min(1).max(120).nullable(),
+  promptVersion: z.string().trim().min(1).max(40).nullable(),
+  sourceResultId: z.string().trim().min(1).max(120).nullable(),
+  createdByUserId: z.string().trim().min(1).max(120).nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const jobDescriptionTemplateResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120).nullable(),
+  scope: jobDescriptionTemplateScopeSchema,
+  key: z.string().trim().min(2).max(120),
+  name: z.string().trim().min(2).max(240),
+  description: z.string().trim().max(1000).nullable(),
+  isActive: z.boolean(),
+  activeVersionId: z.string().trim().min(1).max(120).nullable(),
+  activatedAt: z.string().datetime().nullable(),
+  activatedByUserId: z.string().trim().min(1).max(120).nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  versions: z.array(jobDescriptionTemplateVersionResponseSchema).optional(),
+});
+
+export const jobDescriptionHistoryResponseSchema = z.object({
+  jobId: z.string().trim().min(1).max(120),
+  state: jobDescriptionStatusResponseSchema.nullable(),
+  drafts: z.array(jobDescriptionDraftResponseSchema),
+  generations: z.array(z.object({
+    resultId: z.string().trim().min(1).max(120),
+    executionId: z.string().trim().min(1).max(120),
+    status: z.string().trim().min(1).max(60),
+    generatedAt: z.string().datetime(),
+    promptVersion: z.string().trim().min(1).max(40),
+    resultVersion: z.string().trim().min(1).max(80),
+    sourceFingerprint: z.string().trim().min(1).max(200),
+  })),
 });
 
 export const naturalLanguageTalentSearchSchema = z.object({
