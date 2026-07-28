@@ -2,6 +2,7 @@ const envFlagMap = {
   bulkResumeImport: 'NEXT_PUBLIC_FEATURE_BULK_RESUME_IMPORT',
   aiResumeParsing: 'NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING',
   candidateIntelligence: 'NEXT_PUBLIC_FEATURE_CANDIDATE_INTELLIGENCE',
+  aiJobDescription: 'NEXT_PUBLIC_FEATURE_AI_JOB_DESCRIPTION',
 };
 
 function normalizeBoolean(value, fallback = false) {
@@ -19,6 +20,7 @@ export function getFeatureFlags() {
     bulkResumeImport: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_BULK_RESUME_IMPORT, false),
     aiResumeParsing: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING, false),
     candidateIntelligence: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_CANDIDATE_INTELLIGENCE, false),
+    aiJobDescription: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_AI_JOB_DESCRIPTION, false),
   };
 }
 

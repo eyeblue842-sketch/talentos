@@ -1,12 +1,27 @@
 import Link from 'next/link';
+import { RecruiterAiJobDescriptionPanel } from '@/components/sections/recruiter-ai-job-description-panel';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { ScreeningQuestionBuilder } from '@/components/sections/screening-question-builder';
-import { RecruiterJobIntelligencePanel } from '@/components/sections/recruiter-job-intelligence-panel';
+import { Tabs } from '@/components/ui/tabs';
 import { recruiterNav } from '@/lib/navigation';
-import { getApprovedRequisitions, getCurrentOrganisation, getOrganisationMembers, getRecruiterJob, getRecruiterScreeningTemplates } from '@/lib/api';
+import {
+  getApprovedRequisitions,
+  getCurrentOrganisation,
+  getJobDescriptionDrafts,
+  getJobDescriptionHistory,
+  getJobDescriptionIntelligence,
+  getJobDescriptionIntelligenceStatus,
+  getJobDescriptionTemplates,
+  getOrganisationMembers,
+  getRecruiterJob,
+  getRecruiterScreeningTemplates,
+} from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
+import { hasUserPermission } from '@/lib/enterprise-permissions';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import {
   addJobQuestionAction,
   addJobQuestionFromLibraryAction,
@@ -36,21 +51,48 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   let members = [];
   let requisitions = [];
   let templates = [];
+  let currentUser = null;
   let error = '';
+  let initialJobDescription = null;
+  let initialJobDescriptionStatus = null;
+  let initialJobDescriptionDrafts = [];
+  let initialJobDescriptionTemplates = [];
+  let initialJobDescriptionHistory = null;
+
+  const aiJobDescriptionEnabled = isFeatureEnabled('aiJobDescription');
 
   try {
-    [organisation, job, members, requisitions, templates] = await Promise.all([
+    [organisation, job, members, requisitions, templates, currentUser] = await Promise.all([
       getCurrentOrganisation(),
       getRecruiterJob(jobId),
       getOrganisationMembers(),
       getApprovedRequisitions(),
       getRecruiterScreeningTemplates(),
+      getCurrentUser(),
     ]);
   } catch (caught) {
     error = caught.message;
   }
 
   const assignees = members.filter((member) => ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(member.role));
+  const canReadAiJobDescription = hasUserPermission(currentUser, 'intelligence.job.read')
+    || hasUserPermission(currentUser, 'intelligence.job.generate');
+  const canGenerateAiJobDescription = hasUserPermission(currentUser, 'intelligence.job.generate');
+
+  if (job && aiJobDescriptionEnabled && canReadAiJobDescription) {
+    const [jobDescriptionResult, jobDescriptionStatus, jobDescriptionDrafts, jobDescriptionTemplates, jobDescriptionHistory] = await Promise.all([
+      getJobDescriptionIntelligence(job.id).catch(() => null),
+      getJobDescriptionIntelligenceStatus(job.id).catch(() => null),
+      getJobDescriptionDrafts(job.id).catch(() => []),
+      getJobDescriptionTemplates().catch(() => []),
+      getJobDescriptionHistory(job.id).catch(() => null),
+    ]);
+    initialJobDescription = jobDescriptionResult;
+    initialJobDescriptionStatus = jobDescriptionStatus;
+    initialJobDescriptionDrafts = jobDescriptionDrafts;
+    initialJobDescriptionTemplates = jobDescriptionTemplates;
+    initialJobDescriptionHistory = jobDescriptionHistory;
+  }
 
   return (
     <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
@@ -176,18 +218,46 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
               </Card>
             </div>
 
-            <ScreeningQuestionBuilder
-              job={job}
-              templates={templates}
-              addJobQuestionAction={addJobQuestionAction}
-              addJobQuestionFromLibraryAction={addJobQuestionFromLibraryAction}
-              createScreeningTemplateAction={createScreeningTemplateAction}
-              deleteJobQuestionAction={deleteJobQuestionAction}
-              duplicateJobQuestionAction={duplicateJobQuestionAction}
-              reorderJobQuestionsAction={reorderJobQuestionsAction}
-              updateJobQuestionAction={updateJobQuestionAction}
+            <Tabs
+              defaultValue="screening"
+              items={[
+                {
+                  value: 'screening',
+                  label: 'Screening Setup',
+                  content: (
+                    <ScreeningQuestionBuilder
+                      job={job}
+                      templates={templates}
+                      addJobQuestionAction={addJobQuestionAction}
+                      addJobQuestionFromLibraryAction={addJobQuestionFromLibraryAction}
+                      createScreeningTemplateAction={createScreeningTemplateAction}
+                      deleteJobQuestionAction={deleteJobQuestionAction}
+                      duplicateJobQuestionAction={duplicateJobQuestionAction}
+                      reorderJobQuestionsAction={reorderJobQuestionsAction}
+                      updateJobQuestionAction={updateJobQuestionAction}
+                    />
+                  ),
+                },
+                ...(aiJobDescriptionEnabled && canReadAiJobDescription ? [{
+                  value: 'ai-job-description',
+                  label: 'AI Job Description',
+                  content: (
+                    <RecruiterAiJobDescriptionPanel
+                      jobId={job.id}
+                      initialResult={initialJobDescription}
+                      initialStatus={initialJobDescriptionStatus}
+                      initialDrafts={initialJobDescriptionDrafts}
+                      initialTemplates={initialJobDescriptionTemplates}
+                      initialHistory={initialJobDescriptionHistory}
+                      initialLiveJob={job}
+                      featureEnabled={aiJobDescriptionEnabled}
+                      canRead={canReadAiJobDescription}
+                      canGenerate={canGenerateAiJobDescription}
+                    />
+                  ),
+                }] : []),
+              ]}
             />
-            <RecruiterJobIntelligencePanel jobId={job.id} initialDescription={job.description} initialSkills={job.skillsRequired} />
           </>
         ) : null}
     </WorkspaceShell>

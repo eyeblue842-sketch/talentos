@@ -1063,6 +1063,37 @@ export async function getJobIntelligence(payload) {
   return response.data;
 }
 
+export async function getJobDescriptionIntelligence(jobId, filters = {}) {
+  const token = await requireToken();
+  const query = buildQueryString(filters);
+  const response = await requestBackend(`/intelligence/jobs/${jobId}${query}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getJobDescriptionIntelligenceStatus(jobId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/status`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getJobDescriptionDrafts(jobId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/drafts`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getJobDescriptionHistory(jobId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/history`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getJobDescriptionTemplates() {
+  const token = await requireToken();
+  const response = await requestBackend('/intelligence/job-description-templates', { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function getInterviewIntelligence(payload) {
   const token = await requireToken();
   const response = await requestBackend('/intelligence/interview', {
