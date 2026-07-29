@@ -69,6 +69,7 @@ enum IntelligenceFeature {
   JOB_DESCRIPTION
   INTERVIEW_ASSISTANT
   TALENT_SEARCH
+  SEMANTIC_SEARCH
   ANALYTICS_INSIGHT
 }
 
@@ -617,6 +618,23 @@ enum RecruiterSavedSearchType {
   RECENT
 }
 
+enum SemanticSearchMode {
+  KEYWORD
+  BOOLEAN
+  SEMANTIC
+  HYBRID
+  SIMILAR_CANDIDATE
+  SIMILAR_JOB
+}
+
+enum SemanticSearchExecutionStatus {
+  PENDING
+  READY
+  FAILED
+  PARTIAL
+  DISABLED
+}
+
 model User {
   id                         String                      @id @default(cuid())
   email                      String                      @unique
@@ -695,6 +713,9 @@ model User {
   createdMatchScoringProfileVersions MatchScoringProfileVersion[] @relation("MatchScoringProfileVersionCreatedBy")
   createdRecruiterMatchOverrides RecruiterMatchOverride[]  @relation("RecruiterMatchOverrideCreatedBy")
   triggeredRankingSnapshots     CandidateRankingSnapshot[] @relation("CandidateRankingSnapshotTriggeredBy")
+  semanticSearchQueries         SemanticSearchQuery[]      @relation("SemanticSearchQueryCreatedBy")
+  semanticSearchExecutions      SemanticSearchExecution[]  @relation("SemanticSearchExecutionCreatedBy")
+  ownedSavedCandidateSearches   SavedCandidateSearch[]     @relation("SavedCandidateSearchOwner")
 }
 
 model Organisation {
@@ -767,6 +788,9 @@ model Organisation {
   resumeImportItems          ResumeImportItem[]
   jobDescriptionDrafts       JobDescriptionDraft[]
   jobDescriptionTemplates    JobDescriptionTemplate[]
+  semanticSearchQueries      SemanticSearchQuery[]
+  semanticSearchExecutions   SemanticSearchExecution[]
+  savedCandidateSearches     SavedCandidateSearch[]
 
   @@index([status])
 }
@@ -1209,6 +1233,8 @@ model CandidateProfile {
   candidateJobMatchStates     CandidateJobMatchState[]
   recruiterMatchOverrides     RecruiterMatchOverride[]
   candidateRankingEntries     CandidateRankingEntry[]
+  sourceSemanticSearchQueries SemanticSearchQuery[]  @relation("SemanticSearchSourceCandidate")
+  sourceSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchSourceCandidate")
 
   @@index([organisationId, profileStatus, createdAt])
   @@index([organisationId, source, createdAt])
@@ -1660,6 +1686,10 @@ model Job {
   candidateRankingEntries CandidateRankingEntry[]
   recruiterMatchOverrides RecruiterMatchOverride[]
   jobDescriptionDrafts  JobDescriptionDraft[]
+  sourceSemanticSearchQueries SemanticSearchQuery[]   @relation("SemanticSearchSourceJob")
+  jobContextSemanticSearchQueries SemanticSearchQuery[] @relation("SemanticSearchJobContext")
+  sourceSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchSourceJob")
+  jobContextSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchJobContext")
   applications          Application[]
   savedJobs             SavedJob[]
   candidateViews        CandidateJobView[]
@@ -2124,6 +2154,90 @@ model RecruiterSavedSearch {
 
   @@index([organisationId, type, updatedAt])
   @@index([recruiterId, type, updatedAt])
+}
+
+model SemanticSearchQuery {
+  id                String             @id @default(cuid())
+  organisationId    String
+  createdByUserId   String?
+  rawQuery          String?
+  normalizedQuery   String?
+  searchMode        SemanticSearchMode
+  parsedQueryJson   Json?
+  intentJson        Json?
+  filtersJson       Json?
+  expansionJson     Json?
+  sourceCandidateId String?
+  sourceJobId       String?
+  jobContextId      String?
+  schemaVersion     String
+  parserVersion     String
+  expansionVersion  String
+  createdAt         DateTime           @default(now())
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByUser     User?              @relation("SemanticSearchQueryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  sourceCandidate   CandidateProfile?  @relation("SemanticSearchSourceCandidate", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
+  sourceJob         Job?               @relation("SemanticSearchSourceJob", fields: [sourceJobId], references: [id], onDelete: SetNull)
+  jobContext        Job?               @relation("SemanticSearchJobContext", fields: [jobContextId], references: [id], onDelete: SetNull)
+  executions        SemanticSearchExecution[]
+
+  @@index([organisationId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([searchMode, createdAt])
+  @@index([sourceCandidateId, createdAt])
+  @@index([sourceJobId, createdAt])
+}
+
+model SemanticSearchExecution {
+  id                       String                        @id @default(cuid())
+  organisationId           String
+  queryId                  String
+  createdByUserId          String?
+  status                   SemanticSearchExecutionStatus @default(PENDING)
+  candidatePoolFingerprint String?
+  planJson                 Json?
+  resultSummaryJson        Json?
+  resultCount              Int                           @default(0)
+  executionTimeMs          Int                           @default(0)
+  warningCount             Int                           @default(0)
+  errorCode                String?
+  errorMessage             String?
+  createdAt                DateTime                      @default(now())
+  completedAt              DateTime?
+  organisation             Organisation                  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  query                    SemanticSearchQuery           @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  createdByUser            User?                         @relation("SemanticSearchExecutionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, status, createdAt])
+  @@index([queryId, createdAt])
+  @@index([createdByUserId, createdAt])
+}
+
+model SavedCandidateSearch {
+  id                String             @id @default(cuid())
+  organisationId    String
+  ownerUserId       String
+  name              String
+  description       String?
+  rawQuery          String?
+  searchMode        SemanticSearchMode
+  filtersJson       Json
+  sourceCandidateId String?
+  sourceJobId       String?
+  jobContextId      String?
+  isShared          Boolean            @default(false)
+  isActive          Boolean            @default(true)
+  lastExecutedAt    DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  ownerUser         User               @relation("SavedCandidateSearchOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  sourceCandidate   CandidateProfile?  @relation("SavedCandidateSearchSourceCandidate", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
+  sourceJob         Job?               @relation("SavedCandidateSearchSourceJob", fields: [sourceJobId], references: [id], onDelete: SetNull)
+  jobContext        Job?               @relation("SavedCandidateSearchJobContext", fields: [jobContextId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, ownerUserId, updatedAt])
+  @@index([organisationId, isShared, isActive, updatedAt])
 }
 
 model TalentPool {

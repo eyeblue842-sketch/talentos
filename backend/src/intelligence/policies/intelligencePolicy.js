@@ -59,6 +59,12 @@ export const intelligenceFeatureConfig = {
     permissionGenerate: 'intelligence.search.use',
     ttlHours: 12,
   },
+  SEMANTIC_SEARCH: {
+    flag: 'intelligence.semantic_search',
+    permissionRead: 'intelligence.search.read',
+    permissionGenerate: 'intelligence.search.execute',
+    ttlHours: 12,
+  },
   ANALYTICS_INSIGHT: {
     flag: 'intelligence.analytics_insights',
     permissionRead: 'intelligence.analytics.use',

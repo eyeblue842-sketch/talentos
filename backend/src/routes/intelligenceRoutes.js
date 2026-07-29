@@ -3,6 +3,10 @@ import { auth } from '../middleware/auth.js';
 import {
   getCandidateProfileIntelligence,
   getCandidateProfileIntelligenceStatus,
+  getSavedSemanticSearch,
+  getSavedSemanticSearches,
+  getSemanticSearchHistory,
+  getSemanticSearchHistoryItem,
   getCandidateJobMatchIntelligence,
   getCandidateJobMatchIntelligenceStatus,
   getCandidateJobMatchOverrideList,
@@ -32,6 +36,8 @@ import {
   postMatchScoringProfileVersion,
   postCandidateProfileIntelligenceRegenerate,
   patchJobDescriptionDraft,
+  patchSavedSemanticSearch,
+  postArchiveSavedSemanticSearch,
   postJobDescriptionDraft,
   postJobDescriptionDraftApply,
   postJobDescriptionIntelligenceRegenerate,
@@ -42,6 +48,14 @@ import {
   postInterviewIntelligence,
   postJobIntelligence,
   postResumeIntelligence,
+  postSavedSemanticSearch,
+  postSemanticSearch,
+  postSemanticSearchSuggestions,
+  postSemanticSearchIntent,
+  postSemanticSearchPreview,
+  postSimilarCandidateSearch,
+  postSimilarJobSearch,
+  postExecuteSavedSemanticSearch,
   postTalentSearchParse,
 } from '../controllers/intelligenceController.js';
 
@@ -67,6 +81,10 @@ intelligenceRouter.get('/job-description-templates', getJobDescriptionTemplates)
 intelligenceRouter.get('/job-description-templates/:templateId', getJobDescriptionTemplateDetail);
 intelligenceRouter.get('/match-scoring-profiles', getMatchScoringProfileList);
 intelligenceRouter.get('/match-scoring-profiles/:profileId', getMatchScoringProfileDetail);
+intelligenceRouter.get('/search/history', getSemanticSearchHistory);
+intelligenceRouter.get('/search/history/:queryId', getSemanticSearchHistoryItem);
+intelligenceRouter.get('/saved-searches', getSavedSemanticSearches);
+intelligenceRouter.get('/saved-searches/:savedSearchId', getSavedSemanticSearch);
 intelligenceRouter.post('/feedback', postIntelligenceFeedback);
 intelligenceRouter.post('/candidates/:candidateId/regenerate', postCandidateProfileIntelligenceRegenerate);
 intelligenceRouter.post('/jobs/:jobId/candidates/:candidateId/match/override', postCandidateJobMatchOverride);
@@ -89,4 +107,14 @@ intelligenceRouter.post('/match/batch', postBatchCandidateMatch);
 intelligenceRouter.post('/job', postJobIntelligence);
 intelligenceRouter.post('/interview', postInterviewIntelligence);
 intelligenceRouter.post('/search/parse', postTalentSearchParse);
+intelligenceRouter.post('/search', postSemanticSearch);
+intelligenceRouter.post('/search/preview', postSemanticSearchPreview);
+intelligenceRouter.post('/search/intent', postSemanticSearchIntent);
+intelligenceRouter.post('/search/suggestions', postSemanticSearchSuggestions);
+intelligenceRouter.post('/search/similar-candidate', postSimilarCandidateSearch);
+intelligenceRouter.post('/search/similar-job', postSimilarJobSearch);
+intelligenceRouter.post('/saved-searches', postSavedSemanticSearch);
+intelligenceRouter.patch('/saved-searches/:savedSearchId', patchSavedSemanticSearch);
+intelligenceRouter.post('/saved-searches/:savedSearchId/execute', postExecuteSavedSemanticSearch);
+intelligenceRouter.post('/saved-searches/:savedSearchId/archive', postArchiveSavedSemanticSearch);
 intelligenceRouter.post('/analytics/insight', postAnalyticsInsight);

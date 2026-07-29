@@ -7,6 +7,13 @@ const envFlagMap = {
   candidateRanking: 'NEXT_PUBLIC_FEATURE_CANDIDATE_RANKING',
   matchOverrides: 'NEXT_PUBLIC_FEATURE_MATCH_OVERRIDES',
   matchScoringProfiles: 'NEXT_PUBLIC_FEATURE_MATCH_SCORING_PROFILES',
+  semanticSearch: 'NEXT_PUBLIC_FEATURE_SEMANTIC_SEARCH',
+  semanticSearchExpansion: 'NEXT_PUBLIC_FEATURE_SEMANTIC_SEARCH_EXPANSION',
+  savedSearches: 'NEXT_PUBLIC_FEATURE_SAVED_SEARCHES',
+  searchHistory: 'NEXT_PUBLIC_FEATURE_SEARCH_HISTORY',
+  searchSuggestions: 'NEXT_PUBLIC_FEATURE_SEARCH_SUGGESTIONS',
+  similarCandidateSearch: 'NEXT_PUBLIC_FEATURE_SIMILAR_CANDIDATE_SEARCH',
+  similarJobSearch: 'NEXT_PUBLIC_FEATURE_SIMILAR_JOB_SEARCH',
 };
 
 function normalizeBoolean(value, fallback = false) {
@@ -29,6 +36,13 @@ export function getFeatureFlags() {
     candidateRanking: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_CANDIDATE_RANKING, false),
     matchOverrides: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_MATCH_OVERRIDES, false),
     matchScoringProfiles: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_MATCH_SCORING_PROFILES, false),
+    semanticSearch: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SEMANTIC_SEARCH, false),
+    semanticSearchExpansion: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SEMANTIC_SEARCH_EXPANSION, false),
+    savedSearches: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SAVED_SEARCHES, false),
+    searchHistory: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SEARCH_HISTORY, false),
+    searchSuggestions: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SEARCH_SUGGESTIONS, false),
+    similarCandidateSearch: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SIMILAR_CANDIDATE_SEARCH, false),
+    similarJobSearch: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SIMILAR_JOB_SEARCH, false),
   };
 }
 

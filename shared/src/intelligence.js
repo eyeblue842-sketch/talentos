@@ -21,6 +21,7 @@ export const intelligenceFeatureSchema = z.enum([
   'JOB_DESCRIPTION',
   'INTERVIEW_ASSISTANT',
   'TALENT_SEARCH',
+  'SEMANTIC_SEARCH',
   'ANALYTICS_INSIGHT',
 ]);
 
@@ -46,6 +47,12 @@ export const intelligencePermissionSchema = z.enum([
   'intelligence.candidate.generate',
   'intelligence.job.generate',
   'intelligence.interview.generate',
+  'intelligence.search.read',
+  'intelligence.search.execute',
+  'intelligence.search.history.read',
+  'intelligence.saved_search.read',
+  'intelligence.saved_search.manage',
+  'intelligence.saved_search.share',
   'intelligence.search.use',
   'intelligence.analytics.use',
   'intelligence.governance.read',
@@ -63,8 +70,392 @@ export const intelligenceFeatureFlagSchema = z.enum([
   'intelligence.job_description',
   'intelligence.interview_assistant',
   'intelligence.talent_search',
+  'intelligence.semantic_search',
+  'intelligence.semantic_search_expansion',
+  'intelligence.saved_searches',
+  'intelligence.search_history',
+  'intelligence.search_suggestions',
+  'intelligence.similar_candidate_search',
+  'intelligence.similar_job_search',
   'intelligence.analytics_insights',
 ]);
+
+export const semanticSearchModeSchema = z.enum([
+  'KEYWORD',
+  'BOOLEAN',
+  'SEMANTIC',
+  'HYBRID',
+  'SIMILAR_CANDIDATE',
+  'SIMILAR_JOB',
+]);
+
+export const semanticSearchExecutionStatusSchema = z.enum([
+  'PENDING',
+  'READY',
+  'FAILED',
+  'PARTIAL',
+  'DISABLED',
+]);
+
+export const semanticSearchExpansionRelationshipSchema = z.enum([
+  'ALIAS',
+  'RELATED',
+  'PARENT',
+  'CHILD',
+  'TRANSFERABLE',
+]);
+
+export const semanticSearchOperatorSchema = z.enum([
+  'AND',
+  'OR',
+  'NOT',
+]);
+
+export const semanticSearchBooleanAstNodeSchema = z.lazy(() => z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('TERM'),
+    value: z.string().trim().min(1).max(240),
+    quoted: z.boolean().default(false),
+  }),
+  z.object({
+    type: z.literal('NOT'),
+    child: semanticSearchBooleanAstNodeSchema,
+  }),
+  z.object({
+    type: z.literal('GROUP'),
+    children: z.array(semanticSearchBooleanAstNodeSchema).min(1).max(40),
+  }),
+  z.object({
+    type: z.literal('BINARY'),
+    operator: z.enum(['AND', 'OR']),
+    left: semanticSearchBooleanAstNodeSchema,
+    right: semanticSearchBooleanAstNodeSchema,
+  }),
+]));
+
+export const semanticSearchFilterSchema = z.object({
+  minExperience: z.number().min(0).max(80).nullable().optional(),
+  maxExperience: z.number().min(0).max(80).nullable().optional(),
+  location: z.string().trim().min(1).max(200).nullable().optional(),
+  workMode: z.string().trim().min(1).max(60).nullable().optional(),
+  employmentType: z.string().trim().min(1).max(60).nullable().optional(),
+  noticePeriodDaysMax: z.number().int().min(0).max(365).nullable().optional(),
+  salaryMin: z.number().min(0).max(10000000).nullable().optional(),
+  salaryMax: z.number().min(0).max(10000000).nullable().optional(),
+  role: z.string().trim().min(1).max(200).nullable().optional(),
+  seniority: z.string().trim().min(1).max(120).nullable().optional(),
+  domain: z.string().trim().min(1).max(200).nullable().optional(),
+  currentEmployer: z.string().trim().min(1).max(200).nullable().optional(),
+  previousEmployer: z.string().trim().min(1).max(200).nullable().optional(),
+  education: z.string().trim().min(1).max(200).nullable().optional(),
+  certifications: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
+  skills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
+  requiredSkills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
+  optionalSkills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
+  includeTerms: z.array(z.string().trim().min(1).max(200)).max(40).default([]),
+  excludeTerms: z.array(z.string().trim().min(1).max(200)).max(40).default([]),
+  exactPhrases: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+});
+
+const semanticSearchRequestBaseSchema = z.object({
+  query: z.string().trim().max(1000).optional().or(z.literal('')),
+  jobId: z.string().trim().cuid().optional().or(z.literal('')),
+  requisitionId: z.string().trim().cuid().optional().or(z.literal('')),
+  similarCandidateId: z.string().trim().cuid().optional().or(z.literal('')),
+  similarJobId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceCandidateId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceJobId: z.string().trim().cuid().optional().or(z.literal('')),
+  mode: semanticSearchModeSchema.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(12),
+  includeMatch: z.boolean().optional(),
+  expansionEnabled: z.boolean().optional(),
+  transferableSkillsEnabled: z.boolean().optional(),
+  filters: semanticSearchFilterSchema.partial().optional(),
+});
+
+export const semanticSearchRequestSchema = semanticSearchRequestBaseSchema.superRefine((value, ctx) => {
+  if (
+    !String(value.query || '').trim()
+    && !value.similarCandidateId
+    && !value.similarJobId
+    && !value.sourceCandidateId
+    && !value.sourceJobId
+    && !value.jobId
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['query'],
+      message: 'Provide a query or a supported search context.',
+    });
+  }
+});
+
+export const semanticSearchParseRequestSchema = semanticSearchRequestBaseSchema.pick({
+  query: true,
+  jobId: true,
+  requisitionId: true,
+  similarCandidateId: true,
+  similarJobId: true,
+  sourceCandidateId: true,
+  sourceJobId: true,
+  mode: true,
+  expansionEnabled: true,
+  transferableSkillsEnabled: true,
+  filters: true,
+});
+
+export const semanticSearchIntentRequestSchema = semanticSearchParseRequestSchema;
+
+export const semanticSearchMatchedTermSchema = z.object({
+  term: z.string().trim().min(1).max(160),
+  type: z.enum(['SKILL', 'ROLE', 'LOCATION', 'KEYWORD', 'FILTER', 'PHRASE']),
+});
+
+export const semanticSearchExpansionItemSchema = z.object({
+  originalTerm: z.string().trim().min(1).max(160),
+  normalizedTerm: z.string().trim().min(1).max(160),
+  expandedTerm: z.string().trim().min(1).max(160),
+  relationshipType: semanticSearchExpansionRelationshipSchema,
+  confidence: z.number().min(0).max(1),
+  source: z.string().trim().min(1).max(120),
+  version: z.string().trim().min(1).max(40),
+});
+
+export const semanticSearchParseResponseSchema = z.object({
+  originalQuery: z.string().trim().max(1000),
+  normalizedQuery: z.string().trim().max(1000),
+  mode: semanticSearchModeSchema,
+  tokens: z.array(z.string().trim().min(1).max(160)).max(200),
+  quotedPhrases: z.array(z.string().trim().min(1).max(240)).max(40),
+  operators: z.array(semanticSearchOperatorSchema).max(40),
+  terms: z.array(z.string().trim().min(1).max(240)).max(120),
+  booleanAst: semanticSearchBooleanAstNodeSchema.nullable(),
+  canonicalKeyword: z.string().trim().max(1000),
+  filters: semanticSearchFilterSchema,
+  expansionEnabled: z.boolean().optional(),
+  transferableSkillsEnabled: z.boolean().optional(),
+  warnings: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+});
+
+export const semanticSearchIntentResponseSchema = z.object({
+  mode: semanticSearchModeSchema,
+  semanticEnabled: z.boolean(),
+  keyword: z.string().trim().max(1000),
+  filters: semanticSearchFilterSchema,
+  role: z.string().trim().max(200).nullable(),
+  seniority: z.string().trim().max(120).nullable(),
+  years: z.object({
+    min: z.number().min(0).max(80).nullable(),
+    max: z.number().min(0).max(80).nullable(),
+  }),
+  structuredFilters: z.array(z.string().trim().min(1).max(240)).max(40).default([]),
+  warnings: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+});
+
+export const semanticSearchPlanSchema = z.object({
+  searchMode: semanticSearchModeSchema,
+  retrievalStrategy: z.enum(['DATABASE', 'ELASTICSEARCH', 'HYBRID_FALLBACK']),
+  scoringMode: z.enum(['RETRIEVAL_ONLY', 'RETRIEVAL_PLUS_MATCH']),
+  semanticEnabled: z.boolean(),
+  expansionEnabled: z.boolean(),
+  transferableSkillsEnabled: z.boolean(),
+  jobContext: z.object({
+    jobId: z.string().trim().min(1).max(120).nullable(),
+    similarJobId: z.string().trim().min(1).max(120).nullable(),
+    similarCandidateId: z.string().trim().min(1).max(120).nullable(),
+  }),
+  filters: semanticSearchFilterSchema,
+  pagination: z.object({
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1).max(50),
+  }),
+});
+
+export const semanticSearchResultItemSchema = z.object({
+  candidate: z.object({
+    id: z.string().trim().min(1).max(120),
+    fullName: z.string().trim().min(1).max(240).nullable().optional(),
+    headline: z.string().trim().min(1).max(240).nullable().optional(),
+    location: z.string().trim().min(1).max(200).nullable().optional(),
+    totalExperience: z.number().nullable().optional(),
+    skills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
+    currentCompany: z.string().trim().min(1).max(240).nullable().optional(),
+    matchScore: z.number().int().min(0).max(100).nullable().optional(),
+  }),
+  retrieval: z.object({
+    score: z.number().min(0).max(100),
+    rank: z.number().int().min(1).nullable().optional(),
+    reasons: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+    matchedTerms: z.array(semanticSearchMatchedTermSchema).max(80).default([]),
+    expandedTerms: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
+    transferableTerms: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
+    warnings: z.array(z.string().trim().min(1).max(240)).max(10).default([]),
+    sourceChannels: z.array(z.enum(['STRUCTURED_FILTER', 'KEYWORD', 'NORMALIZED_SKILL', 'RELATED_SKILL', 'TRANSFERABLE_SKILL', 'CANDIDATE_INTELLIGENCE', 'SIMILARITY_CONTEXT'])).max(12).default([]),
+  }),
+  match: z.object({
+    included: z.boolean(),
+    state: z.string().trim().min(1).max(80).nullable(),
+    matchStateId: z.string().trim().min(1).max(120).nullable(),
+    matchResultId: z.string().trim().min(1).max(120).nullable(),
+    generatedScore: z.number().int().min(0).max(100).nullable(),
+    effectiveScore: z.number().int().min(0).max(100).nullable(),
+    confidence: z.object({
+      score: z.number().min(0).max(1).nullable(),
+      label: z.enum(['HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']).nullable(),
+    }),
+    recommendation: z.enum(['STRONG_MATCH', 'MATCH', 'PARTIAL_MATCH', 'LIMITED_MATCH', 'REVIEW_REQUIRED']).nullable(),
+    stale: z.boolean(),
+  }).optional(),
+  metadata: z.object({
+    queryId: z.string().trim().min(1).max(120).nullable(),
+    executionId: z.string().trim().min(1).max(120).nullable(),
+    searchMode: semanticSearchModeSchema,
+    generatedAt: z.string().datetime().nullable(),
+  }),
+  retrievalScore: z.number().min(0).max(100),
+  retrievalReasons: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+  matchedTerms: z.array(semanticSearchMatchedTermSchema).max(80).default([]),
+  expandedTerms: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
+  transferableTerms: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
+  warnings: z.array(z.string().trim().min(1).max(240)).max(10).default([]),
+  matchResult: z.record(z.any()).nullable().optional(),
+});
+
+export const semanticSearchResponseSchema = z.object({
+  query: semanticSearchParseResponseSchema,
+  intent: semanticSearchIntentResponseSchema,
+  plan: semanticSearchPlanSchema,
+  expansions: z.array(semanticSearchExpansionItemSchema).max(200).default([]),
+  items: z.array(semanticSearchResultItemSchema),
+  execution: z.object({
+    queryId: z.string().trim().min(1).max(120).nullable(),
+    executionId: z.string().trim().min(1).max(120).nullable(),
+    status: semanticSearchExecutionStatusSchema,
+    generatedAt: z.string().datetime().nullable(),
+    completedAt: z.string().datetime().nullable(),
+    resultCount: z.number().int().min(0),
+    executionTimeMs: z.number().int().min(0),
+    warningCount: z.number().int().min(0),
+  }).optional(),
+  meta: z.object({
+    total: z.number().int().min(0),
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1).max(50),
+    pageCount: z.number().int().min(1),
+    searchMode: z.string().trim().min(1).max(60),
+    warning: z.string().trim().min(1).max(240).nullable(),
+  }),
+  warnings: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+});
+
+export const semanticSearchSuggestionRequestSchema = z.object({
+  query: z.string().trim().max(1000).optional().or(z.literal('')),
+  jobId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceCandidateId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceJobId: z.string().trim().cuid().optional().or(z.literal('')),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+});
+
+export const semanticSearchSuggestionResponseSchema = z.object({
+  suggestions: z.array(z.object({
+    text: z.string().trim().min(1).max(240),
+    reason: z.string().trim().min(1).max(240),
+    source: z.enum(['QUERY', 'EXPANSION', 'RECENT_SEARCH', 'SAVED_SEARCH', 'JOB_CONTEXT', 'CANDIDATE_CONTEXT']),
+  })).max(20),
+});
+
+export const semanticSearchHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+export const semanticSearchHistoryParamsSchema = z.object({
+  queryId: z.string().trim().cuid(),
+});
+
+export const semanticSearchExecutionResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  queryId: z.string().trim().min(1).max(120),
+  status: semanticSearchExecutionStatusSchema,
+  candidatePoolFingerprint: z.string().trim().max(200).nullable(),
+  planJson: z.record(z.any()).nullable(),
+  resultSummaryJson: z.record(z.any()).nullable(),
+  resultCount: z.number().int().min(0),
+  executionTimeMs: z.number().int().min(0),
+  warningCount: z.number().int().min(0),
+  errorCode: z.string().trim().min(1).max(120).nullable(),
+  errorMessage: z.string().trim().min(1).max(1000).nullable(),
+  createdAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+});
+
+export const semanticSearchHistoryItemSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  createdByUserId: z.string().trim().min(1).max(120).nullable(),
+  rawQuery: z.string().trim().max(1000).nullable(),
+  normalizedQuery: z.string().trim().max(1000).nullable(),
+  searchMode: semanticSearchModeSchema,
+  sourceCandidateId: z.string().trim().min(1).max(120).nullable(),
+  sourceJobId: z.string().trim().min(1).max(120).nullable(),
+  jobContextId: z.string().trim().min(1).max(120).nullable(),
+  createdAt: z.string().datetime(),
+  latestExecution: semanticSearchExecutionResponseSchema.nullable().optional(),
+});
+
+export const semanticSearchHistoryResponseSchema = z.object({
+  items: z.array(semanticSearchHistoryItemSchema),
+  meta: z.object({
+    total: z.number().int().min(0),
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1),
+    pageCount: z.number().int().min(1),
+  }),
+});
+
+export const savedCandidateSearchParamsSchema = z.object({
+  savedSearchId: z.string().trim().cuid(),
+});
+
+export const savedCandidateSearchCreateSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(500).optional().or(z.literal('')),
+  rawQuery: z.string().trim().max(1000).optional().or(z.literal('')),
+  searchMode: semanticSearchModeSchema,
+  filtersJson: z.record(z.any()).default({}),
+  sourceCandidateId: z.string().trim().cuid().optional().or(z.literal('')),
+  sourceJobId: z.string().trim().cuid().optional().or(z.literal('')),
+  jobContextId: z.string().trim().cuid().optional().or(z.literal('')),
+  isShared: z.boolean().optional(),
+});
+
+export const savedCandidateSearchUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  description: z.string().trim().max(500).optional().or(z.literal('')),
+  isShared: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const savedCandidateSearchResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  ownerUserId: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(500).nullable(),
+  rawQuery: z.string().trim().max(1000).nullable(),
+  searchMode: semanticSearchModeSchema,
+  filtersJson: z.record(z.any()),
+  sourceCandidateId: z.string().trim().min(1).max(120).nullable(),
+  sourceJobId: z.string().trim().min(1).max(120).nullable(),
+  jobContextId: z.string().trim().min(1).max(120).nullable(),
+  isShared: z.boolean(),
+  isActive: z.boolean(),
+  lastExecutedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
 
 export const candidateIntelligenceKindSchema = z.enum([
   'PROFILE_OVERVIEW',
