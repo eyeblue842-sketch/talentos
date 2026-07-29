@@ -12,6 +12,35 @@ import { requireOrganisationContext, requireOrganisationRole } from './organisat
 
 const recruiterReadableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
 const resumeSearchFallbackWarning = 'Resume Search is using the standard database fallback while the search index is unavailable.';
+const resumeSearchCandidateSelect = {
+  id: true,
+  fullName: true,
+  headline: true,
+  currentTitle: true,
+  location: true,
+  totalExperience: true,
+  availability: true,
+  skills: true,
+  summary: true,
+  currentCtcLpa: true,
+  expectedCtcLpa: true,
+  noticePeriodDays: true,
+  preferredLocations: true,
+  preferredIndustries: true,
+  willingToRelocate: true,
+  workAuthorization: true,
+  lastActiveAt: true,
+  updatedAt: true,
+  resumeUrl: true,
+  latestResumeAssetId: true,
+  resumeBuilder: {
+    select: {
+      education: true,
+      experience: true,
+      completedScore: true,
+    },
+  },
+};
 
 function normalizeString(value) {
   if (value == null) return '';
@@ -371,13 +400,13 @@ export async function __searchCandidatesWithAdapters(
 
     return candidateProfileDelegate.findMany({
       where: { id: { in: candidateIds } },
-      include: { resumeBuilder: true },
+      select: resumeSearchCandidateSelect,
     });
   }
 
   return candidateProfileDelegate.findMany({
     where: buildDbWhere(filters),
-    include: { resumeBuilder: true },
+    select: resumeSearchCandidateSelect,
     orderBy: { updatedAt: 'desc' },
   });
 }
@@ -389,7 +418,7 @@ async function getCandidateSourceRows(filters = {}, adapters = {}) {
   if (!isElasticsearchEnabled() || !elasticClient) {
     const rows = await candidateProfileDelegate.findMany({
       where: buildDbWhere(filters),
-      include: { resumeBuilder: true },
+      select: resumeSearchCandidateSelect,
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -410,7 +439,7 @@ async function getCandidateSourceRows(filters = {}, adapters = {}) {
   } catch {
     const rows = await candidateProfileDelegate.findMany({
       where: buildDbWhere(filters),
-      include: { resumeBuilder: true },
+      select: resumeSearchCandidateSelect,
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -458,12 +487,12 @@ async function getCandidateRowsForSearch(filters = {}, organisationId) {
         id: { in: candidateIds },
         ...buildDbWhere(filters),
       },
-      include: {
-        user: true,
-        resumeBuilder: true,
+      select: {
+        ...resumeSearchCandidateSelect,
         applications: {
           select: {
             id: true,
+            candidateId: true,
             organisationId: true,
             currentStage: true,
             statusLabel: true,
@@ -493,6 +522,7 @@ async function getCandidateRowsForSearch(filters = {}, organisationId) {
       ? prisma.application.findMany({
           where: {
             organisationId,
+            candidateId: { in: candidateIds },
           },
           select: {
             id: true,

@@ -102,21 +102,20 @@ async function getCandidatePool(context) {
       organisationId: context.permissionContext.organisationId,
       jobId: context.job.id,
     },
-    include: {
-      candidate: true,
+    select: {
+      id: true,
+      candidateId: true,
+      updatedAt: true,
     },
     orderBy: [{ updatedAt: 'desc' }, { appliedAt: 'desc' }],
     take: MAX_RANKING_CANDIDATES,
   });
 
-  return rows
-    .filter((row) => row.candidate && row.candidate.organisationId === context.permissionContext.organisationId)
-    .map((row) => ({
-      applicationId: row.id,
-      candidateId: row.candidateId,
-      candidate: row.candidate,
-      updatedAt: row.updatedAt,
-    }));
+  return rows.map((row) => ({
+    applicationId: row.id,
+    candidateId: row.candidateId,
+    updatedAt: row.updatedAt,
+  }));
 }
 
 function buildCandidatePoolFingerprint(pool) {
@@ -189,35 +188,35 @@ async function createRankingEntries(snapshot, items) {
     rank: index + 1,
   }));
 
-  const created = [];
-  for (const item of sorted) {
-    const entry = await prisma.candidateRankingEntry.create({
-      data: {
-        snapshotId: snapshot.id,
-        organisationId: snapshot.organisationId,
-        jobId: snapshot.jobId,
-        candidateId: item.candidateId,
-        matchStateId: item.matchStateId,
-        matchResultId: item.matchResultId,
-        rank: item.rank,
-        generatedOverallScore: item.generatedOverallScore,
-        effectiveOverallScore: item.effectiveOverallScore,
-        confidenceScore: item.confidenceScore,
-        generatedRecommendation: item.generatedRecommendation,
-        effectiveRecommendation: item.effectiveRecommendation,
-        fitBand: fitBand(item.effectiveOverallScore),
-        strengthSummary: item.strengthSummary,
-        gapSummary: item.gapSummary,
-        isKnockedOut: item.isKnockedOut,
-        hasOverride: item.hasOverride,
-        metadata: {
-          requiredSkillsScore: item.requiredSkillsScore,
+  if (sorted.length) {
+    for (const item of sorted) {
+      await prisma.candidateRankingEntry.create({
+        data: {
+          snapshotId: snapshot.id,
+          organisationId: snapshot.organisationId,
+          jobId: snapshot.jobId,
+          candidateId: item.candidateId,
+          matchStateId: item.matchStateId,
+          matchResultId: item.matchResultId,
+          rank: item.rank,
+          generatedOverallScore: item.generatedOverallScore,
+          effectiveOverallScore: item.effectiveOverallScore,
+          confidenceScore: item.confidenceScore,
+          generatedRecommendation: item.generatedRecommendation,
+          effectiveRecommendation: item.effectiveRecommendation,
+          fitBand: fitBand(item.effectiveOverallScore),
+          strengthSummary: item.strengthSummary,
+          gapSummary: item.gapSummary,
+          isKnockedOut: item.isKnockedOut,
+          hasOverride: item.hasOverride,
+          metadata: {
+            requiredSkillsScore: item.requiredSkillsScore,
+          },
         },
-      },
-    });
-    created.push(entry);
+      });
+    }
   }
-  return created;
+  return sorted;
 }
 
 async function buildRankingSnapshot(actorUser, payload, requestMeta = {}, forceRegenerate = false) {
@@ -339,43 +338,87 @@ export async function getCandidateRanking(actorUser, payload) {
     };
   }
 
-  let entries = await prisma.candidateRankingEntry.findMany({
-    where: {
-      snapshotId: snapshot.id,
-      organisationId: context.permissionContext.organisationId,
-    },
-    orderBy: payload.sort === 'score'
-      ? [{ effectiveOverallScore: 'desc' }, { rank: 'asc' }]
-      : payload.sort === 'confidence'
-        ? [{ confidenceScore: 'desc' }, { rank: 'asc' }]
-        : [{ rank: 'asc' }],
-    include: {
-      candidate: true,
-    },
-  });
-
-  if (payload.status && snapshot.status !== payload.status) entries = [];
-  if (payload.recommendation) entries = entries.filter((entry) => entry.effectiveRecommendation === payload.recommendation);
-  if (payload.knockedOut !== undefined) entries = entries.filter((entry) => Boolean(entry.isKnockedOut) === Boolean(payload.knockedOut));
-  if (payload.minScore != null) entries = entries.filter((entry) => entry.effectiveOverallScore >= payload.minScore);
-  if (payload.minConfidence != null) entries = entries.filter((entry) => (entry.confidenceScore == null ? 0 : Number(entry.confidenceScore)) >= payload.minConfidence);
-  if (String(payload.candidate || '').trim()) {
-    const needle = String(payload.candidate).trim().toLowerCase();
-    entries = entries.filter((entry) => String(entry.candidate?.fullName || '').toLowerCase().includes(needle));
-  }
-
-  const total = entries.length;
   const page = clampPage(payload.page, 1);
   const pageSize = clampPage(payload.pageSize, 20);
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const start = (page - 1) * pageSize;
-  const paged = entries.slice(start, start + pageSize).map(serializeEntry);
+  if (payload.status && snapshot.status !== payload.status) {
+    return {
+      snapshot: serializeSnapshot(snapshot),
+      entries: [],
+      meta: { total: 0, page, pageSize, pageCount: 1 },
+    };
+  }
 
-  return {
-    snapshot: serializeSnapshot(snapshot),
-    entries: paged,
-    meta: { total, page, pageSize, pageCount },
+  const where = {
+    snapshotId: snapshot.id,
+    organisationId: context.permissionContext.organisationId,
+    ...(payload.recommendation ? { effectiveRecommendation: payload.recommendation } : {}),
+    ...(payload.knockedOut !== undefined ? { isKnockedOut: Boolean(payload.knockedOut) } : {}),
+    ...(payload.minScore != null ? { effectiveOverallScore: { gte: payload.minScore } } : {}),
+    ...(payload.minConfidence != null ? { confidenceScore: { gte: payload.minConfidence } } : {}),
+    ...(String(payload.candidate || '').trim()
+      ? { candidate: { fullName: { contains: String(payload.candidate).trim(), mode: 'insensitive' } } }
+      : {}),
   };
+  const orderBy = payload.sort === 'score'
+    ? [{ effectiveOverallScore: 'desc' }, { rank: 'asc' }]
+    : payload.sort === 'confidence'
+      ? [{ confidenceScore: 'desc' }, { rank: 'asc' }]
+      : [{ rank: 'asc' }];
+
+  const runFallbackListing = async () => {
+    let entries = await prisma.candidateRankingEntry.findMany({
+      where: {
+        snapshotId: snapshot.id,
+        organisationId: context.permissionContext.organisationId,
+      },
+      orderBy,
+      include: {
+        candidate: true,
+      },
+    });
+
+    if (payload.recommendation) entries = entries.filter((entry) => entry.effectiveRecommendation === payload.recommendation);
+    if (payload.knockedOut !== undefined) entries = entries.filter((entry) => Boolean(entry.isKnockedOut) === Boolean(payload.knockedOut));
+    if (payload.minScore != null) entries = entries.filter((entry) => entry.effectiveOverallScore >= payload.minScore);
+    if (payload.minConfidence != null) entries = entries.filter((entry) => (entry.confidenceScore == null ? 0 : Number(entry.confidenceScore)) >= payload.minConfidence);
+    if (String(payload.candidate || '').trim()) {
+      const needle = String(payload.candidate).trim().toLowerCase();
+      entries = entries.filter((entry) => String(entry.candidate?.fullName || '').toLowerCase().includes(needle));
+    }
+
+    const total = entries.length;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const start = (page - 1) * pageSize;
+    return {
+      snapshot: serializeSnapshot(snapshot),
+      entries: entries.slice(start, start + pageSize).map(serializeEntry),
+      meta: { total, page, pageSize, pageCount },
+    };
+  };
+
+  try {
+    const [total, entries] = await Promise.all([
+      prisma.candidateRankingEntry.count({ where }),
+      prisma.candidateRankingEntry.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+    return {
+      snapshot: serializeSnapshot(snapshot),
+      entries: entries.map(serializeEntry),
+      meta: { total, page, pageSize, pageCount },
+    };
+  } catch (error) {
+    if (error?.code === 'P2021' || error?.code === 'P1001' || error?.code === 'P1008') {
+      return runFallbackListing();
+    }
+    throw error;
+  }
 }
 
 export async function runJobCandidateRankingGenerationTask(task) {
