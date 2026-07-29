@@ -16,6 +16,7 @@ export const intelligenceFeatureSchema = z.enum([
   'RESUME_SUMMARY',
   'RESUME_SKILL_EXTRACTION',
   'CANDIDATE_MATCH',
+  'CANDIDATE_RANKING',
   'CANDIDATE_INTELLIGENCE',
   'JOB_DESCRIPTION',
   'INTERVIEW_ASSISTANT',
@@ -37,6 +38,10 @@ export const intelligencePermissionSchema = z.enum([
   'intelligence.resume.generate',
   'intelligence.match.read',
   'intelligence.match.generate',
+  'intelligence.match.override',
+  'intelligence.ranking.read',
+  'intelligence.ranking.generate',
+  'intelligence.match.configuration.manage',
   'intelligence.candidate.read',
   'intelligence.candidate.generate',
   'intelligence.job.generate',
@@ -51,6 +56,9 @@ export const intelligenceFeatureFlagSchema = z.enum([
   'intelligence.resume_summary',
   'intelligence.skill_extraction',
   'intelligence.candidate_matching',
+  'intelligence.candidate_ranking',
+  'intelligence.match_overrides',
+  'intelligence.match_scoring_profiles',
   'intelligence.candidate_intelligence',
   'intelligence.job_description',
   'intelligence.interview_assistant',
@@ -74,6 +82,37 @@ export const candidateIntelligenceStatusSchema = z.enum([
   'FAILED',
   'DISABLED',
   'REVIEW_REQUIRED',
+]);
+
+export const candidateJobMatchStatusSchema = z.enum([
+  'PENDING',
+  'READY',
+  'FAILED',
+  'STALE',
+  'DISABLED',
+  'REVIEW_REQUIRED',
+]);
+
+export const matchScoringProfileVersionStatusSchema = z.enum([
+  'DRAFT',
+  'ACTIVE',
+  'ARCHIVED',
+]);
+
+export const recruiterMatchOverrideTypeSchema = z.enum([
+  'SCORE_ADJUSTMENT',
+  'RECOMMENDATION_OVERRIDE',
+  'KNOCKOUT_OVERRIDE',
+  'NOTES_ONLY',
+]);
+
+export const candidateRankingStatusSchema = z.enum([
+  'PENDING',
+  'READY',
+  'STALE',
+  'FAILED',
+  'DISABLED',
+  'PARTIAL',
 ]);
 
 export const jobDescriptionGenerationKindSchema = z.enum([
@@ -101,6 +140,14 @@ export const candidateIntelligenceGenerationTypeSchema = z.enum([
   'DETERMINISTIC',
 ]);
 
+export const candidateJobMatchRecommendationLabelSchema = z.enum([
+  'STRONG_MATCH',
+  'MATCH',
+  'PARTIAL_MATCH',
+  'LIMITED_MATCH',
+  'REVIEW_REQUIRED',
+]);
+
 export const candidateIntelligenceEvidenceSchema = z.object({
   id: z.string().trim().min(1).max(80),
   sourceType: z.enum(['CANDIDATE_PROFILE', 'RESUME_ASSET', 'RESUME_IMPORT_ITEM']),
@@ -113,6 +160,40 @@ export const candidateIntelligenceEvidenceSchema = z.object({
 export const candidateIntelligenceConfidenceSchema = z.object({
   score: z.number().min(0).max(1).nullable().optional(),
   label: candidateIntelligenceConfidenceLabelSchema,
+});
+
+export const candidateJobMatchEvidenceSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  sourceType: z.enum(['CANDIDATE_PROFILE', 'JOB', 'CANDIDATE_INTELLIGENCE', 'JOB_DESCRIPTION']),
+  sourceId: z.string().trim().min(1).max(120).nullable().optional(),
+  fieldPath: z.string().trim().min(1).max(200),
+  snippet: z.string().trim().min(1).max(180).nullable(),
+  confidence: candidateIntelligenceConfidenceSchema.optional(),
+  generationType: candidateIntelligenceGenerationTypeSchema,
+  locator: z.string().trim().min(1).max(200).nullable().optional(),
+});
+
+export const candidateJobMatchStatementSchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+  confidence: candidateIntelligenceConfidenceSchema,
+  evidence: z.array(candidateJobMatchEvidenceSchema).min(1).max(8),
+  generationType: candidateIntelligenceGenerationTypeSchema,
+});
+
+export const candidateJobMatchSkillItemSchema = z.object({
+  skill: z.string().trim().min(1).max(120),
+  rationale: z.string().trim().min(1).max(400).nullable().optional(),
+  confidence: candidateIntelligenceConfidenceSchema.optional(),
+  evidence: z.array(candidateJobMatchEvidenceSchema).min(1).max(6),
+  generationType: candidateIntelligenceGenerationTypeSchema,
+});
+
+export const candidateJobMatchScoreAreaSchema = z.object({
+  score: z.number().int().min(0).max(100).nullable(),
+  weight: z.number().min(0).max(1),
+  label: candidateIntelligenceConfidenceLabelSchema,
+  evidence: z.array(candidateJobMatchEvidenceSchema).min(1).max(8),
+  generationType: candidateIntelligenceGenerationTypeSchema,
 });
 
 export const candidateIntelligenceStatementSchema = z.object({
@@ -239,6 +320,298 @@ export const candidateIntelligenceStatusResponseSchema = z.object({
   sourceVersion: z.string().trim().min(1).max(80),
   promptVersion: z.string().trim().min(1).max(40),
   resultVersion: z.string().trim().min(1).max(80),
+});
+
+export const candidateJobMatchParamsSchema = z.object({
+  candidateId: z.string().trim().cuid(),
+  jobId: z.string().trim().cuid(),
+});
+
+export const candidateJobMatchRegenerateSchema = z.object({
+  forceRegenerate: z.boolean().optional(),
+});
+
+export const candidateJobMatchResponseSchema = z.object({
+  candidateId: z.string().trim().min(1).max(120),
+  jobId: z.string().trim().min(1).max(120),
+  overallScore: z.object({
+    score: z.number().int().min(0).max(100),
+    label: candidateIntelligenceConfidenceLabelSchema,
+    evidence: z.array(candidateJobMatchEvidenceSchema).min(1).max(8),
+    generationType: candidateIntelligenceGenerationTypeSchema,
+  }),
+  confidence: z.object({
+    score: z.number().min(0).max(1),
+    label: candidateIntelligenceConfidenceLabelSchema,
+  }),
+  recommendation: z.object({
+    label: candidateJobMatchRecommendationLabelSchema,
+    reason: candidateJobMatchStatementSchema,
+  }),
+  scoreBreakdown: z.object({
+    requiredSkills: candidateJobMatchScoreAreaSchema,
+    preferredSkills: candidateJobMatchScoreAreaSchema,
+    experience: candidateJobMatchScoreAreaSchema,
+    roleTitle: candidateJobMatchScoreAreaSchema,
+    location: candidateJobMatchScoreAreaSchema,
+    workMode: candidateJobMatchScoreAreaSchema,
+    employmentType: candidateJobMatchScoreAreaSchema,
+    noticePeriod: candidateJobMatchScoreAreaSchema,
+    compensation: candidateJobMatchScoreAreaSchema,
+    education: candidateJobMatchScoreAreaSchema,
+  }),
+  skills: z.object({
+    matchedRequired: z.array(candidateJobMatchSkillItemSchema).max(80).default([]),
+    matchedPreferred: z.array(candidateJobMatchSkillItemSchema).max(80).default([]),
+    missingRequired: z.array(candidateJobMatchSkillItemSchema).max(80).default([]),
+    missingPreferred: z.array(candidateJobMatchSkillItemSchema).max(80).default([]),
+    transferable: z.array(candidateJobMatchSkillItemSchema).max(80).default([]),
+  }),
+  strengths: z.array(candidateJobMatchStatementSchema).max(12).default([]),
+  risks: z.array(candidateJobMatchStatementSchema).max(12).default([]),
+  interviewFocus: z.array(candidateJobMatchStatementSchema).max(12).default([]),
+  recruiterSummary: candidateJobMatchStatementSchema,
+  knockoutResults: z.array(z.object({
+    ruleKey: z.string().trim().min(1).max(120),
+    triggered: z.boolean(),
+    reason: z.string().trim().min(1).max(1000),
+    profileVersion: z.string().trim().min(1).max(120),
+    evidence: z.array(candidateJobMatchEvidenceSchema).min(1).max(8),
+  })).max(20).default([]),
+  warnings: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+  execution: z.object({
+    stateId: z.string().trim().min(1).max(120).nullable(),
+    executionId: z.string().trim().min(1).max(120).nullable(),
+    resultId: z.string().trim().min(1).max(120).nullable(),
+    status: candidateJobMatchStatusSchema,
+    cacheHit: z.boolean(),
+    aiEnabled: z.boolean(),
+    stale: z.boolean(),
+    generatedAt: z.string().datetime().nullable(),
+    provider: intelligenceProviderSchema,
+    providerVersion: z.string().trim().min(1).max(120).nullable(),
+    model: z.string().trim().min(1).max(200).nullable(),
+    modelVersion: z.string().trim().min(1).max(200).nullable(),
+    schemaVersion: z.string().trim().min(1).max(40),
+    promptKey: z.string().trim().min(1).max(120),
+    promptVersion: z.string().trim().min(1).max(40),
+    resultVersion: z.string().trim().min(1).max(80),
+    sourceVersion: z.string().trim().min(1).max(80),
+    latencyMs: z.number().int().min(0),
+    inputTokens: z.number().int().min(0).nullable(),
+    outputTokens: z.number().int().min(0).nullable(),
+    estimatedCost: z.number().nullable(),
+  }),
+  effective: z.object({
+    overallScore: z.number().int().min(0).max(100),
+    recommendation: candidateJobMatchRecommendationLabelSchema,
+    isKnockedOut: z.boolean(),
+    hasOverride: z.boolean(),
+  }).optional(),
+  overrides: z.array(z.object({
+    id: z.string().trim().min(1).max(120),
+    type: recruiterMatchOverrideTypeSchema,
+    scoreDelta: z.number().int().nullable().optional(),
+    recommendationOverride: candidateJobMatchRecommendationLabelSchema.nullable().optional(),
+    knockoutOverride: z.boolean().nullable().optional(),
+    reason: z.string().trim().min(1).max(1000).nullable(),
+    notes: z.string().trim().min(1).max(2000).nullable(),
+    createdByUserId: z.string().trim().min(1).max(120),
+    createdAt: z.string().datetime(),
+  })).optional(),
+});
+
+export const candidateJobMatchStatusResponseSchema = z.object({
+  candidateId: z.string().trim().min(1).max(120),
+  jobId: z.string().trim().min(1).max(120),
+  status: candidateJobMatchStatusSchema,
+  stale: z.boolean(),
+  aiEnabled: z.boolean(),
+  generatedAt: z.string().datetime().nullable(),
+  latestExecutionId: z.string().trim().min(1).max(120).nullable(),
+  latestResultId: z.string().trim().min(1).max(120).nullable(),
+  sourceVersion: z.string().trim().min(1).max(80),
+  promptVersion: z.string().trim().min(1).max(40),
+  resultVersion: z.string().trim().min(1).max(80),
+});
+
+export const matchScoringProfileParamsSchema = z.object({
+  profileId: z.string().trim().cuid(),
+});
+
+export const candidateJobMatchOverrideSchema = z.object({
+  type: recruiterMatchOverrideTypeSchema,
+  scoreDelta: z.number().int().min(-100).max(100).optional(),
+  recommendationOverride: candidateJobMatchRecommendationLabelSchema.optional(),
+  knockoutOverride: z.boolean().optional(),
+  reason: z.string().trim().min(3).max(1000).optional().or(z.literal('')),
+  notes: z.string().trim().max(2000).optional().or(z.literal('')),
+}).superRefine((value, ctx) => {
+  if (['SCORE_ADJUSTMENT', 'RECOMMENDATION_OVERRIDE', 'KNOCKOUT_OVERRIDE'].includes(value.type) && !String(value.reason || '').trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reason'],
+      message: 'Reason is required for material overrides.',
+    });
+  }
+});
+
+export const matchScoringDimensionSchema = z.object({
+  enabled: z.boolean().default(true),
+  weight: z.number().min(0).max(1),
+});
+
+export const matchScoringProfileWeightsSchema = z.object({
+  requiredSkills: matchScoringDimensionSchema,
+  preferredSkills: matchScoringDimensionSchema,
+  experience: matchScoringDimensionSchema,
+  roleTitle: matchScoringDimensionSchema,
+  location: matchScoringDimensionSchema,
+  workMode: matchScoringDimensionSchema,
+  employmentType: matchScoringDimensionSchema,
+  noticePeriod: matchScoringDimensionSchema,
+  compensation: matchScoringDimensionSchema,
+  education: matchScoringDimensionSchema,
+  domain: matchScoringDimensionSchema.optional(),
+});
+
+export const matchScoringProfileCreateSchema = z.object({
+  key: z.string().trim().min(2).max(120).regex(/^[a-z0-9._-]+$/i),
+  name: z.string().trim().min(2).max(240),
+  description: z.string().trim().max(1000).optional().or(z.literal('')),
+  isActive: z.boolean().optional(),
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  weightsJson: matchScoringProfileWeightsSchema,
+  knockoutRulesJson: z.record(z.any()).default({}),
+  thresholdsJson: z.record(z.any()).default({}),
+  confidenceRulesJson: z.record(z.any()).default({}),
+});
+
+export const matchScoringProfileVersionCreateSchema = z.object({
+  title: z.string().trim().min(1).max(240).optional().or(z.literal('')),
+  weightsJson: matchScoringProfileWeightsSchema,
+  knockoutRulesJson: z.record(z.any()).default({}),
+  thresholdsJson: z.record(z.any()).default({}),
+  confidenceRulesJson: z.record(z.any()).default({}),
+  activate: z.boolean().optional(),
+});
+
+export const matchScoringProfileActivateSchema = z.object({
+  versionId: z.string().trim().cuid().optional().or(z.literal('')),
+  active: z.boolean().optional(),
+});
+
+export const matchScoringProfileVersionResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  profileId: z.string().trim().min(1).max(120),
+  version: z.number().int().min(1),
+  status: matchScoringProfileVersionStatusSchema,
+  title: z.string().trim().min(1).max(240).nullable(),
+  weightsJson: z.record(z.any()),
+  knockoutRulesJson: z.record(z.any()),
+  thresholdsJson: z.record(z.any()),
+  confidenceRulesJson: z.record(z.any()),
+  normalizationVersion: z.string().trim().min(1).max(80),
+  schemaVersion: z.string().trim().min(1).max(40),
+  promptKey: z.string().trim().min(1).max(120).nullable(),
+  promptVersion: z.string().trim().min(1).max(40).nullable(),
+  resultVersion: z.string().trim().min(1).max(80),
+  createdByUserId: z.string().trim().min(1).max(120).nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const matchScoringProfileResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  key: z.string().trim().min(2).max(120),
+  name: z.string().trim().min(2).max(240),
+  description: z.string().trim().max(1000).nullable(),
+  isActive: z.boolean(),
+  activeVersionId: z.string().trim().min(1).max(120).nullable(),
+  activatedAt: z.string().datetime().nullable(),
+  activatedByUserId: z.string().trim().min(1).max(120).nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  versions: z.array(matchScoringProfileVersionResponseSchema).optional(),
+});
+
+export const candidateRankingParamsSchema = z.object({
+  jobId: z.string().trim().cuid(),
+});
+
+export const candidateRankingGenerateSchema = z.object({
+  forceRegenerate: z.boolean().optional(),
+  scoringProfileId: z.string().trim().cuid().optional().or(z.literal('')),
+  scoringProfileVersionId: z.string().trim().cuid().optional().or(z.literal('')),
+});
+
+export const candidateRankingQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  status: candidateRankingStatusSchema.optional(),
+  recommendation: candidateJobMatchRecommendationLabelSchema.optional(),
+  knockedOut: z.coerce.boolean().optional(),
+  minScore: z.coerce.number().int().min(0).max(100).optional(),
+  minConfidence: z.coerce.number().min(0).max(1).optional(),
+  candidate: z.string().trim().max(200).optional().or(z.literal('')),
+  sort: z.enum(['rank', 'score', 'confidence']).default('rank'),
+});
+
+export const candidateRankingEntryResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  snapshotId: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  jobId: z.string().trim().min(1).max(120),
+  candidateId: z.string().trim().min(1).max(120),
+  matchStateId: z.string().trim().min(1).max(120),
+  matchResultId: z.string().trim().min(1).max(120),
+  rank: z.number().int().min(1),
+  generatedOverallScore: z.number().int().min(0).max(100),
+  effectiveOverallScore: z.number().int().min(0).max(100),
+  confidenceScore: z.number().min(0).max(1).nullable(),
+  generatedRecommendation: candidateJobMatchRecommendationLabelSchema,
+  effectiveRecommendation: candidateJobMatchRecommendationLabelSchema,
+  fitBand: z.string().trim().min(1).max(80),
+  strengthSummary: z.string().trim().min(1).max(1000).nullable(),
+  gapSummary: z.string().trim().min(1).max(1000).nullable(),
+  isKnockedOut: z.boolean(),
+  hasOverride: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const candidateRankingSnapshotResponseSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  organisationId: z.string().trim().min(1).max(120),
+  jobId: z.string().trim().min(1).max(120),
+  status: candidateRankingStatusSchema,
+  candidatePoolFingerprint: z.string().trim().min(1).max(200),
+  sourceFingerprint: z.string().trim().min(1).max(200),
+  sourceVersion: z.string().trim().min(1).max(80),
+  schemaVersion: z.string().trim().min(1).max(40),
+  scoringProfileVersionId: z.string().trim().min(1).max(120).nullable(),
+  latestExecutionId: z.string().trim().min(1).max(120).nullable(),
+  generatedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  staleReason: z.string().trim().min(1).max(200).nullable(),
+  totalCandidates: z.number().int().min(0),
+  processedCandidates: z.number().int().min(0),
+  failedCandidates: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const candidateRankingResponseSchema = z.object({
+  snapshot: candidateRankingSnapshotResponseSchema.nullable(),
+  entries: z.array(candidateRankingEntryResponseSchema),
+  meta: z.object({
+    total: z.number().int().min(0),
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1),
+    pageCount: z.number().int().min(1),
+  }),
 });
 
 export const jobDescriptionParamsSchema = z.object({

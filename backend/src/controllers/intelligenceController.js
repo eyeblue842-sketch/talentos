@@ -4,7 +4,13 @@ import {
   candidateIntelligenceParamsSchema,
   candidateIntelligenceRegenerateSchema,
   candidateIntelligenceRequestSchema,
+  candidateJobMatchParamsSchema,
+  candidateJobMatchRegenerateSchema,
+  candidateJobMatchOverrideSchema,
   candidateMatchRequestSchema,
+  candidateRankingGenerateSchema,
+  candidateRankingParamsSchema,
+  candidateRankingQuerySchema,
   intelligenceFeedbackSchema,
   intelligenceGovernanceQuerySchema,
   interviewIntelligenceRequestSchema,
@@ -20,6 +26,10 @@ import {
   jobDescriptionTemplateParamsSchema,
   jobDescriptionTemplateVersionCreateSchema,
   jobIntelligenceRequestSchema,
+  matchScoringProfileActivateSchema,
+  matchScoringProfileCreateSchema,
+  matchScoringProfileParamsSchema,
+  matchScoringProfileVersionCreateSchema,
   naturalLanguageTalentSearchSchema,
   resumeIntelligenceRequestSchema,
 } from '@careeriz/shared';
@@ -30,7 +40,18 @@ import {
   getCandidateIntelligenceStatus,
   regenerateCandidateIntelligence,
 } from '../intelligence/services/candidateIntelligenceService.js';
+import {
+  getCandidateJobMatch,
+  getCandidateJobMatchStatus,
+  regenerateCandidateJobMatch,
+} from '../intelligence/services/candidateMatchEngineService.js';
 import { getBatchCandidateMatchIntelligence, getCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
+import {
+  generateCandidateRanking,
+  getCandidateRanking,
+  getCandidateRankingStatus,
+  refreshCandidateRanking,
+} from '../intelligence/services/candidateRankingService.js';
 import {
   getJobDescription,
   getJobDescriptionStatus,
@@ -49,10 +70,19 @@ import {
   listJobDescriptionTemplates,
   updateJobDescriptionDraft,
 } from '../intelligence/services/jobDescriptionManagementService.js';
+import {
+  activateMatchScoringProfile,
+  createMatchScoringProfile,
+  createMatchScoringProfileVersion,
+  getMatchScoringProfile,
+  listMatchScoringProfiles,
+} from '../intelligence/services/matchScoringProfileService.js';
 import { getIntelligenceGovernanceDashboard } from '../intelligence/services/adminIntelligenceService.js';
+import { listCandidateJobMatchOverrides } from '../intelligence/services/candidateMatchResultService.js';
 import { recordIntelligenceFeedback } from '../intelligence/services/governanceService.js';
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
 import { getJobIntelligence } from '../intelligence/services/jobIntelligenceService.js';
+import { createRecruiterMatchOverride } from '../intelligence/services/recruiterMatchOverrideService.js';
 import { getResumeIntelligence } from '../intelligence/services/resumeIntelligenceService.js';
 import { parseTalentSearchQuery } from '../intelligence/services/talentSearchService.js';
 import { getIntelligenceProviderHealth } from '../intelligence/services/providerService.js';
@@ -146,6 +176,190 @@ export async function postJobIntelligence(req, res, next) {
   try {
     const payload = jobIntelligenceRequestSchema.parse(req.body);
     const data = await getJobIntelligence(req.user, payload);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateJobMatchIntelligence(req, res, next) {
+  try {
+    const params = candidateJobMatchParamsSchema.parse(req.params);
+    const data = await getCandidateJobMatch(req.user, params, requestMeta(req));
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateJobMatchIntelligenceStatus(req, res, next) {
+  try {
+    const params = candidateJobMatchParamsSchema.parse(req.params);
+    const data = await getCandidateJobMatchStatus(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postCandidateJobMatchIntelligenceRegenerate(req, res, next) {
+  try {
+    const params = candidateJobMatchParamsSchema.parse(req.params);
+    const payload = candidateJobMatchRegenerateSchema.parse(req.body || {});
+    const data = await regenerateCandidateJobMatch(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 202, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateJobMatchOverrideList(req, res, next) {
+  try {
+    const params = candidateJobMatchParamsSchema.parse(req.params);
+    const data = await listCandidateJobMatchOverrides(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postCandidateJobMatchOverride(req, res, next) {
+  try {
+    const params = candidateJobMatchParamsSchema.parse(req.params);
+    const payload = candidateJobMatchOverrideSchema.parse(req.body || {});
+    const data = await createRecruiterMatchOverride(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateRankingSnapshot(req, res, next) {
+  try {
+    const params = candidateRankingParamsSchema.parse(req.params);
+    const query = candidateRankingQuerySchema.parse(req.query || {});
+    const data = await getCandidateRanking(req.user, {
+      ...params,
+      ...query,
+    });
+    return sendSuccess(res, 200, data.snapshot, data.meta ? { pagination: data.meta } : undefined);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateRankingList(req, res, next) {
+  try {
+    const params = candidateRankingParamsSchema.parse(req.params);
+    const query = candidateRankingQuerySchema.parse(req.query || {});
+    const data = await getCandidateRanking(req.user, {
+      ...params,
+      ...query,
+    });
+    return sendSuccess(res, 200, data.entries, {
+      snapshot: data.snapshot,
+      pagination: data.meta,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getCandidateRankingSnapshotStatus(req, res, next) {
+  try {
+    const params = candidateRankingParamsSchema.parse(req.params);
+    const data = await getCandidateRankingStatus(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postCandidateRankingGenerate(req, res, next) {
+  try {
+    const params = candidateRankingParamsSchema.parse(req.params);
+    const payload = candidateRankingGenerateSchema.parse(req.body || {});
+    const data = await generateCandidateRanking(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 202, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postCandidateRankingRefresh(req, res, next) {
+  try {
+    const params = candidateRankingParamsSchema.parse(req.params);
+    const payload = candidateRankingGenerateSchema.parse(req.body || {});
+    const data = await refreshCandidateRanking(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 202, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getMatchScoringProfileList(req, res, next) {
+  try {
+    const data = await listMatchScoringProfiles(req.user);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postMatchScoringProfile(req, res, next) {
+  try {
+    const payload = matchScoringProfileCreateSchema.parse(req.body || {});
+    const data = await createMatchScoringProfile(req.user, payload, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getMatchScoringProfileDetail(req, res, next) {
+  try {
+    const params = matchScoringProfileParamsSchema.parse(req.params);
+    const data = await getMatchScoringProfile(req.user, params);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postMatchScoringProfileVersion(req, res, next) {
+  try {
+    const params = matchScoringProfileParamsSchema.parse(req.params);
+    const payload = matchScoringProfileVersionCreateSchema.parse(req.body || {});
+    const data = await createMatchScoringProfileVersion(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
+    return sendSuccess(res, 201, data);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postMatchScoringProfileActivate(req, res, next) {
+  try {
+    const params = matchScoringProfileParamsSchema.parse(req.params);
+    const payload = matchScoringProfileActivateSchema.parse(req.body || {});
+    const data = await activateMatchScoringProfile(req.user, {
+      ...params,
+      ...payload,
+    }, requestMeta(req));
     return sendSuccess(res, 200, data);
   } catch (error) {
     return next(error);

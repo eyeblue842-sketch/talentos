@@ -3,6 +3,10 @@ const envFlagMap = {
   aiResumeParsing: 'NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING',
   candidateIntelligence: 'NEXT_PUBLIC_FEATURE_CANDIDATE_INTELLIGENCE',
   aiJobDescription: 'NEXT_PUBLIC_FEATURE_AI_JOB_DESCRIPTION',
+  candidateMatching: 'NEXT_PUBLIC_FEATURE_CANDIDATE_MATCHING',
+  candidateRanking: 'NEXT_PUBLIC_FEATURE_CANDIDATE_RANKING',
+  matchOverrides: 'NEXT_PUBLIC_FEATURE_MATCH_OVERRIDES',
+  matchScoringProfiles: 'NEXT_PUBLIC_FEATURE_MATCH_SCORING_PROFILES',
 };
 
 function normalizeBoolean(value, fallback = false) {
@@ -21,6 +25,10 @@ export function getFeatureFlags() {
     aiResumeParsing: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_AI_RESUME_PARSING, false),
     candidateIntelligence: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_CANDIDATE_INTELLIGENCE, false),
     aiJobDescription: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_AI_JOB_DESCRIPTION, false),
+    candidateMatching: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_CANDIDATE_MATCHING, false),
+    candidateRanking: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_CANDIDATE_RANKING, false),
+    matchOverrides: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_MATCH_OVERRIDES, false),
+    matchScoringProfiles: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_MATCH_SCORING_PROFILES, false),
   };
 }
 

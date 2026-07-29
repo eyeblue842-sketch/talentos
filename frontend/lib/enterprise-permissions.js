@@ -6,6 +6,8 @@ const defaultPermissionsByRole = {
     'intelligence.resume.generate',
     'intelligence.match.read',
     'intelligence.match.generate',
+    'intelligence.ranking.read',
+    'intelligence.ranking.generate',
     'intelligence.candidate.read',
     'intelligence.candidate.generate',
     'intelligence.job.generate',
@@ -15,6 +17,7 @@ const defaultPermissionsByRole = {
   ],
   HIRING_MANAGER: [
     'intelligence.match.read',
+    'intelligence.ranking.read',
     'intelligence.candidate.read',
     'intelligence.job.generate',
     'intelligence.interview.generate',

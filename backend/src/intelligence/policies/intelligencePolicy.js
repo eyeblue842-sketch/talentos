@@ -17,6 +17,24 @@ export const intelligenceFeatureConfig = {
     permissionGenerate: 'intelligence.match.generate',
     ttlHours: 24,
   },
+  CANDIDATE_RANKING: {
+    flag: 'intelligence.candidate_ranking',
+    permissionRead: 'intelligence.ranking.read',
+    permissionGenerate: 'intelligence.ranking.generate',
+    ttlHours: 24,
+  },
+  MATCH_OVERRIDE: {
+    flag: 'intelligence.match_overrides',
+    permissionRead: 'intelligence.match.override',
+    permissionGenerate: 'intelligence.match.override',
+    ttlHours: 24,
+  },
+  MATCH_SCORING_PROFILE: {
+    flag: 'intelligence.match_scoring_profiles',
+    permissionRead: 'intelligence.match.configuration.manage',
+    permissionGenerate: 'intelligence.match.configuration.manage',
+    ttlHours: 24,
+  },
   CANDIDATE_INTELLIGENCE: {
     flag: 'intelligence.candidate_intelligence',
     permissionRead: 'intelligence.candidate.read',

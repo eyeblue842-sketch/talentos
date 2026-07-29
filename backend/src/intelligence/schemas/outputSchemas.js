@@ -28,6 +28,34 @@ export const candidateMatchExplanationOutputSchema = z.object({
   unknownCriteria: safeStringArray.default([]),
 }).strict();
 
+const matchEvidenceIdsSchema = z.array(z.string().trim().min(1).max(80)).min(1).max(6);
+
+const matchStatementOutputSchema = z.object({
+  text: safeLongString,
+  confidence: boundedConfidence,
+  evidenceIds: matchEvidenceIdsSchema,
+}).strict();
+
+export const candidateJobMatchInsightOutputSchema = z.object({
+  recruiterSummary: matchStatementOutputSchema,
+  strengths: z.array(matchStatementOutputSchema).max(8).default([]),
+  risks: z.array(matchStatementOutputSchema).max(8).default([]),
+  interviewFocus: z.array(matchStatementOutputSchema).max(8).default([]),
+  recommendation: z.object({
+    label: z.enum(['STRONG_MATCH', 'MATCH', 'PARTIAL_MATCH', 'LIMITED_MATCH', 'REVIEW_REQUIRED']),
+    reason: safeLongString,
+    confidence: boundedConfidence,
+    evidenceIds: matchEvidenceIdsSchema,
+  }).strict(),
+  transferableSkills: z.array(z.object({
+    skill: safeShortString,
+    rationale: safeShortString,
+    confidence: boundedConfidence,
+    evidenceIds: matchEvidenceIdsSchema,
+  }).strict()).max(12).default([]),
+  warnings: safeStringArray.default([]),
+}).strict();
+
 export const jobDescriptionOutputSchema = z.object({
   summary: safeLongString,
   responsibilities: safeStringArray.default([]),

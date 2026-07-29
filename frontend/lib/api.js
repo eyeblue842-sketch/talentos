@@ -1154,3 +1154,70 @@ export async function getCandidateProfileIntelligenceStatus(candidateId) {
   const response = await requestBackend(`/intelligence/candidates/${candidateId}/status`, { method: 'GET' }, token);
   return response.data;
 }
+
+export async function getCandidateJobMatch(jobId, candidateId, filters = {}) {
+  const token = await requireToken();
+  const query = buildQueryString(filters);
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/candidates/${candidateId}/match${query}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateJobMatchStatus(jobId, candidateId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/candidates/${candidateId}/match/status`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateJobMatchOverrides(jobId, candidateId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/candidates/${candidateId}/match/overrides`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function regenerateCandidateJobMatch(jobId, candidateId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/candidates/${candidateId}/match/regenerate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function createCandidateJobMatchOverride(jobId, candidateId, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/candidates/${candidateId}/match/override`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getCandidateRanking(jobId, filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/ranking${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getCandidateRankingStatus(jobId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/ranking/status`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function generateCandidateRanking(jobId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/ranking/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function refreshCandidateRanking(jobId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/intelligence/jobs/${jobId}/ranking/refresh`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}

@@ -1,6 +1,7 @@
 import {
   analyticsInsightOutputSchema,
   candidateIntelligenceOutputSchema,
+  candidateJobMatchInsightOutputSchema,
   candidateMatchExplanationOutputSchema,
   interviewNotesSummaryOutputSchema,
   interviewQuestionSetOutputSchema,
@@ -47,6 +48,30 @@ const promptRegistry = {
     status: 'ACTIVE',
     defaultProviderSettings: { temperature: 0.2 },
     buildPrompt: (input) => `Explain this deterministic candidate-job match result. Treat the score as authoritative and do not change it.\n\nInput:\n${JSON.stringify(input, null, 2)}`,
+  },
+  CANDIDATE_JOB_MATCH_FOUNDATION: {
+    key: 'CANDIDATE_JOB_MATCH_FOUNDATION',
+    version: '1.0.0',
+    purpose: 'Generate evidence-backed recruiter-facing candidate-job match insights from deterministic scoring and safe evidence references.',
+    outputSchema: candidateJobMatchInsightOutputSchema,
+    allowedDataClasses: ['PUBLIC_JOB_DATA', 'CANDIDATE_PROFESSIONAL'],
+    prohibitedData: ['CANDIDATE_CONTACT', 'HIGHLY_SENSITIVE', 'PROHIBITED_FOR_AI'],
+    humanReviewRequired: true,
+    status: 'ACTIVE',
+    defaultProviderSettings: { temperature: 0.2 },
+    buildPrompt: (input) => `Create recruiter-reviewable candidate-job match insights using only the supplied deterministic score, safe professional projections, and evidence catalog.
+
+Rules:
+- Return valid JSON only.
+- Do not change the provided deterministic score or invent new qualifications.
+- Every generated statement must use one or more evidenceIds from the catalog.
+- Do not mention protected or sensitive attributes.
+- Do not reveal contact details or raw resume blocks.
+- Transferable skills must be conservative and evidence-backed.
+- Recommendation labels must be one of STRONG_MATCH, MATCH, PARTIAL_MATCH, LIMITED_MATCH, REVIEW_REQUIRED.
+
+Input:
+${JSON.stringify(input, null, 2)}`,
   },
   JOB_DESCRIPTION_DRAFT: {
     key: 'JOB_DESCRIPTION_DRAFT',

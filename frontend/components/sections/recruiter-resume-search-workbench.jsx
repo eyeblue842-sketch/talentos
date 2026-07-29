@@ -21,7 +21,7 @@ function ToolbarAction({ icon: Icon, label, onClick, disabled = false, variant =
   );
 }
 
-function ResultCard({ candidate, selected, previewSelected, onToggleSelect, onSelectPreview, onAction }) {
+function ResultCard({ candidate, selected, previewSelected, onToggleSelect, onSelectPreview, onAction, selectedJobId }) {
   return (
     <Card className={`min-h-[236px] transition ${previewSelected ? 'border-[var(--color-primary)] shadow-[var(--shadow-lg)]' : ''}`}>
       <div className="flex items-start gap-4">
@@ -73,7 +73,7 @@ function ResultCard({ candidate, selected, previewSelected, onToggleSelect, onSe
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button as="a" href={`/recruiter/database/${candidate.id}`} variant="outline" size="sm">
+        <Button as="a" href={`/recruiter/database/${candidate.id}${selectedJobId ? `?jobId=${selectedJobId}` : ''}`} variant="outline" size="sm">
           View Profile
         </Button>
         <ToolbarAction icon={UserRoundCheck} label="Shortlist" onClick={() => onAction('shortlist', [candidate.id])} />
@@ -520,6 +520,7 @@ export function RecruiterResumeSearchWorkbench({
                     onToggleSelect={toggleSelection}
                     onSelectPreview={handleSelectPreview}
                     onAction={handleAction}
+                    selectedJobId={selectedJobId}
                   />
                 ))}
               </div>

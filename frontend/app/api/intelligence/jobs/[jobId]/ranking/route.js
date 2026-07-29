@@ -1,0 +1,16 @@
+import { NextResponse } from 'next/server';
+import { mapApiRouteError, proxyBackendJson, requireApiSession } from '@/lib/api-route';
+
+export async function GET(request, { params }) {
+  try {
+    const session = await requireApiSession();
+    if (!session.ok) return session.response;
+
+    const { jobId } = await params;
+    const search = request.nextUrl.search || '';
+    const response = await proxyBackendJson(`/intelligence/jobs/${jobId}/ranking${search}`, { method: 'GET' }, session.token);
+    return NextResponse.json(response);
+  } catch (error) {
+    return mapApiRouteError(error);
+  }
+}

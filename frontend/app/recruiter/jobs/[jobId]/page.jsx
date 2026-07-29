@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { JobCandidateRankingPanel } from '@/components/sections/job-candidate-ranking-panel';
 import { RecruiterAiJobDescriptionPanel } from '@/components/sections/recruiter-ai-job-description-panel';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
@@ -9,6 +10,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { recruiterNav } from '@/lib/navigation';
 import {
   getApprovedRequisitions,
+  getCandidateRanking,
+  getCandidateRankingStatus,
   getCurrentOrganisation,
   getJobDescriptionDrafts,
   getJobDescriptionHistory,
@@ -58,8 +61,11 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   let initialJobDescriptionDrafts = [];
   let initialJobDescriptionTemplates = [];
   let initialJobDescriptionHistory = null;
+  let initialCandidateRanking = null;
+  let initialCandidateRankingStatus = null;
 
   const aiJobDescriptionEnabled = isFeatureEnabled('aiJobDescription');
+  const candidateRankingEnabled = isFeatureEnabled('candidateRanking');
 
   try {
     [organisation, job, members, requisitions, templates, currentUser] = await Promise.all([
@@ -78,6 +84,8 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
   const canReadAiJobDescription = hasUserPermission(currentUser, 'intelligence.job.read')
     || hasUserPermission(currentUser, 'intelligence.job.generate');
   const canGenerateAiJobDescription = hasUserPermission(currentUser, 'intelligence.job.generate');
+  const canReadCandidateRanking = hasUserPermission(currentUser, 'intelligence.ranking.read');
+  const canGenerateCandidateRanking = hasUserPermission(currentUser, 'intelligence.ranking.generate');
 
   if (job && aiJobDescriptionEnabled && canReadAiJobDescription) {
     const [jobDescriptionResult, jobDescriptionStatus, jobDescriptionDrafts, jobDescriptionTemplates, jobDescriptionHistory] = await Promise.all([
@@ -92,6 +100,15 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
     initialJobDescriptionDrafts = jobDescriptionDrafts;
     initialJobDescriptionTemplates = jobDescriptionTemplates;
     initialJobDescriptionHistory = jobDescriptionHistory;
+  }
+
+  if (job && candidateRankingEnabled && canReadCandidateRanking) {
+    const [rankingResult, rankingStatus] = await Promise.all([
+      getCandidateRanking(job.id).catch(() => null),
+      getCandidateRankingStatus(job.id).catch(() => null),
+    ]);
+    initialCandidateRanking = rankingResult;
+    initialCandidateRankingStatus = rankingStatus;
   }
 
   return (
@@ -253,6 +270,20 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                       featureEnabled={aiJobDescriptionEnabled}
                       canRead={canReadAiJobDescription}
                       canGenerate={canGenerateAiJobDescription}
+                    />
+                  ),
+                }] : []),
+                ...(candidateRankingEnabled && canReadCandidateRanking ? [{
+                  value: 'ai-candidate-ranking',
+                  label: 'AI Candidate Ranking',
+                  content: (
+                    <JobCandidateRankingPanel
+                      jobId={job.id}
+                      initialRanking={initialCandidateRanking}
+                      initialStatus={initialCandidateRankingStatus}
+                      featureEnabled={candidateRankingEnabled}
+                      canRead={canReadCandidateRanking}
+                      canGenerate={canGenerateCandidateRanking}
                     />
                   ),
                 }] : []),

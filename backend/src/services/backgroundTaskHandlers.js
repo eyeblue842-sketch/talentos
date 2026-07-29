@@ -5,7 +5,9 @@ import { sendOfferStatusEmail, sendQueuedEmailPayload } from './emailService.js'
 import { requestCandidateDataExport } from './candidateService.js';
 import { getResumeIntelligence } from '../intelligence/services/resumeIntelligenceService.js';
 import { runCandidateIntelligenceGenerationTask } from '../intelligence/services/candidateIntelligenceService.js';
+import { runCandidateJobMatchGenerationTask } from '../intelligence/services/candidateMatchEngineService.js';
 import { getCandidateMatchIntelligence, getBatchCandidateMatchIntelligence } from '../intelligence/services/candidateMatchService.js';
+import { runCandidateMatchBulkGenerationTask, runJobCandidateRankingGenerationTask } from '../intelligence/services/candidateRankingService.js';
 import { runJobDescriptionGenerationTask } from '../intelligence/services/jobDescriptionGenerationService.js';
 import { getJobIntelligence } from '../intelligence/services/jobIntelligenceService.js';
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
@@ -320,6 +322,18 @@ async function handleCandidateIntelligenceGenerationTask(task) {
   return runCandidateIntelligenceGenerationTask(task);
 }
 
+async function handleCandidateMatchGenerationTask(task) {
+  return runCandidateJobMatchGenerationTask(task);
+}
+
+async function handleCandidateMatchBulkGenerationTask(task) {
+  return runCandidateMatchBulkGenerationTask(task);
+}
+
+async function handleJobCandidateRankingGenerationTask(task) {
+  return runJobCandidateRankingGenerationTask(task);
+}
+
 async function handleJobDescriptionGenerationTask(task) {
   return runJobDescriptionGenerationTask(task);
 }
@@ -366,6 +380,12 @@ export async function processBackgroundTask(task) {
       return handleIntelligenceExecutionTask(task);
     case 'CANDIDATE_INTELLIGENCE_GENERATION':
       return handleCandidateIntelligenceGenerationTask(task);
+    case 'CANDIDATE_MATCH_GENERATION':
+      return handleCandidateMatchGenerationTask(task);
+    case 'CANDIDATE_MATCH_BULK_GENERATION':
+      return handleCandidateMatchBulkGenerationTask(task);
+    case 'JOB_CANDIDATE_RANKING_GENERATION':
+      return handleJobCandidateRankingGenerationTask(task);
     case 'JOB_DESCRIPTION_GENERATION':
       return handleJobDescriptionGenerationTask(task);
     case 'DATA_EXPORT':
