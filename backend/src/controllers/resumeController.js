@@ -18,7 +18,7 @@ import {
   listTalentPools,
   searchCandidates,
 } from '../services/searchService.js';
-import { prisma } from '../config/db.js';
+import { findCandidateResumeReference } from '../repositories/resume/resumeRepository.js';
 import { getCandidateRecommendations } from '../services/candidateService.js';
 import { apiError, sendSuccess } from '../utils/response.js';
 
@@ -244,9 +244,7 @@ export async function unsaveCandidate(req, res, next) {
 
 export async function downloadResumePdf(req, res, next) {
   try {
-    const candidate = await prisma.candidateProfile.findUnique({
-      where: { id: req.user.candidateProfile.id },
-    });
+    const candidate = await findCandidateResumeReference(req.user.candidateProfile.id);
 
     if (!candidate?.latestResumeAssetId) {
       return res.status(404).json(apiError('Resume not found.'));

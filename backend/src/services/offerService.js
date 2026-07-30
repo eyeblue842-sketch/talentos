@@ -1,11 +1,29 @@
 import crypto from 'crypto';
-import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
 import { generateOfferPdfBuffer } from './offerDocumentService.js';
 import { sendOfferReleasedEmail, sendOfferStatusEmail } from './emailService.js';
+import {
+  actOnOfferApprovalRecord,
+  createOfferDraftRecord,
+  createOfferRevisionRecord,
+  expireOfferRecord,
+  findActiveOrganisationMemberships,
+  findApplicationForOffer,
+  findCandidateOfferById,
+  findCandidateOfferForApplicationRecord,
+  findConflictingReleasedOffer,
+  findOfferAccessToken,
+  findOfferByIdForOrganisation,
+  performCandidateOfferActionRecord,
+  releaseOfferRecord,
+  requestOfferApprovalRecord,
+  updateJoiningLifecycleRecord,
+  updateOfferDraftRecord,
+  withdrawOfferRecord,
+} from '../repositories/offer/offerRepository.js';
 
 const recruiterReadableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
 const recruiterWritableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
@@ -14,69 +32,6 @@ const releaseReadyStatuses = new Set(['APPROVED']);
 const candidateActionableStatuses = new Set(['RELEASED', 'VIEWED']);
 const activeReleasedStatuses = new Set(['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'JOINED', 'DEFERRED']);
 const terminalStatuses = new Set(['REJECTED', 'WITHDRAWN', 'EXPIRED', 'SUPERSEDED', 'JOINED', 'NO_SHOW']);
-
-const offerInclude = {
-  organisation: true,
-  job: {
-    include: {
-      recruiter: true,
-      hiringManager: true,
-    },
-  },
-  candidate: {
-    include: {
-      user: true,
-    },
-  },
-  application: {
-    include: {
-      submittedApplication: true,
-      job: true,
-      candidate: {
-        include: {
-          user: true,
-        },
-      },
-    },
-  },
-  createdBy: true,
-  updatedBy: true,
-  releasedBy: true,
-  components: {
-    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-  },
-  approvals: {
-    include: {
-      approver: true,
-    },
-    orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
-  },
-  comments: {
-    include: {
-      authorUser: true,
-    },
-    orderBy: { createdAt: 'asc' },
-  },
-  accessTokens: {
-    orderBy: { createdAt: 'desc' },
-  },
-  previousOffer: {
-    select: {
-      id: true,
-      referenceNumber: true,
-      version: true,
-      status: true,
-    },
-  },
-  supersededByOffer: {
-    select: {
-      id: true,
-      referenceNumber: true,
-      version: true,
-      status: true,
-    },
-  },
-};
 
 function badRequest(message, code = 422) {
   const error = new Error(message);
@@ -110,10 +65,6 @@ function buildOfferReference(version) {
 
 function buildOfferLinkPath(rawToken) {
   return `/offers/access/${rawToken}`;
-}
-
-function hashToken(rawToken) {
-  return crypto.createHash('sha256').update(rawToken).digest('hex');
 }
 
 function buildOfferStatusLabel(status) {
@@ -327,26 +278,7 @@ function serializeOffer(offer, options = {}) {
 }
 
 async function getApplicationForOffer(organisationId, applicationId) {
-  const application = await prisma.application.findFirst({
-    where: { id: applicationId, organisationId },
-    include: {
-      job: {
-        include: {
-          recruiter: true,
-          hiringManager: true,
-        },
-      },
-      candidate: {
-        include: {
-          user: true,
-        },
-      },
-      submittedApplication: true,
-      offers: {
-        orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
-      },
-    },
-  });
+  const application = await findApplicationForOffer(organisationId, applicationId);
 
   if (!application) {
     throw notFound('Application not found.');
@@ -356,10 +288,7 @@ async function getApplicationForOffer(organisationId, applicationId) {
 }
 
 async function getOfferOrThrow(organisationId, offerId) {
-  const offer = await prisma.offer.findFirst({
-    where: { id: offerId, organisationId },
-    include: offerInclude,
-  });
+  const offer = await findOfferByIdForOrganisation(organisationId, offerId);
 
   if (!offer) {
     throw notFound();
@@ -384,40 +313,7 @@ async function expireOfferIfNeeded(offer, requestMeta = {}) {
   if (offer.expiryAt.getTime() > Date.now()) return offer;
 
   const applicationUpdate = buildApplicationStageUpdate('EXPIRED');
-  await prisma.$transaction(async (tx) => {
-    await tx.offer.update({
-      where: { id: offer.id },
-      data: { status: 'EXPIRED' },
-    });
-
-    await tx.application.update({
-      where: { id: offer.applicationId },
-      data: applicationUpdate,
-    });
-
-    if (offer.application?.submittedApplication?.id) {
-      await tx.applicationTimeline.create({
-        data: {
-          organisationId: offer.organisationId,
-          applicationId: offer.application.submittedApplication.id,
-          eventType: 'OFFER_EXPIRED',
-          message: `The offer for ${offer.job.title} has expired.`,
-          metadata: { offerId: offer.id, version: offer.version },
-          isCandidateVisible: true,
-        },
-      });
-    }
-
-    await tx.applicationActivity.create({
-      data: {
-        organisationId: offer.organisationId,
-        applicationId: offer.applicationId,
-        eventType: 'OFFER_EXPIRED',
-        message: `Offer ${offer.referenceNumber} expired.`,
-        metadata: { offerId: offer.id, version: offer.version },
-      },
-    });
-  });
+  await expireOfferRecord(offer, applicationUpdate);
 
   await recordAuditLog({
     organisationId: offer.organisationId,
@@ -467,73 +363,6 @@ function buildOfferData(payload, application, actorUser) {
     createdByUserId: actorUser.id,
     updatedByUserId: actorUser.id,
   };
-}
-
-async function replaceOfferChildren(tx, offerId, payload) {
-  await tx.offerComponent.deleteMany({ where: { offerId } });
-  await tx.offerApproval.deleteMany({ where: { offerId } });
-
-  if (payload.components?.length) {
-    await tx.offerComponent.createMany({
-      data: payload.components.map((component, index) => ({
-        offerId,
-        type: component.type,
-        label: component.label,
-        amount: decimalOrNull(component.amount),
-        frequency: component.frequency || 'ONE_TIME',
-        taxable: component.taxable !== false,
-        displayOrder: component.displayOrder ?? index,
-      })),
-    });
-  }
-
-  if (payload.approvals?.length) {
-    await tx.offerApproval.createMany({
-      data: payload.approvals.map((approval) => ({
-        offerId,
-        approverUserId: approval.approverUserId,
-        sequence: approval.sequence,
-        status: 'PENDING',
-      })),
-    });
-  }
-}
-
-async function createOfferActivity(tx, offer, eventType, message, actorUserId = null, candidateVisible = false, metadata = {}) {
-  await tx.applicationActivity.create({
-    data: {
-      organisationId: offer.organisationId,
-      applicationId: offer.applicationId,
-      actorUserId,
-      eventType,
-      message,
-      metadata: {
-        offerId: offer.id,
-        offerReference: offer.referenceNumber,
-        version: offer.version,
-        ...metadata,
-      },
-    },
-  });
-
-  if (candidateVisible && offer.application?.submittedApplication?.id) {
-    await tx.applicationTimeline.create({
-      data: {
-        organisationId: offer.organisationId,
-        applicationId: offer.application.submittedApplication.id,
-        actorUserId,
-        eventType,
-        message,
-        metadata: {
-          offerId: offer.id,
-          offerReference: offer.referenceNumber,
-          version: offer.version,
-          ...metadata,
-        },
-        isCandidateVisible: true,
-      },
-    });
-  }
 }
 
 async function notifyOfferApprover(offer, approval) {
@@ -596,41 +425,8 @@ async function notifyRecruiterStakeholders(offer, title, message) {
   })));
 }
 
-async function createAccessToken(tx, offerId, expiresAt) {
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  await tx.offerAccessToken.create({
-    data: {
-      offerId,
-      tokenHash: hashToken(rawToken),
-      expiresAt,
-    },
-  });
-  return rawToken;
-}
-
-async function invalidateAccessTokens(tx, offerId) {
-  await tx.offerAccessToken.updateMany({
-    where: {
-      offerId,
-      consumedAt: null,
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: new Date(),
-    },
-  });
-}
-
 async function resolveOfferToken(rawToken) {
-  const tokenHash = hashToken(rawToken);
-  const record = await prisma.offerAccessToken.findUnique({
-    where: { tokenHash },
-    include: {
-      offer: {
-        include: offerInclude,
-      },
-    },
-  });
+  const record = await findOfferAccessToken(rawToken);
 
   if (!record) {
     throw notFound('Offer access link is invalid.');
@@ -660,13 +456,10 @@ async function assertApprovalsValid(organisationId, approvals, actorUserId) {
     seenApprovers.add(approval.approverUserId);
   }
 
-  const memberships = await prisma.organisationMembership.findMany({
-    where: {
-      organisationId,
-      userId: { in: approvals.map((approval) => approval.approverUserId) },
-      status: 'ACTIVE',
-    },
-  });
+  const memberships = await findActiveOrganisationMemberships(
+    organisationId,
+    approvals.map((approval) => approval.approverUserId),
+  );
 
   if (memberships.length !== approvals.length) {
     throw badRequest('All approvers must be active members of the organisation.');
@@ -688,33 +481,14 @@ export async function createOfferDraft(actorUser, payload, organisationId = null
   }
 
   const version = (application.offers[0]?.version || 0) + 1;
-  const created = await prisma.$transaction(async (tx) => {
-    const offer = await tx.offer.create({
-      data: {
-        referenceNumber: buildOfferReference(version),
-        version,
-        status: 'DRAFT',
-        ...buildOfferData(payload, application, actorUser),
-      },
-    });
-
-    await replaceOfferChildren(tx, offer.id, payload);
-
-    const refreshed = await tx.offer.findUnique({
-      where: { id: offer.id },
-      include: offerInclude,
-    });
-
-    const hasReleasedSibling = application.offers.some((existing) => activeReleasedStatuses.has(existing.status));
-    if (!hasReleasedSibling) {
-      await tx.application.update({
-        where: { id: application.id },
-        data: buildApplicationStageUpdate('DRAFT'),
-      });
-    }
-
-    await createOfferActivity(tx, refreshed, 'OFFER_DRAFT_CREATED', `Offer draft ${refreshed.referenceNumber} was created.`, actorUser.id, false);
-    return refreshed;
+  const created = await createOfferDraftRecord({
+    referenceNumber: buildOfferReference(version),
+    version,
+    payload,
+    offerData: buildOfferData(payload, application, actorUser),
+    application,
+    actorUserId: actorUser.id,
+    activeReleasedStatuses,
   });
 
   await recordAuditLog({
@@ -757,21 +531,11 @@ export async function updateOfferDraft(actorUser, offerId, payload, organisation
     await assertApprovalsValid(context.organisationId, payload.approvals, existing.createdByUserId);
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const offer = await tx.offer.update({
-      where: { id: existing.id },
-      data: {
-        ...buildOfferData(payload, existing.application, actorUser),
-        createdByUserId: existing.createdByUserId,
-      },
-    });
-    await replaceOfferChildren(tx, offer.id, payload);
-    const refreshed = await tx.offer.findUnique({
-      where: { id: offer.id },
-      include: offerInclude,
-    });
-    await createOfferActivity(tx, refreshed, 'OFFER_DRAFT_UPDATED', `Offer draft ${refreshed.referenceNumber} was updated.`, actorUser.id, false);
-    return refreshed;
+  const updated = await updateOfferDraftRecord({
+    existing,
+    payload,
+    offerData: buildOfferData(payload, existing.application, actorUser),
+    actorUserId: actorUser.id,
   });
 
   await recordAuditLog({
@@ -798,35 +562,11 @@ export async function requestOfferApproval(actorUser, offerId, payload, organisa
 
   await assertApprovalsValid(context.organisationId, payload.approvals, existing.createdByUserId);
 
-  const updated = await prisma.$transaction(async (tx) => {
-    await tx.offerApproval.deleteMany({ where: { offerId: existing.id } });
-    await tx.offerApproval.createMany({
-      data: payload.approvals.map((approval) => ({
-        offerId: existing.id,
-        approverUserId: approval.approverUserId,
-        sequence: approval.sequence,
-        status: 'PENDING',
-      })),
-    });
-    await tx.offer.update({
-      where: { id: existing.id },
-      data: {
-        status: 'PENDING_APPROVAL',
-        approvalRequestedAt: new Date(),
-        approvedAt: null,
-        updatedByUserId: actorUser.id,
-      },
-    });
-    const refreshed = await tx.offer.findUnique({
-      where: { id: existing.id },
-      include: offerInclude,
-    });
-    await tx.application.update({
-      where: { id: existing.applicationId },
-      data: buildApplicationStageUpdate('PENDING_APPROVAL'),
-    });
-    await createOfferActivity(tx, refreshed, 'OFFER_APPROVAL_REQUESTED', `Offer ${refreshed.referenceNumber} was submitted for approval.`, actorUser.id, false);
-    return refreshed;
+  const updated = await requestOfferApprovalRecord({
+    existing,
+    approvals: payload.approvals,
+    actorUserId: actorUser.id,
+    applicationUpdate: buildApplicationStageUpdate('PENDING_APPROVAL'),
   });
 
   if (updated.approvals[0]) {
@@ -873,54 +613,23 @@ export async function actOnOfferApproval(actorUser, offerId, approvalId, action,
     throw badRequest('Approval steps must be completed in sequence.');
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    await tx.offerApproval.update({
-      where: { id: approval.id },
-      data: {
-        status: action,
-        comments: payload.comments || null,
-        actedAt: new Date(),
-      },
-    });
+  let nextStatus = 'PENDING_APPROVAL';
+  if (action === 'APPROVED') {
+    const remaining = existing.approvals.filter((item) => item.id !== approval.id);
+    const hasPending = remaining.some((item) => item.status === 'PENDING');
+    nextStatus = hasPending ? 'PENDING_APPROVAL' : 'APPROVED';
+  } else {
+    nextStatus = 'CHANGES_REQUESTED';
+  }
 
-    let nextStatus = 'PENDING_APPROVAL';
-    if (action === 'APPROVED') {
-      const remaining = existing.approvals.filter((item) => item.id !== approval.id);
-      const hasPending = remaining.some((item) => item.status === 'PENDING');
-      nextStatus = hasPending ? 'PENDING_APPROVAL' : 'APPROVED';
-    } else {
-      nextStatus = 'CHANGES_REQUESTED';
-    }
-
-    await tx.offer.update({
-      where: { id: existing.id },
-      data: {
-        status: nextStatus,
-        approvedAt: nextStatus === 'APPROVED' ? new Date() : null,
-        updatedByUserId: actorUser.id,
-      },
-    });
-
-    const refreshed = await tx.offer.findUnique({
-      where: { id: existing.id },
-      include: offerInclude,
-    });
-
-    await tx.application.update({
-      where: { id: existing.applicationId },
-      data: buildApplicationStageUpdate(nextStatus),
-    });
-
-    await createOfferActivity(
-      tx,
-      refreshed,
-      `OFFER_APPROVAL_${action}`,
-      `Offer ${refreshed.referenceNumber} approval step ${approval.sequence} was ${action.replaceAll('_', ' ').toLowerCase()}.`,
-      actorUser.id,
-      false,
-    );
-
-    return refreshed;
+  const updated = await actOnOfferApprovalRecord({
+    existing,
+    approval,
+    action,
+    comments: payload.comments,
+    nextStatus,
+    actorUserId: actorUser.id,
+    applicationUpdate: buildApplicationStageUpdate(nextStatus),
   });
 
   if (action === 'APPROVED') {
@@ -963,64 +672,19 @@ export async function releaseOffer(actorUser, offerId, payload, organisationId =
     throw badRequest('All approval steps must be completed before release.');
   }
 
-  const conflictingReleased = await prisma.offer.findFirst({
-    where: {
-      applicationId: existing.applicationId,
-      id: { not: existing.id },
-      status: { in: [...activeReleasedStatuses] },
-    },
-  });
+  const conflictingReleased = await findConflictingReleasedOffer(
+    existing.applicationId,
+    existing.id,
+    activeReleasedStatuses,
+  );
 
   const expiryAt = nextOfferExpiry(existing, payload.expiryAt);
-  let rawToken = null;
-
-  const released = await prisma.$transaction(async (tx) => {
-    if (conflictingReleased) {
-      await tx.offer.update({
-        where: { id: conflictingReleased.id },
-        data: {
-          status: 'SUPERSEDED',
-          supersededAt: new Date(),
-          supersededByOfferId: existing.id,
-        },
-      });
-      await invalidateAccessTokens(tx, conflictingReleased.id);
-    }
-
-    await invalidateAccessTokens(tx, existing.id);
-    rawToken = await createAccessToken(tx, existing.id, expiryAt);
-
-    await tx.offer.update({
-      where: { id: existing.id },
-      data: {
-        status: 'RELEASED',
-        expiryAt,
-        releasedAt: new Date(),
-        releasedByUserId: actorUser.id,
-        updatedByUserId: actorUser.id,
-      },
-    });
-
-    await tx.application.update({
-      where: { id: existing.applicationId },
-      data: buildApplicationStageUpdate('RELEASED'),
-    });
-
-    const refreshed = await tx.offer.findUnique({
-      where: { id: existing.id },
-      include: offerInclude,
-    });
-
-    await createOfferActivity(
-      tx,
-      refreshed,
-      'OFFER_RELEASED',
-      `Offer ${refreshed.referenceNumber} was released to the candidate.`,
-      actorUser.id,
-      true,
-    );
-
-    return refreshed;
+  const { offer: released, rawToken } = await releaseOfferRecord({
+    existing,
+    conflictingReleased,
+    expiryAt,
+    actorUserId: actorUser.id,
+    applicationUpdate: buildApplicationStageUpdate('RELEASED'),
   });
 
   const offerUrl = new URL(buildOfferLinkPath(rawToken), env.frontendUrl).toString();
@@ -1069,26 +733,14 @@ export async function createOfferRevision(actorUser, payload, organisationId = n
   const application = await getApplicationForOffer(context.organisationId, source.applicationId);
   const version = Math.max(...application.offers.map((offer) => offer.version), 0) + 1;
 
-  const revised = await prisma.$transaction(async (tx) => {
-    const offer = await tx.offer.create({
-      data: {
-        referenceNumber: buildOfferReference(version),
-        version,
-        status: 'DRAFT',
-        previousOfferId: source.id,
-        ...buildOfferData(payload, application, actorUser),
-      },
-    });
-    await replaceOfferChildren(tx, offer.id, payload);
-    const refreshed = await tx.offer.findUnique({
-      where: { id: offer.id },
-      include: offerInclude,
-    });
-    await createOfferActivity(tx, refreshed, 'OFFER_REVISION_CREATED', `Offer revision ${refreshed.referenceNumber} was created.`, actorUser.id, false, {
-      sourceOfferId: source.id,
-      sourceReference: source.referenceNumber,
-    });
-    return refreshed;
+  const revised = await createOfferRevisionRecord({
+    referenceNumber: buildOfferReference(version),
+    version,
+    source,
+    payload,
+    offerData: buildOfferData(payload, application, actorUser),
+    application,
+    actorUserId: actorUser.id,
   });
 
   await recordAuditLog({
@@ -1116,29 +768,11 @@ export async function withdrawOffer(actorUser, offerId, payload, organisationId 
     throw badRequest('This offer can no longer be withdrawn.');
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    await invalidateAccessTokens(tx, existing.id);
-    await tx.offer.update({
-      where: { id: existing.id },
-      data: {
-        status: 'WITHDRAWN',
-        withdrawnAt: new Date(),
-        withdrawalReason: payload.reason,
-        updatedByUserId: actorUser.id,
-      },
-    });
-    await tx.application.update({
-      where: { id: existing.applicationId },
-      data: buildApplicationStageUpdate('WITHDRAWN'),
-    });
-    const refreshed = await tx.offer.findUnique({
-      where: { id: existing.id },
-      include: offerInclude,
-    });
-    await createOfferActivity(tx, refreshed, 'OFFER_WITHDRAWN', `Offer ${refreshed.referenceNumber} was withdrawn.`, actorUser.id, true, {
-      reason: payload.reason,
-    });
-    return refreshed;
+  const updated = await withdrawOfferRecord({
+    existing,
+    reason: payload.reason,
+    actorUserId: actorUser.id,
+    applicationUpdate: buildApplicationStageUpdate('WITHDRAWN'),
   });
 
   await Promise.all([
@@ -1164,13 +798,7 @@ export async function withdrawOffer(actorUser, offerId, payload, organisationId 
 }
 
 async function getCandidateOfferOrThrow(candidateUser, offerId, requestMeta = {}) {
-  const offer = await prisma.offer.findFirst({
-    where: {
-      id: offerId,
-      candidateId: candidateUser.candidateProfile.id,
-    },
-    include: offerInclude,
-  });
+  const offer = await findCandidateOfferById(candidateUser.candidateProfile.id, offerId);
   if (!offer) throw notFound();
   return expireOfferIfNeeded(offer, requestMeta);
 }
@@ -1184,90 +812,22 @@ async function performCandidateOfferAction({ offer, action, actorUser = null, to
     JOINING_CONFIRMED: `Joining has been confirmed for ${offer.job.title}.`,
   };
 
-  const updated = await prisma.$transaction(async (tx) => {
-    if (tokenId) {
-      await tx.offerAccessToken.update({
-        where: { id: tokenId },
-        data: {
-          consumedAt: ['ACCEPTED', 'REJECTED', 'CHANGES_REQUESTED'].includes(action) ? new Date() : undefined,
-        },
-      });
-    }
+  const applicationStatus = action === 'REJECTED'
+    ? 'REJECTED'
+    : action === 'ACCEPTED'
+      ? 'ACCEPTED'
+      : action === 'CHANGES_REQUESTED'
+        ? 'CHANGES_REQUESTED'
+        : 'VIEWED';
 
-    const nextData = {
-      updatedByUserId: actorUser?.id || offer.updatedByUserId,
-    };
-
-    if (action === 'VIEWED' && !offer.viewedAt) {
-      nextData.status = 'VIEWED';
-      nextData.viewedAt = new Date();
-    } else if (action === 'ACCEPTED') {
-      nextData.status = 'ACCEPTED';
-      nextData.acceptedAt = new Date();
-      nextData.candidateResponseReason = payload.comment || null;
-    } else if (action === 'REJECTED') {
-      nextData.status = 'REJECTED';
-      nextData.rejectedAt = new Date();
-      nextData.candidateResponseReason = payload.reason;
-    } else if (action === 'CHANGES_REQUESTED') {
-      nextData.status = 'CHANGES_REQUESTED';
-      nextData.candidateResponseReason = payload.comment;
-    }
-
-    await tx.offer.update({
-      where: { id: offer.id },
-      data: nextData,
-    });
-
-    if (['ACCEPTED', 'REJECTED', 'CHANGES_REQUESTED', 'VIEWED'].includes(action) && payload.comment) {
-      await tx.offerComment.create({
-        data: {
-          offerId: offer.id,
-          authorUserId: actorUser?.id || null,
-          authorType: 'CANDIDATE',
-          visibility: 'CANDIDATE',
-          comment: payload.comment,
-        },
-      });
-    }
-
-    if (action === 'REJECTED') {
-      await tx.application.update({
-        where: { id: offer.applicationId },
-        data: buildApplicationStageUpdate('REJECTED'),
-      });
-    } else if (action === 'ACCEPTED') {
-      await tx.application.update({
-        where: { id: offer.applicationId },
-        data: buildApplicationStageUpdate('ACCEPTED'),
-      });
-    } else if (action === 'CHANGES_REQUESTED') {
-      await tx.application.update({
-        where: { id: offer.applicationId },
-        data: buildApplicationStageUpdate('CHANGES_REQUESTED'),
-      });
-    } else if (action === 'VIEWED') {
-      await tx.application.update({
-        where: { id: offer.applicationId },
-        data: buildApplicationStageUpdate('VIEWED'),
-      });
-    }
-
-    const refreshed = await tx.offer.findUnique({
-      where: { id: offer.id },
-      include: offerInclude,
-    });
-
-    await createOfferActivity(
-      tx,
-      refreshed,
-      `OFFER_${action}`,
-      candidateVisibleMessage[action],
-      actorUser?.id || null,
-      true,
-    );
-
-    return refreshed;
+  const updated = await performCandidateOfferActionRecord({
+    offer,
+    action,
+    actorUserId: actorUser?.id || null,
+    tokenId,
+    payload,
+    applicationUpdate: buildApplicationStageUpdate(applicationStatus),
+    candidateVisibleMessage,
   });
 
   await notifyRecruiterStakeholders(updated, `Offer ${action.toLowerCase().replaceAll('_', ' ')}`, `${updated.candidate.fullName} ${action.toLowerCase().replaceAll('_', ' ')} for ${updated.job.title}.`);
@@ -1291,17 +851,11 @@ export async function getCandidateOfferDetail(candidateUser, offerId, requestMet
 }
 
 export async function getCandidateOfferForApplication(candidateUser, applicationId, requestMeta = {}) {
-  const offer = await prisma.offer.findFirst({
-    where: {
-      applicationId,
-      candidateId: candidateUser.candidateProfile.id,
-      status: {
-        in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'JOINED', 'DEFERRED', 'CHANGES_REQUESTED'],
-      },
-    },
-    orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
-    include: offerInclude,
-  });
+  const offer = await findCandidateOfferForApplicationRecord(
+    candidateUser.candidateProfile.id,
+    applicationId,
+    ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'JOINED', 'DEFERRED', 'CHANGES_REQUESTED'],
+  );
   if (!offer) return null;
   return serializeOffer(await expireOfferIfNeeded(offer, requestMeta), { candidateView: true });
 }
@@ -1432,8 +986,9 @@ export async function updateJoiningLifecycle(actorUser, offerId, payload, organi
     throw badRequest('A reason is required for this joining outcome.');
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const data = {
+  const updated = await updateJoiningLifecycleRecord({
+    existing,
+    data: {
       status: payload.status,
       updatedByUserId: actorUser.id,
       proposedJoiningDate: normalizeDate(payload.proposedJoiningDate) || existing.proposedJoiningDate,
@@ -1443,29 +998,12 @@ export async function updateJoiningLifecycle(actorUser, offerId, payload, organi
       noShowAt: payload.status === 'NO_SHOW' ? new Date() : existing.noShowAt,
       deferredReason: payload.status === 'DEFERRED' ? payload.reason : existing.deferredReason,
       noShowReason: payload.status === 'NO_SHOW' ? payload.reason : existing.noShowReason,
-    };
-    await tx.offer.update({
-      where: { id: existing.id },
-      data,
-    });
-    await tx.application.update({
-      where: { id: existing.applicationId },
-      data: buildApplicationStageUpdate(payload.status),
-    });
-    const refreshed = await tx.offer.findUnique({
-      where: { id: existing.id },
-      include: offerInclude,
-    });
-    await createOfferActivity(
-      tx,
-      refreshed,
-      `OFFER_${payload.status}`,
-      `${buildOfferStatusLabel(payload.status)} recorded for ${refreshed.job.title}.`,
-      actorUser.id,
-      true,
-      { reason: payload.reason || null },
-    );
-    return refreshed;
+    },
+    status: payload.status,
+    actorUserId: actorUser.id,
+    applicationUpdate: buildApplicationStageUpdate(payload.status),
+    activityMessage: `${buildOfferStatusLabel(payload.status)} recorded for ${existing.job.title}.`,
+    reason: payload.reason || null,
   });
 
   await Promise.all([

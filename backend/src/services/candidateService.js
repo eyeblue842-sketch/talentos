@@ -1,4 +1,3 @@
-import { prisma } from '../config/db.js';
 import {
   serializeCandidateNotification,
   serializeCandidateProfile,
@@ -8,6 +7,52 @@ import {
 import { buildPublicJobWhere } from './publicPortalService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import {
+  countApplications,
+  countCandidateJobViews,
+  countCandidateOffers,
+  countNotifications,
+  countSavedJobs,
+  countUnreadNotificationsForUser,
+  createCandidateActivityRecord,
+  deleteCandidateJobViews,
+  deleteSavedJobById,
+  exportCandidateDataQueries,
+  findCandidateApplicationJobIds,
+  findCandidateInterviewRoundsCenter,
+  findCandidateOffers,
+  findCandidateOffersCenter,
+  findCandidateOnboardingProfile,
+  findCandidateProfileById,
+  findCandidateProfileWithLatestResume,
+  findCandidateProfileWithResumeBuilder,
+  findCandidateResumeAssets,
+  findCandidateSavedJobIds,
+  findCandidateSettingsProfile,
+  findCandidateJobViews,
+  findDashboardApplications,
+  findDashboardSavedJobs,
+  findNotifications,
+  findNotificationForRecipient,
+  findPublicJob,
+  findPublicJobWithOrganisation,
+  findRecentNotificationsForUser,
+  findRecommendationOpenJobs,
+  findSavedJobByCandidateAndJob,
+  findSavedJobs,
+  findScheduledInterviewRoundsForCandidate,
+  hasCandidateActivityCreateDelegate,
+  markAllNotificationsReadForUser,
+  markCandidateOnboardingCompleted,
+  updateCandidateAccountDeactivation,
+  updateCandidateDataExportTimestamps,
+  updateCandidateOnboardingProfile,
+  updateCandidateProfileWithLatestResume,
+  updateCandidateSettingsProfile,
+  updateNotificationReadAt,
+  upsertCandidateJobViewRecord,
+  upsertSavedJobRecord,
+} from '../repositories/candidate/candidateRepository.js';
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
@@ -93,20 +138,18 @@ function isDeploymentFailure(error) {
 }
 
 async function recordCandidateActivity(candidateId, type, metadata = {}) {
-  if (!prisma.candidateActivity?.create) {
+  if (!hasCandidateActivityCreateDelegate()) {
     throw new Error('Prisma candidateActivity delegate is unavailable. Regenerate the Prisma client or update the test mocks.');
   }
 
   try {
-    await prisma.candidateActivity.create({
-      data: {
-        candidateId,
-        type,
-        metadata,
-        jobId: metadata.jobId || null,
-        applicationId: metadata.applicationId || null,
-        userId: metadata.userId || null,
-      },
+    await createCandidateActivityRecord({
+      candidateId,
+      type,
+      metadata,
+      jobId: metadata.jobId || null,
+      applicationId: metadata.applicationId || null,
+      userId: metadata.userId || null,
     });
   } catch (error) {
     if (isDeploymentFailure(error)) {
@@ -416,12 +459,7 @@ function scoreRecommendedJob(profile, job) {
 }
 
 export async function getCandidateSelfProfile(candidateId) {
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateId },
-    include: {
-      latestResumeAsset: true,
-    },
-  });
+  const profile = await findCandidateProfileWithLatestResume(candidateId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -436,36 +474,32 @@ export async function getCandidateSelfProfile(candidateId) {
 }
 
 export async function updateCandidateSelfProfile(candidateId, payload, requestMeta = {}) {
-  const profile = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      ...payload,
-      phoneNumber: payload.phoneNumber || null,
-      skills: payload.skills ? normalizeStringArray(payload.skills) : undefined,
-      skillEntries: payload.skillEntries !== undefined ? serializeEntryArray(payload.skillEntries) : undefined,
-      experienceEntries: payload.experienceEntries !== undefined ? serializeEntryArray(payload.experienceEntries) : undefined,
-      educationEntries: payload.educationEntries !== undefined ? serializeEntryArray(payload.educationEntries) : undefined,
-      certificationEntries: payload.certificationEntries !== undefined ? serializeEntryArray(payload.certificationEntries) : undefined,
-      languageEntries: payload.languageEntries !== undefined ? serializeEntryArray(payload.languageEntries) : undefined,
-      projectEntries: payload.projectEntries !== undefined ? serializeEntryArray(payload.projectEntries) : undefined,
-      portfolioLinks: payload.portfolioLinks !== undefined ? serializeEntryArray(payload.portfolioLinks) : undefined,
-      preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
-      preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
-      currentEmployer: payload.currentEmployer || null,
-      currentDesignation: payload.currentDesignation || null,
-      employmentStatus: payload.employmentStatus || null,
-      lastWorkingDate: payload.lastWorkingDate !== undefined ? asOptionalDate(payload.lastWorkingDate) : undefined,
-      profileImageUrl: payload.profileImageUrl || null,
-      portfolioUrl: payload.portfolioUrl || null,
-      linkedInUrl: payload.linkedInUrl || null,
-      githubUrl: payload.githubUrl || null,
-      searchableProfile: payload.searchableProfile ?? undefined,
-      phoneVisibleToRecruiters: payload.phoneVisibleToRecruiters ?? undefined,
-      salaryVisibleToRecruiters: payload.salaryVisibleToRecruiters ?? undefined,
-      resumeVisibleToRecruiters: payload.resumeVisibleToRecruiters ?? undefined,
-      onboardingCompletedAt: payload.onboardingCompletedAt === null ? null : undefined,
-    },
-    include: { latestResumeAsset: true },
+  const profile = await updateCandidateProfileWithLatestResume(candidateId, {
+    ...payload,
+    phoneNumber: payload.phoneNumber || null,
+    skills: payload.skills ? normalizeStringArray(payload.skills) : undefined,
+    skillEntries: payload.skillEntries !== undefined ? serializeEntryArray(payload.skillEntries) : undefined,
+    experienceEntries: payload.experienceEntries !== undefined ? serializeEntryArray(payload.experienceEntries) : undefined,
+    educationEntries: payload.educationEntries !== undefined ? serializeEntryArray(payload.educationEntries) : undefined,
+    certificationEntries: payload.certificationEntries !== undefined ? serializeEntryArray(payload.certificationEntries) : undefined,
+    languageEntries: payload.languageEntries !== undefined ? serializeEntryArray(payload.languageEntries) : undefined,
+    projectEntries: payload.projectEntries !== undefined ? serializeEntryArray(payload.projectEntries) : undefined,
+    portfolioLinks: payload.portfolioLinks !== undefined ? serializeEntryArray(payload.portfolioLinks) : undefined,
+    preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    currentEmployer: payload.currentEmployer || null,
+    currentDesignation: payload.currentDesignation || null,
+    employmentStatus: payload.employmentStatus || null,
+    lastWorkingDate: payload.lastWorkingDate !== undefined ? asOptionalDate(payload.lastWorkingDate) : undefined,
+    profileImageUrl: payload.profileImageUrl || null,
+    portfolioUrl: payload.portfolioUrl || null,
+    linkedInUrl: payload.linkedInUrl || null,
+    githubUrl: payload.githubUrl || null,
+    searchableProfile: payload.searchableProfile ?? undefined,
+    phoneVisibleToRecruiters: payload.phoneVisibleToRecruiters ?? undefined,
+    salaryVisibleToRecruiters: payload.salaryVisibleToRecruiters ?? undefined,
+    resumeVisibleToRecruiters: payload.resumeVisibleToRecruiters ?? undefined,
+    onboardingCompletedAt: payload.onboardingCompletedAt === null ? null : undefined,
   });
 
   await recordCandidateActivity(candidateId, 'PROFILE_UPDATED');
@@ -490,41 +524,37 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
 }
 
 export async function updateCandidateSettings(candidateId, payload, requestMeta = {}) {
-  const profile = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      profileVisibility: payload.profileVisibility,
-      recommendationEnabled: payload.recommendationEnabled,
-      preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
-      preferredIndustries: payload.preferredIndustries ? normalizeStringArray(payload.preferredIndustries) : undefined,
-      preferredCompanySizes: payload.preferredCompanySizes ? normalizeStringArray(payload.preferredCompanySizes) : undefined,
-      preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
-      willingToRelocate: payload.willingToRelocate,
-      workplacePreferences: payload.workplacePreferences,
-      employmentPreferences: payload.employmentPreferences,
-      minExpectedSalary: payload.minExpectedSalary ?? undefined,
-      preferredCurrency: payload.preferredCurrency || null,
-      availability: payload.availability,
-      noticePeriodDays: payload.noticePeriodDays ?? undefined,
-      workAuthorization: payload.workAuthorization || null,
-      requiresVisaSponsorship: payload.requiresVisaSponsorship,
-      travelWillingness: payload.travelWillingness || null,
-      jobAlertEnabled: payload.jobAlertEnabled,
-      jobAlertFrequency: payload.jobAlertFrequency,
-      notifyForSavedJobUpdates: payload.notifyForSavedJobUpdates,
-      notifyForApplicationUpdates: payload.notifyForApplicationUpdates,
-      notifyForRecommendations: payload.notifyForRecommendations,
-      notifyForInterviews: payload.notifyForInterviews,
-      notifyForOffers: payload.notifyForOffers,
-      notifyForProfileReminders: payload.notifyForProfileReminders,
-      notifyForMarketing: payload.notifyForMarketing,
-      searchableProfile: payload.searchableProfile,
-      phoneVisibleToRecruiters: payload.phoneVisibleToRecruiters,
-      salaryVisibleToRecruiters: payload.salaryVisibleToRecruiters,
-      resumeVisibleToRecruiters: payload.resumeVisibleToRecruiters,
-      notificationPreferences: payload.notificationPreferences ?? undefined,
-    },
-    include: { latestResumeAsset: true },
+  const profile = await updateCandidateSettingsProfile(candidateId, {
+    profileVisibility: payload.profileVisibility,
+    recommendationEnabled: payload.recommendationEnabled,
+    preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
+    preferredIndustries: payload.preferredIndustries ? normalizeStringArray(payload.preferredIndustries) : undefined,
+    preferredCompanySizes: payload.preferredCompanySizes ? normalizeStringArray(payload.preferredCompanySizes) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    willingToRelocate: payload.willingToRelocate,
+    workplacePreferences: payload.workplacePreferences,
+    employmentPreferences: payload.employmentPreferences,
+    minExpectedSalary: payload.minExpectedSalary ?? undefined,
+    preferredCurrency: payload.preferredCurrency || null,
+    availability: payload.availability,
+    noticePeriodDays: payload.noticePeriodDays ?? undefined,
+    workAuthorization: payload.workAuthorization || null,
+    requiresVisaSponsorship: payload.requiresVisaSponsorship,
+    travelWillingness: payload.travelWillingness || null,
+    jobAlertEnabled: payload.jobAlertEnabled,
+    jobAlertFrequency: payload.jobAlertFrequency,
+    notifyForSavedJobUpdates: payload.notifyForSavedJobUpdates,
+    notifyForApplicationUpdates: payload.notifyForApplicationUpdates,
+    notifyForRecommendations: payload.notifyForRecommendations,
+    notifyForInterviews: payload.notifyForInterviews,
+    notifyForOffers: payload.notifyForOffers,
+    notifyForProfileReminders: payload.notifyForProfileReminders,
+    notifyForMarketing: payload.notifyForMarketing,
+    searchableProfile: payload.searchableProfile,
+    phoneVisibleToRecruiters: payload.phoneVisibleToRecruiters,
+    salaryVisibleToRecruiters: payload.salaryVisibleToRecruiters,
+    resumeVisibleToRecruiters: payload.resumeVisibleToRecruiters,
+    notificationPreferences: payload.notificationPreferences ?? undefined,
   });
 
   await recordCandidateActivity(candidateId, 'PREFERENCES_UPDATED');
@@ -549,10 +579,7 @@ export async function updateCandidateSettings(candidateId, payload, requestMeta 
 }
 
 export async function getCandidateSettings(candidateId) {
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateId },
-    include: { latestResumeAsset: true },
-  });
+  const profile = await findCandidateSettingsProfile(candidateId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -571,15 +598,9 @@ export async function listSavedJobs(candidateId, filters = {}) {
   const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 12));
   const where = buildSavedJobWhere(candidateId, filters);
 
-  const total = await prisma.savedJob.count({ where });
+  const total = await countSavedJobs(where);
   const page = clampPage(total, requestedPage, pageSize);
-  const rows = await prisma.savedJob.findMany({
-    where,
-    include: { job: { include: { organisation: true, applications: true } } },
-    orderBy: buildSavedJobOrderBy(filters.sort),
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  const rows = await findSavedJobs(where, buildSavedJobOrderBy(filters.sort), (page - 1) * pageSize, pageSize);
 
   return {
     items: rows.map((row) => serializeSavedJob(row, { saved: true })),
@@ -588,12 +609,9 @@ export async function listSavedJobs(candidateId, filters = {}) {
 }
 
 export async function saveJobForCandidate(candidateId, jobId, requestMeta = {}) {
-  const job = await prisma.job.findFirst({
-    where: {
-      id: jobId,
-      ...buildPublicJobWhere(),
-    },
-    include: { organisation: true },
+  const job = await findPublicJobWithOrganisation({
+    id: jobId,
+    ...buildPublicJobWhere(),
   });
 
   if (!job) {
@@ -602,28 +620,11 @@ export async function saveJobForCandidate(candidateId, jobId, requestMeta = {}) 
     throw error;
   }
 
-  const savedJob = await prisma.savedJob.upsert({
-    where: {
-      candidateId_jobId: {
-        candidateId,
-        jobId,
-      },
-    },
-    update: {
-      organisationId: job.organisationId,
-      jobSlugSnapshot: job.slug,
-      jobTitleSnapshot: job.title,
-      organisationNameSnapshot: job.organisation?.name || 'Careeriz employer',
-    },
-    create: {
-      candidateId,
-      jobId,
-      organisationId: job.organisationId,
-      jobSlugSnapshot: job.slug,
-      jobTitleSnapshot: job.title,
-      organisationNameSnapshot: job.organisation?.name || 'Careeriz employer',
-    },
-    include: { job: { include: { organisation: true } } },
+  const savedJob = await upsertSavedJobRecord(candidateId, jobId, {
+    organisationId: job.organisationId,
+    jobSlugSnapshot: job.slug,
+    jobTitleSnapshot: job.title,
+    organisationNameSnapshot: job.organisation?.name || 'Careeriz employer',
   });
 
   await recordCandidateActivity(candidateId, 'JOB_SAVED', { jobId });
@@ -643,12 +644,7 @@ export async function saveJobForCandidate(candidateId, jobId, requestMeta = {}) 
 }
 
 export async function removeSavedJob(candidateId, jobId, requestMeta = {}) {
-  const savedJob = await prisma.savedJob.findFirst({
-    where: {
-      candidateId,
-      jobId,
-    },
-  });
+  const savedJob = await findSavedJobByCandidateAndJob(candidateId, jobId);
 
   if (!savedJob) {
     const error = new Error('Saved job not found.');
@@ -656,7 +652,7 @@ export async function removeSavedJob(candidateId, jobId, requestMeta = {}) {
     throw error;
   }
 
-  await prisma.savedJob.delete({ where: { id: savedJob.id } });
+  await deleteSavedJobById(savedJob.id);
   await recordCandidateActivity(candidateId, 'JOB_UNSAVED', { jobId });
   if (requestMeta.actorUserId) {
     await recordCandidateAuditLog({
@@ -673,11 +669,9 @@ export async function removeSavedJob(candidateId, jobId, requestMeta = {}) {
 }
 
 export async function recordCandidateJobView(candidateId, jobId, payload = {}) {
-  const job = await prisma.job.findFirst({
-    where: {
-      id: jobId,
-      ...buildPublicJobWhere(),
-    },
+  const job = await findPublicJob({
+    id: jobId,
+    ...buildPublicJobWhere(),
   });
 
   if (!job) {
@@ -686,26 +680,20 @@ export async function recordCandidateJobView(candidateId, jobId, payload = {}) {
     throw error;
   }
 
-  await prisma.candidateJobView.upsert({
-    where: {
-      candidateId_jobId: {
-        candidateId,
-        jobId,
-      },
+  await upsertCandidateJobViewRecord(
+    candidateId,
+    jobId,
+    {
+      source: payload.source || null,
+      referrerClassification: payload.referrerClassification || null,
     },
-    update: {
+    {
       lastViewedAt: new Date(),
       viewCount: { increment: 1 },
       source: payload.source || undefined,
       referrerClassification: payload.referrerClassification || undefined,
     },
-    create: {
-      candidateId,
-      jobId,
-      source: payload.source || null,
-      referrerClassification: payload.referrerClassification || null,
-    },
-  });
+  );
 
   await recordCandidateActivity(candidateId, 'JOB_VIEWED', { jobId });
   return { recorded: true };
@@ -715,15 +703,9 @@ export async function listCandidateJobViews(candidateId, filters = {}) {
   const requestedPage = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(filters.pageSize) || 8));
   const where = { candidateId };
-  const total = await prisma.candidateJobView.count({ where });
+  const total = await countCandidateJobViews(where);
   const page = clampPage(total, requestedPage, pageSize);
-  const rows = await prisma.candidateJobView.findMany({
-    where,
-    include: { job: { include: { organisation: true } } },
-    orderBy: [{ lastViewedAt: 'desc' }, { id: 'asc' }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  const rows = await findCandidateJobViews(where, (page - 1) * pageSize, pageSize);
 
   return {
     items: rows
@@ -741,7 +723,7 @@ export async function listCandidateJobViews(candidateId, filters = {}) {
 export const getCandidateJobViews = listCandidateJobViews;
 
 export async function clearCandidateJobViews(candidateId, requestMeta = {}) {
-  await prisma.candidateJobView.deleteMany({ where: { candidateId } });
+  await deleteCandidateJobViews(candidateId);
   await recordCandidateActivity(candidateId, 'RECENT_HISTORY_CLEARED');
   if (requestMeta.actorUserId) {
     await recordCandidateAuditLog({
@@ -761,10 +743,7 @@ export async function getCandidateRecommendations(candidateId, options = {}) {
   const pageSize = Math.min(24, Math.max(1, Number(options.pageSize) || 6));
   const excludeSaved = Boolean(options.excludeSaved);
 
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateId },
-    include: { resumeBuilder: true },
-  });
+  const profile = await findCandidateProfileWithResumeBuilder(candidateId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -774,14 +753,9 @@ export async function getCandidateRecommendations(candidateId, options = {}) {
 
   const completion = calculateProfileCompletion(profile);
   const [savedJobs, appliedJobs, openJobs] = await Promise.all([
-    prisma.savedJob.findMany({ where: { candidateId }, select: { jobId: true } }),
-    prisma.application.findMany({ where: { candidateId }, select: { jobId: true } }),
-    prisma.job.findMany({
-      where: buildPublicJobWhere(),
-      include: { organisation: true },
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      take: 60,
-    }),
+    findCandidateSavedJobIds(candidateId),
+    findCandidateApplicationJobIds(candidateId),
+    findRecommendationOpenJobs(buildPublicJobWhere()),
   ]);
 
   const excludedJobIds = new Set([
@@ -842,14 +816,9 @@ export async function listCandidateNotifications(candidateId, userId, filters = 
     ...(filters.type ? { type: filters.type } : {}),
   };
 
-  const total = await prisma.notification.count({ where });
+  const total = await countNotifications(where);
   const page = clampPage(total, requestedPage, pageSize);
-  const rows = await prisma.notification.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  const rows = await findNotifications(where, (page - 1) * pageSize, pageSize);
 
   return {
     items: rows.map((row) => serializeCandidateNotification(row)),
@@ -858,12 +827,7 @@ export async function listCandidateNotifications(candidateId, userId, filters = 
 }
 
 export async function markCandidateNotificationRead(userId, notificationId) {
-  const notification = await prisma.notification.findFirst({
-    where: {
-      id: notificationId,
-      recipientUserId: userId,
-    },
-  });
+  const notification = await findNotificationForRecipient(notificationId, userId);
 
   if (!notification) {
     const error = new Error('Notification not found.');
@@ -871,22 +835,13 @@ export async function markCandidateNotificationRead(userId, notificationId) {
     throw error;
   }
 
-  const updated = await prisma.notification.update({
-    where: { id: notificationId },
-    data: { readAt: notification.readAt || new Date() },
-  });
+  const updated = await updateNotificationReadAt(notificationId, notification.readAt || new Date());
 
   return serializeCandidateNotification(updated);
 }
 
 export async function markAllCandidateNotificationsRead(userId) {
-  await prisma.notification.updateMany({
-    where: {
-      recipientUserId: userId,
-      readAt: null,
-    },
-    data: { readAt: new Date() },
-  });
+  await markAllNotificationsReadForUser(userId);
 
   return { updated: true };
 }
@@ -921,10 +876,7 @@ async function findManyOrEmpty(query) {
 }
 
 export async function getCandidateDashboard(candidateId, userId) {
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateId },
-    include: { latestResumeAsset: true },
-  });
+  const profile = await findCandidateProfileWithLatestResume(candidateId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -937,82 +889,28 @@ export async function getCandidateDashboard(candidateId, userId) {
   const recommendationPromise = getCandidateRecommendations(candidateId, { excludeSaved: true, page: 1, pageSize: 4 });
 
   const [savedJobsCount, applicationsCount, savedJobs, applications, unreadNotificationsCount, notifications, interviews, offersCount, activeOffers, recentViews, recommendations, resumes] = await Promise.all([
-    prisma.savedJob.count({ where: { candidateId } }),
-    prisma.application.count({ where: { candidateId } }),
-    prisma.savedJob.findMany({
-      where: { candidateId },
-      include: { job: { include: { organisation: true } } },
-      take: 4,
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-    }),
-    prisma.application.findMany({
-      where: { candidateId },
-      include: { job: { include: { organisation: true } } },
-      orderBy: [{ appliedAt: 'desc' }, { id: 'asc' }],
-      take: 5,
-    }),
-    prisma.notification.count({ where: { recipientUserId: userId, readAt: null } }),
-    prisma.notification.findMany({
-      where: { recipientUserId: userId },
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      take: 5,
-    }),
-    prisma.interviewRound.findMany({
-      where: {
-        interviewProcess: {
-          application: {
-            candidateId,
-          },
-        },
-        status: 'SCHEDULED',
-        scheduledStartAt: { gte: new Date() },
-      },
-      include: {
-        interviewProcess: {
-          include: {
-            application: {
-              include: {
-                job: { include: { organisation: true } },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { scheduledStartAt: 'asc' },
-      take: 5,
-    }),
-    countOrZero(() => prisma.offer.count({
-      where: {
-        candidateId,
-        status: {
-          in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED'],
-        },
+    countSavedJobs({ candidateId }),
+    countApplications({ candidateId }),
+    findDashboardSavedJobs(candidateId),
+    findDashboardApplications(candidateId),
+    countUnreadNotificationsForUser(userId),
+    findRecentNotificationsForUser(userId),
+    findScheduledInterviewRoundsForCandidate(candidateId),
+    countOrZero(() => countCandidateOffers({
+      candidateId,
+      status: {
+        in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED'],
       },
     })),
-    findManyOrEmpty(() => prisma.offer.findMany({
-      where: {
-        candidateId,
-        status: {
-          in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED', 'EXPIRED', 'WITHDRAWN'],
-        },
+    findManyOrEmpty(() => findCandidateOffers({
+      candidateId,
+      status: {
+        in: ['RELEASED', 'VIEWED', 'ACCEPTED', 'JOINING_CONFIRMED', 'DEFERRED', 'EXPIRED', 'WITHDRAWN'],
       },
-      include: {
-        job: { include: { organisation: true } },
-      },
-      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      take: 4,
-    })),
+    }, 4)),
     recentViewsPromise,
     recommendationPromise,
-    findManyOrEmpty(() => prisma.resumeAsset.findMany({
-      where: {
-        candidateId,
-        kind: 'RESUME',
-        status: { not: 'DELETED' },
-      },
-      orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-      take: 5,
-    })),
+    findManyOrEmpty(() => findCandidateResumeAssets(candidateId, 5)),
   ]);
 
   const activeApplicationsCount = applications.filter((item) => !['Rejected', 'Withdrawn', 'Selected'].includes(item.statusLabel)).length;
@@ -1097,15 +995,7 @@ export async function getCandidateDashboard(candidateId, userId) {
 }
 
 export async function getCandidateOnboardingState(candidateId) {
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateId },
-    include: {
-      resumeAssets: {
-        where: { kind: 'RESUME', status: { not: 'DELETED' } },
-        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-      },
-    },
-  });
+  const profile = await findCandidateOnboardingProfile(candidateId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -1130,41 +1020,29 @@ export async function getCandidateOnboardingState(candidateId) {
 }
 
 export async function saveCandidateOnboarding(candidateId, payload, requestMeta = {}) {
-  const profile = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      fullName: payload.fullName,
-      phoneNumber: payload.phoneNumber || null,
-      location: payload.location,
-      currentTitle: payload.currentTitle,
-      totalExperience: payload.totalExperience,
-      skills: payload.primarySkills ? normalizeStringArray(payload.primarySkills) : undefined,
-      employmentStatus: payload.employmentStatus || null,
-      preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
-      workplacePreferences: payload.workplacePreferences || undefined,
-      noticePeriodDays: payload.noticePeriodDays ?? undefined,
-      profileVisibility: payload.profileVisibility || undefined,
-      searchableProfile: payload.searchableProfile ?? undefined,
-      onboardingStep: payload.currentStep || 1,
-      onboardingLastSavedAt: new Date(),
-      onboardingSkippedResume: payload.resumeStepAction === 'SKIP' ? true : undefined,
-    },
-    include: {
-      resumeAssets: {
-        where: { kind: 'RESUME', status: { not: 'DELETED' } },
-        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-      },
-    },
+  const profile = await updateCandidateOnboardingProfile(candidateId, {
+    fullName: payload.fullName,
+    phoneNumber: payload.phoneNumber || null,
+    location: payload.location,
+    currentTitle: payload.currentTitle,
+    totalExperience: payload.totalExperience,
+    skills: payload.primarySkills ? normalizeStringArray(payload.primarySkills) : undefined,
+    employmentStatus: payload.employmentStatus || null,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    workplacePreferences: payload.workplacePreferences || undefined,
+    noticePeriodDays: payload.noticePeriodDays ?? undefined,
+    profileVisibility: payload.profileVisibility || undefined,
+    searchableProfile: payload.searchableProfile ?? undefined,
+    onboardingStep: payload.currentStep || 1,
+    onboardingLastSavedAt: new Date(),
+    onboardingSkippedResume: payload.resumeStepAction === 'SKIP' ? true : undefined,
   });
 
   const completed = isCandidateOnboardingComplete(profile);
   if (completed && !profile.onboardingCompletedAt) {
-    await prisma.candidateProfile.update({
-      where: { id: candidateId },
-      data: {
-        onboardingCompletedAt: new Date(),
-        onboardingStep: 4,
-      },
+    await markCandidateOnboardingCompleted(candidateId, {
+      onboardingCompletedAt: new Date(),
+      onboardingStep: 4,
     });
   }
 
@@ -1195,41 +1073,7 @@ export async function saveCandidateOnboarding(candidateId, payload, requestMeta 
 }
 
 export async function getCandidateInterviewCenter(candidateId) {
-  const rounds = await prisma.interviewRound.findMany({
-    where: {
-      interviewProcess: {
-        application: {
-          candidateId,
-        },
-      },
-    },
-    include: {
-      meeting: {
-        include: {
-          participants: true,
-          rescheduleRequests: {
-            include: { options: true },
-            orderBy: { createdAt: 'desc' },
-          },
-        },
-      },
-      panelMembers: {
-        include: {
-          user: true,
-        },
-      },
-      interviewProcess: {
-        include: {
-          application: {
-            include: {
-              job: { include: { organisation: true } },
-            },
-          },
-        },
-      },
-    },
-    orderBy: [{ scheduledStartAt: 'asc' }, { createdAt: 'desc' }],
-  });
+  const rounds = await findCandidateInterviewRoundsCenter(candidateId);
 
   const serialized = rounds.map((round) => ({
     id: round.id,
@@ -1287,13 +1131,7 @@ export async function getCandidateInterviewCenter(candidateId) {
 }
 
 export async function getCandidateOfferCenter(candidateId) {
-  const offers = await prisma.offer.findMany({
-    where: { candidateId },
-    include: {
-      job: { include: { organisation: true } },
-    },
-    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-  });
+  const offers = await findCandidateOffersCenter(candidateId);
 
   const rows = offers.map((offer) => ({
     id: offer.id,
@@ -1321,34 +1159,7 @@ export async function getCandidateOfferCenter(candidateId) {
 }
 
 export async function requestCandidateDataExport(candidateId, userId, requestMeta = {}) {
-  const [profile, savedJobs, applications, interviews, offers, resumes, notifications] = await Promise.all([
-    prisma.candidateProfile.findUnique({ where: { id: candidateId } }),
-    prisma.savedJob.findMany({ where: { candidateId }, include: { job: true } }),
-    prisma.jobApplication.findMany({
-      where: { candidateId },
-      include: {
-        job: true,
-        application: true,
-        resumeSnapshot: true,
-        timeline: { where: { isCandidateVisible: true }, orderBy: { createdAt: 'asc' } },
-      },
-    }),
-    prisma.interviewRound.findMany({
-      where: {
-        interviewProcess: {
-          application: {
-            candidateId,
-          },
-        },
-      },
-      include: {
-        interviewProcess: { include: { application: true } },
-      },
-    }),
-    prisma.offer.findMany({ where: { candidateId }, include: { job: true } }),
-    prisma.resumeAsset.findMany({ where: { candidateId, kind: 'RESUME', status: { not: 'DELETED' } } }),
-    prisma.notification.findMany({ where: { recipientUserId: userId }, orderBy: { createdAt: 'desc' }, take: 200 }),
-  ]);
+  const [profile, savedJobs, applications, interviews, offers, resumes, notifications] = await exportCandidateDataQueries(candidateId, userId);
 
   if (!profile) {
     const error = new Error('Candidate profile not found.');
@@ -1356,12 +1167,9 @@ export async function requestCandidateDataExport(candidateId, userId, requestMet
     throw error;
   }
 
-  await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      dataExportRequestedAt: new Date(),
-      dataExportCompletedAt: new Date(),
-    },
+  await updateCandidateDataExportTimestamps(candidateId, {
+    dataExportRequestedAt: new Date(),
+    dataExportCompletedAt: new Date(),
   });
 
   await recordCandidateAuditLog({
@@ -1439,23 +1247,20 @@ export async function requestCandidateDataExport(candidateId, userId, requestMet
 }
 
 export async function requestCandidateAccountDeactivation(candidateId, userId, payload, requestMeta = {}) {
-  const profile = await prisma.candidateProfile.findUnique({ where: { id: candidateId } });
+  const profile = await findCandidateProfileById(candidateId);
   if (!profile) {
     const error = new Error('Candidate profile not found.');
     error.statusCode = 404;
     throw error;
   }
 
-  const updated = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      accountLifecycleStatus: 'DEACTIVATION_REQUESTED',
-      accountDeactivationRequestedAt: new Date(),
-      accountDeactivationReason: payload.reason,
-      recommendationEnabled: false,
-      jobAlertEnabled: false,
-      notifyForMarketing: false,
-    },
+  const updated = await updateCandidateAccountDeactivation(candidateId, {
+    accountLifecycleStatus: 'DEACTIVATION_REQUESTED',
+    accountDeactivationRequestedAt: new Date(),
+    accountDeactivationReason: payload.reason,
+    recommendationEnabled: false,
+    jobAlertEnabled: false,
+    notifyForMarketing: false,
   });
 
   await recordCandidateAuditLog({

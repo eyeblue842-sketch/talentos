@@ -1,4 +1,3 @@
-import { prisma } from '../../config/db.js';
 import { env } from '../../config/env.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { enqueueBackgroundTask } from '../../services/backgroundTaskService.js';
@@ -7,6 +6,22 @@ import { createFingerprint } from './governanceService.js';
 import { resolveActiveMatchScoringProfileVersion } from './matchScoringProfileService.js';
 import { getCandidateJobMatchCompatibility } from './candidateMatchEngineService.js';
 import { buildCandidateMatchEntityId, buildEffectiveCandidateMatchValues } from './candidateMatchResultService.js';
+import {
+  countRankingEntries,
+  createRankingEntry,
+  createRankingSnapshot,
+  deleteRankingEntriesForSnapshot,
+  findCandidateJobMatchStateForRanking,
+  findLatestRankingOverrides,
+  findLatestRankingSnapshot,
+  findRankingEntries,
+  findRankingEntriesWithCandidateFallback,
+  findRankingJob,
+  findRankingPoolApplications,
+  findRankingSnapshotById,
+  findRankingTaskActorUser,
+  updateRankingSnapshot,
+} from '../repositories/candidateRankingRepository.js';
 
 const FEATURE = 'CANDIDATE_RANKING';
 const SNAPSHOT_SCHEMA_VERSION = '1.0.0';
@@ -82,12 +97,7 @@ function serializeEntry(entry) {
 
 async function getRankingContext(actorUser, jobId, mode = 'read') {
   const permissionContext = await requireIntelligenceFeature(actorUser, FEATURE, null, mode);
-  const job = await prisma.job.findFirst({
-    where: {
-      id: jobId,
-      organisationId: permissionContext.organisationId,
-    },
-  });
+  const job = await findRankingJob(permissionContext.organisationId, jobId);
   if (!job) {
     const error = new Error('Job not found.');
     error.statusCode = 404;
@@ -97,19 +107,11 @@ async function getRankingContext(actorUser, jobId, mode = 'read') {
 }
 
 async function getCandidatePool(context) {
-  const rows = await prisma.application.findMany({
-    where: {
-      organisationId: context.permissionContext.organisationId,
-      jobId: context.job.id,
-    },
-    select: {
-      id: true,
-      candidateId: true,
-      updatedAt: true,
-    },
-    orderBy: [{ updatedAt: 'desc' }, { appliedAt: 'desc' }],
-    take: MAX_RANKING_CANDIDATES,
-  });
+  const rows = await findRankingPoolApplications(
+    context.permissionContext.organisationId,
+    context.job.id,
+    MAX_RANKING_CANDIDATES,
+  );
 
   return rows.map((row) => ({
     applicationId: row.id,
@@ -148,22 +150,11 @@ function buildRankingSourceFingerprint({ job, poolFingerprint, scoringProfileVer
 }
 
 async function getLatestSnapshot(organisationId, jobId) {
-  return prisma.candidateRankingSnapshot.findFirst({
-    where: {
-      organisationId,
-      jobId,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  return findLatestRankingSnapshot(organisationId, jobId);
 }
 
 async function getLatestOverridesMap(organisationId, jobId) {
-  const rows = prisma.recruiterMatchOverride?.findMany
-    ? await prisma.recruiterMatchOverride.findMany({
-        where: { organisationId, jobId },
-        orderBy: { createdAt: 'desc' },
-      })
-    : [];
+  const rows = await findLatestRankingOverrides(organisationId, jobId);
 
   const map = new Map();
   for (const row of rows) {
@@ -190,28 +181,26 @@ async function createRankingEntries(snapshot, items) {
 
   if (sorted.length) {
     for (const item of sorted) {
-      await prisma.candidateRankingEntry.create({
-        data: {
-          snapshotId: snapshot.id,
-          organisationId: snapshot.organisationId,
-          jobId: snapshot.jobId,
-          candidateId: item.candidateId,
-          matchStateId: item.matchStateId,
-          matchResultId: item.matchResultId,
-          rank: item.rank,
-          generatedOverallScore: item.generatedOverallScore,
-          effectiveOverallScore: item.effectiveOverallScore,
-          confidenceScore: item.confidenceScore,
-          generatedRecommendation: item.generatedRecommendation,
-          effectiveRecommendation: item.effectiveRecommendation,
-          fitBand: fitBand(item.effectiveOverallScore),
-          strengthSummary: item.strengthSummary,
-          gapSummary: item.gapSummary,
-          isKnockedOut: item.isKnockedOut,
-          hasOverride: item.hasOverride,
-          metadata: {
-            requiredSkillsScore: item.requiredSkillsScore,
-          },
+      await createRankingEntry({
+        snapshotId: snapshot.id,
+        organisationId: snapshot.organisationId,
+        jobId: snapshot.jobId,
+        candidateId: item.candidateId,
+        matchStateId: item.matchStateId,
+        matchResultId: item.matchResultId,
+        rank: item.rank,
+        generatedOverallScore: item.generatedOverallScore,
+        effectiveOverallScore: item.effectiveOverallScore,
+        confidenceScore: item.confidenceScore,
+        generatedRecommendation: item.generatedRecommendation,
+        effectiveRecommendation: item.effectiveRecommendation,
+        fitBand: fitBand(item.effectiveOverallScore),
+        strengthSummary: item.strengthSummary,
+        gapSummary: item.gapSummary,
+        isKnockedOut: item.isKnockedOut,
+        hasOverride: item.hasOverride,
+        metadata: {
+          requiredSkillsScore: item.requiredSkillsScore,
         },
       });
     }
@@ -250,24 +239,22 @@ async function buildRankingSnapshot(actorUser, payload, requestMeta = {}, forceR
     return { context, pool, scoringProfileVersion, snapshot: existing, queued: false };
   }
 
-  const snapshot = await prisma.candidateRankingSnapshot.create({
-    data: {
-      organisationId: context.permissionContext.organisationId,
-      jobId: context.job.id,
-      status: pool.length ? 'PENDING' : 'READY',
-      candidatePoolFingerprint,
-      sourceFingerprint,
-      sourceVersion: SNAPSHOT_SOURCE_VERSION,
-      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-      scoringProfileVersionId: scoringProfileVersion?.id || null,
-      triggeredByUserId: actorUser.id,
-      totalCandidates: pool.length,
-      processedCandidates: 0,
-      failedCandidates: 0,
-      metadata: {
-        rankingPolicyVersion: RANKING_POLICY_VERSION,
-        queuedCandidateIds: pool.map((item) => item.candidateId),
-      },
+  const snapshot = await createRankingSnapshot({
+    organisationId: context.permissionContext.organisationId,
+    jobId: context.job.id,
+    status: pool.length ? 'PENDING' : 'READY',
+    candidatePoolFingerprint,
+    sourceFingerprint,
+    sourceVersion: SNAPSHOT_SOURCE_VERSION,
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    scoringProfileVersionId: scoringProfileVersion?.id || null,
+    triggeredByUserId: actorUser.id,
+    totalCandidates: pool.length,
+    processedCandidates: 0,
+    failedCandidates: 0,
+    metadata: {
+      rankingPolicyVersion: RANKING_POLICY_VERSION,
+      queuedCandidateIds: pool.map((item) => item.candidateId),
     },
   });
 
@@ -366,16 +353,11 @@ export async function getCandidateRanking(actorUser, payload) {
       : [{ rank: 'asc' }];
 
   const runFallbackListing = async () => {
-    let entries = await prisma.candidateRankingEntry.findMany({
-      where: {
-        snapshotId: snapshot.id,
-        organisationId: context.permissionContext.organisationId,
-      },
+    let entries = await findRankingEntriesWithCandidateFallback(
+      snapshot.id,
+      context.permissionContext.organisationId,
       orderBy,
-      include: {
-        candidate: true,
-      },
-    });
+    );
 
     if (payload.recommendation) entries = entries.filter((entry) => entry.effectiveRecommendation === payload.recommendation);
     if (payload.knockedOut !== undefined) entries = entries.filter((entry) => Boolean(entry.isKnockedOut) === Boolean(payload.knockedOut));
@@ -398,13 +380,8 @@ export async function getCandidateRanking(actorUser, payload) {
 
   try {
     const [total, entries] = await Promise.all([
-      prisma.candidateRankingEntry.count({ where }),
-      prisma.candidateRankingEntry.findMany({
-        where,
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
+      countRankingEntries(where),
+      findRankingEntries(where, orderBy, (page - 1) * pageSize, pageSize),
     ]);
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
@@ -426,15 +403,10 @@ export async function runJobCandidateRankingGenerationTask(task) {
   const requestedByUserId = task.payload?.requestedByUserId || task.createdByUserId || null;
   if (!snapshotId || !requestedByUserId) return 'cancelled';
 
-  const actorUser = await prisma.user.findUnique({
-    where: { id: requestedByUserId },
-    include: { recruiterProfile: true, candidateProfile: true },
-  });
+  const actorUser = await findRankingTaskActorUser(requestedByUserId);
   if (!actorUser) return 'cancelled';
 
-  const snapshot = await prisma.candidateRankingSnapshot.findUnique({
-    where: { id: snapshotId },
-  });
+  const snapshot = await findRankingSnapshotById(snapshotId);
   if (!snapshot) return 'cancelled';
 
   const context = await getRankingContext(actorUser, snapshot.jobId, 'read');
@@ -453,18 +425,11 @@ export async function runJobCandidateRankingGenerationTask(task) {
         scoringProfileId: task.payload?.scoringProfileId || null,
       });
 
-      const state = await prisma.candidateJobMatchState.findUnique({
-        where: {
-          organisationId_candidateId_jobId: {
-            organisationId: context.permissionContext.organisationId,
-            candidateId: candidate.candidateId,
-            jobId: context.job.id,
-          },
-        },
-        include: {
-          latestResult: true,
-        },
-      });
+      const state = await findCandidateJobMatchStateForRanking(
+        context.permissionContext.organisationId,
+        candidate.candidateId,
+        context.job.id,
+      );
       if (!state?.latestResult?.normalizedOutput) {
         failedCandidates += 1;
         continue;
@@ -494,11 +459,7 @@ export async function runJobCandidateRankingGenerationTask(task) {
     }
   }
 
-  if (prisma.candidateRankingEntry?.deleteMany) {
-    await prisma.candidateRankingEntry.deleteMany({
-      where: { snapshotId: snapshot.id },
-    });
-  }
+  await deleteRankingEntriesForSnapshot(snapshot.id);
 
   await createRankingEntries(snapshot, items);
   const status = failedCandidates > 0 && items.length > 0
@@ -507,18 +468,15 @@ export async function runJobCandidateRankingGenerationTask(task) {
       ? 'FAILED'
       : 'READY';
 
-  await prisma.candidateRankingSnapshot.update({
-    where: { id: snapshot.id },
-    data: {
-      status,
-      processedCandidates: items.length,
-      failedCandidates,
-      generatedAt: new Date(),
-      completedAt: new Date(),
-      staleReason: null,
-      metadata: {
-        rankingPolicyVersion: RANKING_POLICY_VERSION,
-      },
+  await updateRankingSnapshot(snapshot.id, {
+    status,
+    processedCandidates: items.length,
+    failedCandidates,
+    generatedAt: new Date(),
+    completedAt: new Date(),
+    staleReason: null,
+    metadata: {
+      rankingPolicyVersion: RANKING_POLICY_VERSION,
     },
   });
 
@@ -531,10 +489,7 @@ export async function runCandidateMatchBulkGenerationTask(task) {
   const candidateIds = Array.isArray(task.payload?.candidateIds) ? task.payload.candidateIds : [];
   if (!requestedByUserId || !jobId || !candidateIds.length) return 'cancelled';
 
-  const actorUser = await prisma.user.findUnique({
-    where: { id: requestedByUserId },
-    include: { recruiterProfile: true, candidateProfile: true },
-  });
+  const actorUser = await findRankingTaskActorUser(requestedByUserId);
   if (!actorUser) return 'cancelled';
 
   for (const candidateId of candidateIds) {

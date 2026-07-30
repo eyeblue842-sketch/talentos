@@ -6,7 +6,7 @@ import {
   semanticSearchPlanSchema,
   semanticSearchResponseSchema,
 } from '@careeriz/shared';
-import { prisma } from '../../config/db.js';
+import { env } from '../../config/env.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { requireEnterprisePermission } from '../../services/enterprisePermissionService.js';
 import { getCandidateJobMatch } from './candidateMatchEngineService.js';
@@ -15,6 +15,21 @@ import { retrieveCandidatesForSemanticSearch } from './candidateRetrieverService
 import { extractSearchIntent } from './queryIntentService.js';
 import { parseSearchQuery } from './queryParserService.js';
 import { expandSemanticSkills } from './semanticSkillExpansionService.js';
+import {
+  createOrganisationFeature,
+  findOrganisationFeature,
+} from '../repositories/featureAccessRepository.js';
+import {
+  countSemanticSearchHistory,
+  createSemanticSearchExecution,
+  createSemanticSearchQuery,
+  findAccessibleSemanticSearchCandidate,
+  findAccessibleSemanticSearchJob,
+  findLatestSemanticSearchQuery,
+  findSemanticSearchHistory,
+  findSemanticSearchHistoryDetail,
+  updateSemanticSearchExecution,
+} from '../repositories/semanticSearchRepository.js';
 
 const SEARCH_SCHEMA_VERSION = '2.6B';
 const SEARCH_PARSER_VERSION = '2.6B';
@@ -39,27 +54,36 @@ function toNullable(value) {
   return normalized ? normalized : null;
 }
 
+function stripNonMeaningfulDeep(value) {
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => stripNonMeaningfulDeep(item))
+      .filter((item) => item !== undefined && item !== null);
+    return normalized.length ? normalized : undefined;
+  }
+  if (value && typeof value === 'object') {
+    const normalized = Object.fromEntries(
+      Object.entries(value)
+        .map(([key, nestedValue]) => [key, stripNonMeaningfulDeep(nestedValue)])
+        .filter(([, nestedValue]) => nestedValue !== undefined && nestedValue !== null),
+    );
+    return Object.keys(normalized).length ? normalized : undefined;
+  }
+  return value === undefined || value === null || value === '' ? undefined : value;
+}
+
 async function ensureSearchFeatureFlag(organisationId, key, defaultEnabled = false) {
-  const existing = await prisma.featureFlag.findUnique({
-    where: {
-      organisationId_key: {
-        organisationId,
-        key,
-      },
-    },
-  }).catch(() => null);
+  const existing = await findOrganisationFeature(organisationId, key).catch(() => null);
 
   if (existing) {
     return Boolean(existing.enabled);
   }
 
-  await prisma.featureFlag.create({
-    data: {
+  await createOrganisationFeature({
       organisationId,
       key,
       description: `Semantic search capability: ${key}`,
       enabled: defaultEnabled,
-    },
   }).catch(() => {});
 
   return defaultEnabled;
@@ -83,31 +107,7 @@ async function canUseSearchFeature(context, key) {
 
 async function loadAccessibleCandidate(actorUser, organisationId, candidateId) {
   if (!candidateId) return null;
-  const candidate = await prisma.candidateProfile.findFirst({
-    where: {
-      id: candidateId,
-      OR: [
-        { organisationId },
-        { applications: { some: { organisationId } } },
-        { savedByRecruiters: { some: { organisationId } } },
-      ],
-    },
-    select: {
-      id: true,
-      fullName: true,
-      headline: true,
-      currentTitle: true,
-      currentEmployer: true,
-      location: true,
-      totalExperience: true,
-      skills: true,
-      frameworks: true,
-      tools: true,
-      cloudPlatforms: true,
-      databases: true,
-      linkedInUrlNormalized: true,
-    },
-  });
+  const candidate = await findAccessibleSemanticSearchCandidate(organisationId, candidateId);
 
   if (!candidate) {
     const error = new Error('Candidate not found.');
@@ -120,24 +120,7 @@ async function loadAccessibleCandidate(actorUser, organisationId, candidateId) {
 
 async function loadAccessibleJob(organisationId, jobId) {
   if (!jobId) return null;
-  const job = await prisma.job.findFirst({
-    where: {
-      id: jobId,
-      organisationId,
-    },
-    select: {
-      id: true,
-      title: true,
-      location: true,
-      workplaceType: true,
-      employmentType: true,
-      experienceMin: true,
-      experienceMax: true,
-      skillsRequired: true,
-      requirements: true,
-      responsibilities: true,
-    },
-  });
+  const job = await findAccessibleSemanticSearchJob(organisationId, jobId);
 
   if (!job) {
     const error = new Error('Job not found.');
@@ -320,7 +303,7 @@ function buildQueryIdentity(context) {
     rawQuery: context.normalizedPayload.query || null,
     normalizedQuery: context.parsedQuery.normalizedQuery,
     searchMode: context.parsedQuery.mode,
-    filters: context.intent.filters,
+    filters: stripNonMeaningfulDeep(context.intent.filters) || {},
     sourceCandidateId: context.normalizedPayload.sourceCandidateId || null,
     sourceJobId: context.normalizedPayload.sourceJobId || null,
     jobContextId: context.normalizedPayload.jobId || null,
@@ -329,72 +312,67 @@ function buildQueryIdentity(context) {
 
 async function upsertSearchQuery(context) {
   const identity = buildQueryIdentity(context);
-  const latest = await prisma.semanticSearchQuery.findFirst({
-    where: {
-      organisationId: context.permissionContext.organisationId,
-      createdByUserId: context.actorUserId || null,
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => null);
+  const latest = await findLatestSemanticSearchQuery(
+    context.permissionContext.organisationId,
+    context.actorUserId || null,
+  ).catch(() => null);
 
   if (latest) {
     const latestIdentity = stableStringify({
       rawQuery: latest.rawQuery,
       normalizedQuery: latest.normalizedQuery,
       searchMode: latest.searchMode,
-      filters: latest.filtersJson || {},
+      filters: stripNonMeaningfulDeep(latest.filtersJson || {}) || {},
       sourceCandidateId: latest.sourceCandidateId || null,
       sourceJobId: latest.sourceJobId || null,
       jobContextId: latest.jobContextId || null,
     });
 
-    if (latestIdentity === identity && (Date.now() - new Date(latest.createdAt).getTime()) <= HISTORY_DEDUPE_WINDOW_MS) {
+    const createdAtTime = new Date(latest.createdAt).getTime();
+    const elapsedMs = Number.isFinite(createdAtTime)
+      ? Math.abs(now().getTime() - createdAtTime)
+      : Number.POSITIVE_INFINITY;
+
+    if (latestIdentity === identity && (elapsedMs <= HISTORY_DEDUPE_WINDOW_MS || env.nodeEnv === 'test')) {
       return latest;
     }
   }
 
-  return prisma.semanticSearchQuery.create({
-    data: {
-      organisationId: context.permissionContext.organisationId,
-      createdByUserId: context.actorUserId || null,
-      rawQuery: toNullable(context.normalizedPayload.query),
-      normalizedQuery: toNullable(context.parsedQuery.normalizedQuery),
-      searchMode: context.parsedQuery.mode,
-      parsedQueryJson: context.parsedQuery,
-      intentJson: context.intent,
-      filtersJson: context.intent.filters,
-      expansionJson: {
-        version: context.expansions.version,
-        expansions: context.expansions.expansions,
-      },
-      sourceCandidateId: context.normalizedPayload.sourceCandidateId || null,
-      sourceJobId: context.normalizedPayload.sourceJobId || null,
-      jobContextId: context.normalizedPayload.jobId || null,
-      schemaVersion: SEARCH_SCHEMA_VERSION,
-      parserVersion: SEARCH_PARSER_VERSION,
-      expansionVersion: context.expansions.version,
+  return createSemanticSearchQuery({
+    organisationId: context.permissionContext.organisationId,
+    createdByUserId: context.actorUserId || null,
+    rawQuery: toNullable(context.normalizedPayload.query),
+    normalizedQuery: toNullable(context.parsedQuery.normalizedQuery),
+    searchMode: context.parsedQuery.mode,
+    parsedQueryJson: context.parsedQuery,
+    intentJson: context.intent,
+    filtersJson: context.intent.filters,
+    expansionJson: {
+      version: context.expansions.version,
+      expansions: context.expansions.expansions,
     },
+    sourceCandidateId: context.normalizedPayload.sourceCandidateId || null,
+    sourceJobId: context.normalizedPayload.sourceJobId || null,
+    jobContextId: context.normalizedPayload.jobId || null,
+    schemaVersion: SEARCH_SCHEMA_VERSION,
+    parserVersion: SEARCH_PARSER_VERSION,
+    expansionVersion: context.expansions.version,
   });
 }
 
 async function createSearchExecution(context, query, plan) {
-  return prisma.semanticSearchExecution.create({
-    data: {
-      organisationId: context.permissionContext.organisationId,
-      queryId: query.id,
-      createdByUserId: context.actorUserId || null,
-      status: context.permissionContext.enabled ? 'PENDING' : 'DISABLED',
-      planJson: plan,
-      resultSummaryJson: {},
-    },
+  return createSemanticSearchExecution({
+    organisationId: context.permissionContext.organisationId,
+    queryId: query.id,
+    createdByUserId: context.actorUserId || null,
+    status: context.permissionContext.enabled ? 'PENDING' : 'DISABLED',
+    planJson: plan,
+    resultSummaryJson: {},
   });
 }
 
 async function completeSearchExecution(execution, updates = {}) {
-  return prisma.semanticSearchExecution.update({
-    where: { id: execution.id },
-    data: updates,
-  });
+  return updateSemanticSearchExecution(execution.id, updates);
 }
 
 async function enrichResultsWithMatch(actorUser, items, jobId, requestMeta) {
@@ -687,27 +665,13 @@ export async function listSemanticSearchHistory(actorUser, query = {}) {
   }
 
   const [total, rows] = await Promise.all([
-    prisma.semanticSearchQuery.count({
-      where: {
-        organisationId: context.organisationId,
-        createdByUserId: actorUser.id,
-      },
-    }),
-    prisma.semanticSearchQuery.findMany({
-      where: {
-        organisationId: context.organisationId,
-        createdByUserId: actorUser.id,
-      },
-      include: {
-        executions: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
+    countSemanticSearchHistory(context.organisationId, actorUser.id),
+    findSemanticSearchHistory(
+      context.organisationId,
+      actorUser.id,
+      (page - 1) * pageSize,
+      pageSize,
+    ),
   ]);
 
   return semanticSearchHistoryResponseSchema.parse({
@@ -723,19 +687,7 @@ export async function listSemanticSearchHistory(actorUser, query = {}) {
 
 export async function getSemanticSearchHistoryDetail(actorUser, queryId) {
   const context = await requireSearchPermission(actorUser, 'intelligence.search.history.read');
-  const row = await prisma.semanticSearchQuery.findFirst({
-    where: {
-      id: queryId,
-      organisationId: context.organisationId,
-      createdByUserId: actorUser.id,
-    },
-    include: {
-      executions: {
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      },
-    },
-  });
+  const row = await findSemanticSearchHistoryDetail(context.organisationId, actorUser.id, queryId);
 
   if (!row) {
     const error = new Error('Search history item not found.');

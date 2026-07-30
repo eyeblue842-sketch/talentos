@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { env } from '../config/env.js';
-import { prisma } from '../config/db.js';
 import { requireEnterprisePermission } from '../services/enterprisePermissionService.js';
 import { requireOrganisationRole } from '../services/organisationAccessService.js';
 import { recordAuditLog } from '../services/auditLogService.js';
@@ -18,10 +17,38 @@ import {
 import { getMeetingProvider } from './providers/meetingProviderFactory.js';
 import { getUsableMeetingConnection, resolveMeetingProviderAccessToken } from './meetingConnectionService.js';
 import {
-  interviewParticipantRoles,
   interviewReadableRoles,
   meetingReminderWindows,
 } from './meetingConstants.js';
+import {
+  cancelInterviewMeetingRecord,
+  createInterviewRescheduleRequestRecord,
+  findActiveInterviewParticipantMemberships,
+  findCandidateRoundForCalendar,
+  findInterviewMeetingWithScheduleDetails,
+  findInterviewRescheduleRequestForReview,
+  findInterviewRescheduleRequestWithOptions,
+  findInterviewRoundForCalendarDownload,
+  findInterviewRoundForOrganisationReschedule,
+  findInterviewRoundForScheduling,
+  findInterviewRoundForCandidateReschedule,
+  findMeetingWithContext,
+  findOrganisationInterviewMeetings as findOrganisationInterviewMeetingsRecords,
+  findOrganisationRoundMeetingReference,
+  findOrganisationSchedulingSettingsRecord,
+  findOverlappingInterviewMeetings,
+  findPanelMembershipsWithUsers,
+  findPendingInterviewRescheduleRequestByRequester,
+  findPendingInterviewRescheduleRequestForRequester,
+  findInterviewerAssignedMeetings as findInterviewerAssignedMeetingRecords,
+  markInterviewRescheduleRequestApproved,
+  markMeetingProviderFailure,
+  persistMeetingSuccessRecord,
+  prepareInterviewMeeting,
+  rejectInterviewRescheduleRequestRecord,
+  updateInterviewMeetingStatus,
+  updateInterviewRescheduleRequest,
+} from '../repositories/meeting/meetingRepository.js';
 
 function badRequest(message) {
   const error = new Error(message);
@@ -77,9 +104,7 @@ function getSchedulingSettings(settings) {
 async function getOrganisationSchedulingSettings(organisationId) {
   let settings = null;
   try {
-    settings = await prisma.organisationSettings.findUnique({
-      where: { organisationId },
-    });
+    settings = await findOrganisationSchedulingSettingsRecord(organisationId);
   } catch (error) {
     if (error?.code !== 'P2021') {
       throw error;
@@ -89,34 +114,7 @@ async function getOrganisationSchedulingSettings(organisationId) {
 }
 
 async function getRoundForScheduling(organisationId, applicationId, roundId) {
-  const round = await prisma.interviewRound.findFirst({
-    where: {
-      id: roundId,
-      organisationId,
-      interviewProcess: { applicationId },
-    },
-    include: {
-      owner: true,
-      panelMembers: { include: { user: true } },
-      meeting: {
-        include: {
-          participants: true,
-          reminders: true,
-        },
-      },
-      interviewProcess: {
-        include: {
-          application: {
-            include: {
-              candidate: { include: { user: true } },
-              job: true,
-              submittedApplication: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  const round = await findInterviewRoundForScheduling(organisationId, applicationId, roundId);
 
   if (!round) {
     const error = new Error('Interview round not found.');
@@ -134,14 +132,7 @@ async function assertInterviewParticipantMemberships(organisationId, participant
 
   if (!requiredUserIds.length) return;
 
-  const memberships = await prisma.organisationMembership.findMany({
-    where: {
-      organisationId,
-      userId: { in: requiredUserIds },
-      status: 'ACTIVE',
-      role: { in: interviewParticipantRoles },
-    },
-  });
+  const memberships = await findActiveInterviewParticipantMemberships(organisationId, requiredUserIds);
 
   if (memberships.length !== requiredUserIds.length) {
     throw badRequest('Interview participants must belong to the organisation and hold interview-eligible roles.');
@@ -206,95 +197,30 @@ function buildMeetingParticipants(round, meetingInput, actorUser) {
   return dedupeParticipants(participants);
 }
 
-async function createOrReplaceMeetingParticipants(tx, meetingId, organisationId, participants) {
-  await tx.meetingParticipant.deleteMany({
-    where: { meetingId },
-  });
-
-  if (!participants.length) return [];
-
-  await tx.meetingParticipant.createMany({
-    data: participants.map((participant) => ({
-      organisationId,
-      meetingId,
-      userId: participant.userId || null,
-      candidateId: participant.candidateId || null,
-      email: participant.email,
-      participantRole: participant.participantRole,
-      required: participant.required !== false,
-    })),
-  });
-
-  return tx.meetingParticipant.findMany({
-    where: { meetingId },
-    orderBy: [{ createdAt: 'asc' }],
-  });
-}
-
-async function scheduleMeetingReminders(tx, meeting, participants, intervalsMinutes, actorUserId = null) {
-  const now = Date.now();
-  const created = [];
-
-  for (const participant of participants) {
-    for (const offsetMinutes of intervalsMinutes) {
-      const scheduledFor = new Date(meeting.scheduledStartUtc.getTime() - (offsetMinutes * 60 * 1000));
-      if (scheduledFor.getTime() <= now) continue;
-
-      const reminder = await tx.meetingReminder.create({
-        data: {
-          organisationId: meeting.organisationId,
-          interviewMeetingId: meeting.id,
-          participantId: participant.id,
-          reminderType: `${offsetMinutes}_MINUTES`,
-          scheduledFor,
-        },
-      });
-
-      const task = await enqueueBackgroundTask({
-        organisationId: meeting.organisationId,
-        type: 'INTERVIEW_REMINDER',
-        entityType: 'MeetingReminder',
-        entityId: reminder.id,
-        idempotencyKey: `meeting-reminder:${meeting.id}:${participant.id}:${offsetMinutes}:${meeting.operationVersion}`,
-        payload: {
-          reminderId: reminder.id,
-          meetingId: meeting.id,
-        },
-        nextAttemptAt: scheduledFor,
-        createdByUserId: actorUserId,
-      });
-
-      const updatedReminder = await tx.meetingReminder.update({
-        where: { id: reminder.id },
-        data: { backgroundTaskId: task.id },
-      });
-      created.push(updatedReminder);
-    }
-  }
-
-  return created;
-}
-
-async function cancelMeetingReminders(meetingId, actorUserId = null, txClient = prisma) {
-  const reminders = await txClient.meetingReminder.findMany({
-    where: {
-      interviewMeetingId: meetingId,
-      status: 'SCHEDULED',
-    },
-  });
-
-  if (!reminders.length) return [];
-
-  await txClient.meetingReminder.updateMany({
-    where: { id: { in: reminders.map((item) => item.id) } },
-    data: { status: 'CANCELLED' },
-  });
-
+async function cancelReminderTasks(reminders, actorUserId = null) {
+  const taskIds = reminders.map((item) => item.backgroundTaskId).filter(Boolean);
+  if (!taskIds.length) return;
   await cancelBackgroundTasks({
-    id: { in: reminders.map((item) => item.backgroundTaskId).filter(Boolean) },
+    id: { in: taskIds },
   }, actorUserId, 'MEETING_REMINDER_CANCELLED');
+}
 
-  return reminders;
+async function enqueueReminderTask({ reminder, meeting, participant, offsetMinutes, actorUserId }) {
+  const task = await enqueueBackgroundTask({
+    organisationId: meeting.organisationId,
+    type: 'INTERVIEW_REMINDER',
+    entityType: 'MeetingReminder',
+    entityId: reminder.id,
+    idempotencyKey: `meeting-reminder:${meeting.id}:${participant.id}:${offsetMinutes}:${meeting.operationVersion}`,
+    payload: {
+      reminderId: reminder.id,
+      meetingId: meeting.id,
+    },
+    nextAttemptAt: reminder.scheduledFor,
+    createdByUserId: actorUserId,
+  });
+
+  return task.id;
 }
 
 async function createMeetingNotifications(application, title, message, participants, metadata = {}) {
@@ -374,129 +300,6 @@ async function callProviderOperation(providerName, connection, operation, args) 
   return provider[operation]({ ...args, accessToken, connection: refreshedConnection });
 }
 
-async function persistMeetingSuccess({ tx, meetingId, meetingInput, providerResult, participants, actorUserId, round, existingMeeting, historyAction }) {
-  const hadPreviousSchedule = Boolean(existingMeeting?.scheduledStartUtc && existingMeeting?.scheduledEndUtc);
-  const updatedMeeting = await tx.interviewMeeting.update({
-    where: { id: meetingId },
-    data: {
-      provider: meetingInput.provider,
-      mode: meetingInput.mode,
-      status: 'SCHEDULED',
-      externalMeetingId: providerResult.externalMeetingId || null,
-      externalCalendarEventId: providerResult.externalCalendarEventId || null,
-      conferenceId: providerResult.conferenceId || null,
-      safeJoinUrl: providerResult.safeJoinUrl || meetingInput.safeJoinUrl || null,
-      encryptedHostUrl: providerResult.encryptedHostUrl || null,
-      passcodeMetadata: providerResult.passcodeMetadata || (meetingInput.passcode ? { passcodeSet: true } : null),
-      timezone: meetingInput.timezone,
-      scheduledStartUtc: meetingInput.scheduledStartUtc,
-      scheduledEndUtc: meetingInput.scheduledEndUtc,
-      durationMinutes: meetingInput.durationMinutes,
-      location: meetingInput.location,
-      officeAddress: meetingInput.officeAddress,
-      dialInInformation: meetingInput.dialInInformation,
-      providerDisplayName: meetingInput.providerDisplayName || meetingInput.provider,
-      instructions: meetingInput.instructions,
-      candidateInstructions: meetingInput.candidateInstructions,
-      internalNotes: meetingInput.internalNotes,
-      providerMetadata: providerResult.providerMetadata || {},
-      providerLastSyncedAt: new Date(),
-      providerFailureCode: null,
-      providerFailureMessage: null,
-      rescheduleCount: hadPreviousSchedule ? { increment: 1 } : undefined,
-      lastRescheduledAt: hadPreviousSchedule ? new Date() : existingMeeting?.lastRescheduledAt || null,
-      operationVersion: { increment: 1 },
-      updatedByUserId: actorUserId,
-    },
-  });
-
-  const persistedParticipants = await createOrReplaceMeetingParticipants(tx, meetingId, round.organisationId, participants);
-  await cancelMeetingReminders(meetingId, actorUserId, tx);
-  const settings = await getOrganisationSchedulingSettings(round.organisationId);
-  await scheduleMeetingReminders(tx, updatedMeeting, persistedParticipants, settings.reminderIntervalsMinutes, actorUserId);
-
-  await tx.interviewRound.update({
-    where: { id: round.id },
-    data: {
-      status: 'SCHEDULED',
-      durationMinutes: meetingInput.durationMinutes,
-      timezone: meetingInput.timezone,
-      meetingMode: meetingInput.mode,
-      scheduledStartAt: meetingInput.scheduledStartUtc,
-      scheduledEndAt: meetingInput.scheduledEndUtc,
-      meetingLocation: meetingInput.location,
-      meetingLink: providerResult.safeJoinUrl || meetingInput.safeJoinUrl || null,
-      officeAddress: meetingInput.officeAddress,
-        candidateInstructions: meetingInput.candidateInstructions,
-        instructions: meetingInput.instructions,
-        internalNotes: meetingInput.internalNotes,
-        cancelReason: null,
-        calendarProvider: meetingInput.provider,
-        rescheduleCount: hadPreviousSchedule ? { increment: 1 } : undefined,
-        lastRescheduledAt: hadPreviousSchedule ? new Date() : null,
-        panelMembers: {
-          deleteMany: {},
-          create: participants
-          .filter((participant) => participant.userId && ['INTERVIEWER', 'LEAD_INTERVIEWER', 'OBSERVER'].includes(participant.participantRole))
-          .map((participant) => ({
-            organisationId: round.organisationId,
-            userId: participant.userId,
-            isLead: participant.participantRole === 'LEAD_INTERVIEWER',
-            isObserver: participant.participantRole === 'OBSERVER',
-            feedbackRequired: participant.required,
-          })),
-      },
-    },
-  });
-
-  await tx.application.update({
-    where: { id: round.interviewProcess.application.id },
-    data: {
-      currentStage: 'INTERVIEW_SCHEDULED',
-      statusLabel: 'Interview',
-      interviewScheduledAt: meetingInput.scheduledStartUtc,
-      interviewerName: round.roundName,
-    },
-  });
-
-  await tx.interviewScheduleHistory.create({
-    data: {
-      organisationId: round.organisationId,
-      interviewMeetingId: meetingId,
-      action: historyAction,
-      actorUserId,
-      oldStartUtc: existingMeeting?.scheduledStartUtc || null,
-      oldEndUtc: existingMeeting?.scheduledEndUtc || null,
-      newStartUtc: meetingInput.scheduledStartUtc,
-      newEndUtc: meetingInput.scheduledEndUtc,
-      oldProvider: existingMeeting?.provider || null,
-      newProvider: meetingInput.provider,
-      oldParticipantSnapshot: buildParticipantSnapshot(existingMeeting?.participants || []),
-      newParticipantSnapshot: buildParticipantSnapshot(participants),
-      reason: meetingInput.internalNotes || null,
-      providerOperationId: updatedMeeting.providerOperationKey || null,
-      providerResult: {
-        externalMeetingId: providerResult.externalMeetingId || null,
-        externalCalendarEventId: providerResult.externalCalendarEventId || null,
-      },
-    },
-  });
-
-  return { updatedMeeting, persistedParticipants };
-}
-
-async function failMeetingProviderOperation(meetingId, providerError, actorUserId) {
-  await prisma.interviewMeeting.update({
-    where: { id: meetingId },
-    data: {
-      status: 'PROVIDER_FAILED',
-      providerFailureCode: providerError.code || 'PROVIDER_FAILED',
-      providerFailureMessage: providerError.safeMessage || providerError.message,
-      updatedByUserId: actorUserId,
-    },
-  });
-}
-
 export async function checkInterviewAvailability(actorUser, payload, organisationId = null) {
   const context = await requireEnterprisePermission(actorUser, 'interview.view', organisationId);
   const startUtc = buildUtcDate(payload.scheduledStartAt, 'Scheduled start');
@@ -507,23 +310,12 @@ export async function checkInterviewAvailability(actorUser, payload, organisatio
   const requiredUserIds = participants.filter((item) => item.feedbackRequired !== false).map((item) => item.userId);
   const optionalUserIds = participants.filter((item) => item.feedbackRequired === false).map((item) => item.userId);
 
-  const overlapping = await prisma.interviewMeeting.findMany({
-    where: {
-      organisationId: context.organisationId,
-      status: { in: ['SCHEDULED', 'RESCHEDULE_REQUESTED', 'RESCHEDULING'] },
-      scheduledStartUtc: { lt: endUtc },
-      scheduledEndUtc: { gt: startUtc },
-      participants: {
-        some: {
-          userId: { in: [...requiredUserIds, ...optionalUserIds] },
-        },
-      },
-    },
-    include: {
-      participants: true,
-      interviewRound: true,
-    },
-  });
+  const overlapping = await findOverlappingInterviewMeetings(
+    context.organisationId,
+    startUtc,
+    endUtc,
+    [...requiredUserIds, ...optionalUserIds],
+  );
 
   let external = { providerChecked: false, participants: [], suggestions: [] };
   const provider = payload.meetingProvider || 'CUSTOM';
@@ -575,14 +367,10 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
     throw badRequest('This interview has reached the maximum reschedule count.');
   }
 
-  const memberships = await prisma.organisationMembership.findMany({
-    where: {
-      organisationId: context.organisationId,
-      userId: { in: (payload.panelMembers || []).map((item) => item.userId).filter(Boolean) },
-      status: 'ACTIVE',
-    },
-    include: { user: true },
-  });
+  const memberships = await findPanelMembershipsWithUsers(
+    context.organisationId,
+    (payload.panelMembers || []).map((item) => item.userId).filter(Boolean),
+  );
   const membershipByUserId = new Map(memberships.map((item) => [item.userId, item]));
   meetingInput.panelMembers = (payload.panelMembers || []).map((item) => ({
     ...item,
@@ -594,36 +382,31 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
   const operationKey = crypto.randomUUID();
 
   const existingMeeting = round.meeting;
-  const preparedMeeting = existingMeeting
-    ? await prisma.interviewMeeting.update({
-        where: { id: existingMeeting.id },
-        data: {
-          status: existingMeeting.status === 'SCHEDULED' ? 'RESCHEDULING' : 'SCHEDULING',
-          providerOperationKey: operationKey,
-          updatedByUserId: actorUser.id,
-        },
-        include: { participants: true, reminders: true },
-      })
-    : await prisma.interviewMeeting.create({
-        data: {
-          organisationId: context.organisationId,
-          interviewRoundId: round.id,
-          provider: meetingInput.provider,
-          mode: meetingInput.mode,
-          status: 'SCHEDULING',
-          timezone: meetingInput.timezone,
-          scheduledStartUtc: meetingInput.scheduledStartUtc,
-          scheduledEndUtc: meetingInput.scheduledEndUtc,
-          durationMinutes: meetingInput.durationMinutes,
-          providerOperationKey: operationKey,
-          createdByUserId: actorUser.id,
-          updatedByUserId: actorUser.id,
-          candidateInstructions: meetingInput.candidateInstructions,
-          instructions: meetingInput.instructions,
-          internalNotes: meetingInput.internalNotes,
-        },
-        include: { participants: true, reminders: true },
-      });
+  const preparedMeeting = await prepareInterviewMeeting(
+    existingMeeting,
+    {
+      organisationId: context.organisationId,
+      interviewRoundId: round.id,
+      provider: meetingInput.provider,
+      mode: meetingInput.mode,
+      status: 'SCHEDULING',
+      timezone: meetingInput.timezone,
+      scheduledStartUtc: meetingInput.scheduledStartUtc,
+      scheduledEndUtc: meetingInput.scheduledEndUtc,
+      durationMinutes: meetingInput.durationMinutes,
+      providerOperationKey: operationKey,
+      createdByUserId: actorUser.id,
+      updatedByUserId: actorUser.id,
+      candidateInstructions: meetingInput.candidateInstructions,
+      instructions: meetingInput.instructions,
+      internalNotes: meetingInput.internalNotes,
+    },
+    {
+      status: existingMeeting?.status === 'SCHEDULED' ? 'RESCHEDULING' : 'SCHEDULING',
+      providerOperationKey: operationKey,
+      updatedByUserId: actorUser.id,
+    },
+  );
 
   meetingInput.candidateDescription = buildSafeMeetingDescription(round, meetingInput);
 
@@ -649,8 +432,7 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
       });
     }
 
-    const { updatedMeeting } = await prisma.$transaction(async (tx) => persistMeetingSuccess({
-      tx,
+    const { updatedMeeting } = await persistMeetingSuccessRecord({
       meetingId: preparedMeeting.id,
       meetingInput,
       providerResult,
@@ -659,7 +441,12 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
       round,
       existingMeeting,
       historyAction: existingMeeting?.status === 'SCHEDULED' ? 'RESCHEDULED' : 'SCHEDULED',
-    }));
+      reminderIntervalsMinutes: settings.reminderIntervalsMinutes,
+      oldParticipantSnapshot: buildParticipantSnapshot(existingMeeting?.participants || []),
+      newParticipantSnapshot: buildParticipantSnapshot(participants),
+      onCancelReminderTasks: (reminders) => cancelReminderTasks(reminders, actorUser.id),
+      onCreateReminderTask: enqueueReminderTask,
+    });
 
     await createMeetingNotifications(
       round.interviewProcess.application,
@@ -698,17 +485,9 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
       userAgent: requestMeta.userAgent,
     });
 
-    return prisma.interviewMeeting.findUnique({
-      where: { id: preparedMeeting.id },
-      include: {
-        participants: true,
-        scheduleHistory: { orderBy: { createdAt: 'desc' }, take: 20 },
-        reminders: true,
-        interviewRound: true,
-      },
-    });
+    return findInterviewMeetingWithScheduleDetails(preparedMeeting.id);
   } catch (error) {
-    await failMeetingProviderOperation(preparedMeeting.id, error, actorUser.id);
+    await markMeetingProviderFailure(preparedMeeting.id, error, actorUser.id);
     throw error;
   }
 }
@@ -736,37 +515,13 @@ export async function cancelInterviewMeeting(applicationId, actorUser, payload, 
       await callProviderOperation(meeting.provider, connection, 'cancelMeeting', { meeting });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await cancelMeetingReminders(meeting.id, actorUser.id, tx);
-      await tx.interviewMeeting.update({
-        where: { id: meeting.id },
-        data: {
-          status: 'CANCELLED',
-          providerCancelledAt: new Date(),
-          providerFailureCode: null,
-          providerFailureMessage: null,
-          updatedByUserId: actorUser.id,
-        },
-      });
-      await tx.interviewRound.update({
-        where: { id: round.id },
-        data: {
-          status: 'CANCELLED',
-          cancelReason: payload.cancelReason,
-        },
-      });
-      await tx.interviewScheduleHistory.create({
-        data: {
-          organisationId: context.organisationId,
-          interviewMeetingId: meeting.id,
-          action: 'CANCELLED',
-          actorUserId: actorUser.id,
-          oldStartUtc: meeting.scheduledStartUtc,
-          oldEndUtc: meeting.scheduledEndUtc,
-          oldProvider: meeting.provider,
-          reason: payload.cancelReason,
-        },
-      });
+    await cancelInterviewMeetingRecord({
+      meeting,
+      round,
+      organisationId: context.organisationId,
+      actorUserId: actorUser.id,
+      cancelReason: payload.cancelReason,
+      onCancelReminderTasks: (reminders) => cancelReminderTasks(reminders, actorUser.id),
     });
 
     await createMeetingNotifications(
@@ -795,34 +550,16 @@ export async function cancelInterviewMeeting(applicationId, actorUser, payload, 
       userAgent: requestMeta.userAgent,
     });
 
-    return prisma.interviewMeeting.findUnique({
-      where: { id: meeting.id },
-      include: { participants: true, reminders: true, interviewRound: true },
-    });
+    return findInterviewMeetingWithScheduleDetails(meeting.id);
   } catch (error) {
-    await failMeetingProviderOperation(meeting.id, error, actorUser.id);
+    await markMeetingProviderFailure(meeting.id, error, actorUser.id);
     throw error;
   }
 }
 
 export async function downloadInterviewCalendar(actorUser, roundId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, interviewReadableRoles, organisationId);
-  const round = await prisma.interviewRound.findFirst({
-    where: { id: roundId, organisationId: context.organisationId },
-    include: {
-      meeting: { include: { participants: true } },
-      interviewProcess: {
-        include: {
-          application: {
-            include: {
-              candidate: { include: { user: true } },
-              job: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  const round = await findInterviewRoundForCalendarDownload(context.organisationId, roundId);
 
   if (!round?.meeting) {
     const error = new Error('Interview meeting not found.');
@@ -865,27 +602,8 @@ export async function downloadInterviewCalendar(actorUser, roundId, organisation
 
 export async function submitInterviewRescheduleRequest({ actorUser = null, candidateUser = null, roundId, payload, organisationId = null, requestMeta = {} }) {
   const round = candidateUser
-    ? await prisma.interviewRound.findFirst({
-        where: {
-          id: roundId,
-          interviewProcess: {
-            application: {
-              candidateId: candidateUser.candidateProfile.id,
-            },
-          },
-        },
-        include: {
-          meeting: true,
-          interviewProcess: { include: { application: { include: { job: true } } } },
-        },
-      })
-    : await prisma.interviewRound.findFirst({
-        where: { id: roundId, organisationId },
-        include: {
-          meeting: true,
-          interviewProcess: { include: { application: { include: { job: true } } } },
-        },
-      });
+    ? await findInterviewRoundForCandidateReschedule(roundId, candidateUser.candidateProfile.id)
+    : await findInterviewRoundForOrganisationReschedule(roundId, organisationId);
 
   if (!round?.meeting) {
     const error = new Error('Interview meeting not found.');
@@ -902,43 +620,33 @@ export async function submitInterviewRescheduleRequest({ actorUser = null, candi
     throw badRequest('Interviewer reschedule requests are disabled for this organisation.');
   }
 
-  const existingPending = await prisma.interviewRescheduleRequest.findFirst({
-    where: {
-      interviewMeetingId: round.meeting.id,
-      status: 'PENDING',
-      ...(candidateUser ? { candidateId: candidateUser.candidateProfile.id } : { requestedByUserId: actorUser.id }),
-    },
-  });
+  const existingPending = await findPendingInterviewRescheduleRequestForRequester(
+    round.meeting.id,
+    candidateUser?.candidateProfile.id || null,
+    actorUser?.id || null,
+  );
   if (existingPending) {
     throw conflictError('A pending reschedule request already exists.');
   }
 
-  const request = await prisma.interviewRescheduleRequest.create({
-    data: {
-      organisationId: round.organisationId,
-      interviewMeetingId: round.meeting.id,
-      requestedByType: requesterType,
-      requestedByUserId: actorUser?.id || null,
-      candidateId: candidateUser?.candidateProfile.id || null,
-      reasonCode: payload.reasonCode || 'OTHER',
-      reasonText: sanitizeMeetingText(payload.reasonText, 1000),
-      preferredTimezone: payload.preferredTimezone || round.meeting.timezone,
-      options: {
-        create: (payload.options || []).slice(0, 3).map((option, index) => ({
-          proposedStartUtc: buildUtcDate(option.proposedStartUtc, 'Preferred start'),
-          proposedEndUtc: buildUtcDate(option.proposedEndUtc, 'Preferred end'),
-          timezone: option.timezone || payload.preferredTimezone || round.meeting.timezone,
-          priority: index + 1,
-        })),
-      },
-    },
-    include: { options: true },
+  const request = await createInterviewRescheduleRequestRecord({
+    organisationId: round.organisationId,
+    meetingId: round.meeting.id,
+    requesterType,
+    requestedByUserId: actorUser?.id || null,
+    candidateId: candidateUser?.candidateProfile.id || null,
+    reasonCode: payload.reasonCode || 'OTHER',
+    reasonText: sanitizeMeetingText(payload.reasonText, 1000),
+    preferredTimezone: payload.preferredTimezone || round.meeting.timezone,
+    options: (payload.options || []).slice(0, 3).map((option, index) => ({
+      proposedStartUtc: buildUtcDate(option.proposedStartUtc, 'Preferred start'),
+      proposedEndUtc: buildUtcDate(option.proposedEndUtc, 'Preferred end'),
+      timezone: option.timezone || payload.preferredTimezone || round.meeting.timezone,
+      priority: index + 1,
+    })),
   });
 
-  await prisma.interviewMeeting.update({
-    where: { id: round.meeting.id },
-    data: { status: 'RESCHEDULE_REQUESTED' },
-  });
+  await updateInterviewMeetingStatus(round.meeting.id, { status: 'RESCHEDULE_REQUESTED' });
 
   await recordAuditLog({
     organisationId: round.organisationId,
@@ -958,23 +666,18 @@ export async function submitInterviewRescheduleRequest({ actorUser = null, candi
 }
 
 export async function withdrawInterviewRescheduleRequest({ actorUser = null, candidateUser = null, requestId, requestMeta = {} }) {
-  const request = await prisma.interviewRescheduleRequest.findFirst({
-    where: {
-      id: requestId,
-      status: 'PENDING',
-      ...(candidateUser ? { candidateId: candidateUser.candidateProfile.id } : { requestedByUserId: actorUser.id }),
-    },
-  });
+  const request = await findPendingInterviewRescheduleRequestByRequester(
+    requestId,
+    candidateUser?.candidateProfile.id || null,
+    actorUser?.id || null,
+  );
   if (!request) {
     const error = new Error('Pending reschedule request not found.');
     error.statusCode = 404;
     throw error;
   }
 
-  const updated = await prisma.interviewRescheduleRequest.update({
-    where: { id: request.id },
-    data: { status: 'WITHDRAWN' },
-  });
+  const updated = await updateInterviewRescheduleRequest(request.id, { status: 'WITHDRAWN' });
 
   await recordAuditLog({
     organisationId: request.organisationId,
@@ -987,44 +690,6 @@ export async function withdrawInterviewRescheduleRequest({ actorUser = null, can
   });
 
   return updated;
-}
-
-async function getMeetingWithContext(meetingId) {
-  return prisma.interviewMeeting.findUnique({
-    where: { id: meetingId },
-    include: {
-      participants: {
-        include: {
-          user: true,
-          candidate: true,
-        },
-        orderBy: [{ required: 'desc' }, { createdAt: 'asc' }],
-      },
-      reminders: { orderBy: { scheduledFor: 'asc' } },
-      rescheduleRequests: {
-        include: {
-          options: { orderBy: { priority: 'asc' } },
-        },
-        orderBy: { createdAt: 'desc' },
-      },
-      scheduleHistory: { orderBy: { createdAt: 'desc' }, take: 50 },
-      interviewRound: {
-        include: {
-          panelMembers: { include: { user: true } },
-          interviewProcess: {
-            include: {
-              application: {
-                include: {
-                  candidate: { include: { user: true } },
-                  job: { include: { organisation: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
 }
 
 export async function listOrganisationInterviewMeetings(actorUser, filters = {}, organisationId = null) {
@@ -1045,43 +710,12 @@ export async function listOrganisationInterviewMeetings(actorUser, filters = {},
     } : {}),
   };
 
-  return prisma.interviewMeeting.findMany({
-    where,
-    include: {
-      participants: { include: { user: true, candidate: true } },
-      reminders: true,
-      rescheduleRequests: {
-        include: { options: true },
-        orderBy: { createdAt: 'desc' },
-      },
-      interviewRound: {
-        include: {
-          interviewProcess: {
-            include: {
-              application: {
-                include: {
-                  candidate: { include: { user: true } },
-                  job: { include: { organisation: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    orderBy: [{ scheduledStartUtc: 'asc' }, { createdAt: 'desc' }],
-  });
+  return findOrganisationInterviewMeetingsRecords(where);
 }
 
 export async function getOrganisationInterviewMeeting(actorUser, roundId, organisationId = null) {
   const context = await requireEnterprisePermission(actorUser, 'interview.view', organisationId);
-  const round = await prisma.interviewRound.findFirst({
-    where: {
-      id: roundId,
-      organisationId: context.organisationId,
-    },
-    select: { meeting: { select: { id: true } } },
-  });
+  const round = await findOrganisationRoundMeetingReference(roundId, context.organisationId);
 
   if (!round?.meeting?.id) {
     const error = new Error('Interview meeting not found.');
@@ -1094,61 +728,11 @@ export async function getOrganisationInterviewMeeting(actorUser, roundId, organi
 
 export async function listInterviewerAssignedMeetings(actorUser, organisationId = null) {
   const context = await requireEnterprisePermission(actorUser, 'interview.view', organisationId);
-  return prisma.interviewMeeting.findMany({
-    where: {
-      organisationId: context.organisationId,
-      participants: {
-        some: {
-          userId: actorUser.id,
-          participantRole: { in: ['INTERVIEWER', 'LEAD_INTERVIEWER', 'HIRING_MANAGER', 'COORDINATOR', 'OBSERVER', 'RECRUITER'] },
-        },
-      },
-    },
-    include: {
-      participants: { include: { user: true, candidate: true } },
-      interviewRound: {
-        include: {
-          interviewProcess: {
-            include: {
-              application: {
-                include: {
-                  candidate: { include: { user: true } },
-                  job: { include: { organisation: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-      rescheduleRequests: { include: { options: true }, orderBy: { createdAt: 'desc' } },
-    },
-    orderBy: [{ scheduledStartUtc: 'asc' }, { createdAt: 'desc' }],
-  });
+  return findInterviewerAssignedMeetingRecords(context.organisationId, actorUser.id);
 }
 
 export async function downloadCandidateInterviewCalendar(candidateUser, roundId) {
-  const round = await prisma.interviewRound.findFirst({
-    where: {
-      id: roundId,
-      interviewProcess: {
-        application: {
-          candidateId: candidateUser.candidateProfile.id,
-        },
-      },
-    },
-    include: {
-      meeting: { include: { participants: true } },
-      interviewProcess: {
-        include: {
-          application: {
-            include: {
-              job: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  const round = await findCandidateRoundForCalendar(roundId, candidateUser.candidateProfile.id);
 
   if (!round?.meeting) {
     const error = new Error('Interview meeting not found.');
@@ -1185,30 +769,7 @@ export async function downloadCandidateInterviewCalendar(candidateUser, roundId)
 
 export async function reviewInterviewRescheduleRequest(actorUser, requestId, payload, organisationId = null, requestMeta = {}) {
   const context = await requireEnterprisePermission(actorUser, 'interview.reviewRescheduleRequest', organisationId);
-  const request = await prisma.interviewRescheduleRequest.findFirst({
-    where: {
-      id: requestId,
-      organisationId: context.organisationId,
-      status: 'PENDING',
-    },
-    include: {
-      options: { orderBy: { priority: 'asc' } },
-      meeting: {
-        include: {
-          participants: true,
-          interviewRound: {
-            include: {
-              interviewProcess: {
-                include: {
-                  application: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
+  const request = await findInterviewRescheduleRequestForReview(requestId, context.organisationId);
 
   if (!request?.meeting?.interviewRound?.interviewProcess?.application) {
     const error = new Error('Pending reschedule request not found.');
@@ -1217,34 +778,11 @@ export async function reviewInterviewRescheduleRequest(actorUser, requestId, pay
   }
 
   if (payload.decision === 'REJECT') {
-    const updated = await prisma.$transaction(async (tx) => {
-      const result = await tx.interviewRescheduleRequest.update({
-        where: { id: request.id },
-        data: {
-          status: 'REJECTED',
-          reviewedByUserId: actorUser.id,
-          reviewedAt: new Date(),
-          decisionReason: sanitizeMeetingText(payload.reason, 1000),
-        },
-      });
-
-      const remainingPending = await tx.interviewRescheduleRequest.count({
-        where: {
-          interviewMeetingId: request.interviewMeetingId,
-          status: 'PENDING',
-          id: { not: request.id },
-        },
-      });
-
-      if (remainingPending === 0) {
-        await tx.interviewMeeting.update({
-          where: { id: request.interviewMeetingId },
-          data: { status: 'SCHEDULED', updatedByUserId: actorUser.id },
-        });
-      }
-
-      return result;
-    });
+    const updated = await rejectInterviewRescheduleRequestRecord(
+      request,
+      actorUser.id,
+      sanitizeMeetingText(payload.reason, 1000),
+    );
 
     await recordAuditLog({
       organisationId: context.organisationId,
@@ -1305,15 +843,11 @@ export async function reviewInterviewRescheduleRequest(actorUser, requestId, pay
     requestMeta,
   );
 
-  await prisma.interviewRescheduleRequest.update({
-    where: { id: request.id },
-    data: {
-      status: 'APPROVED',
-      reviewedByUserId: actorUser.id,
-      reviewedAt: new Date(),
-      decisionReason: sanitizeMeetingText(payload.reason, 1000),
-    },
-  });
+  await markInterviewRescheduleRequestApproved(
+    request.id,
+    actorUser.id,
+    sanitizeMeetingText(payload.reason, 1000),
+  );
 
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -1329,8 +863,5 @@ export async function reviewInterviewRescheduleRequest(actorUser, requestId, pay
     userAgent: requestMeta.userAgent,
   });
 
-  return prisma.interviewRescheduleRequest.findUnique({
-    where: { id: request.id },
-    include: { options: { orderBy: { priority: 'asc' } } },
-  });
+  return findInterviewRescheduleRequestWithOptions(request.id);
 }

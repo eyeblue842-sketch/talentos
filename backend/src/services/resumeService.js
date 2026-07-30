@@ -1,5 +1,4 @@
 import PDFDocument from 'pdfkit';
-import { prisma } from '../config/db.js';
 import { indexCandidateResume } from './searchService.js';
 import {
   serializeCandidateProfile,
@@ -11,6 +10,17 @@ import { uploadCandidateResumeAsset } from './applicationWorkflowService.js';
 import { readPrivateFileNodeStream } from '../config/storage.js';
 import { openLegacyResumeFile } from './legacyResumeService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import {
+  countSavedCandidates,
+  deleteSavedCandidateById,
+  findCandidateProfileById,
+  findCandidateResumeAccessForOrganisation,
+  findResumeAssetById,
+  findSavedCandidateByOrganisationRecruiterAndCandidate,
+  findSavedCandidates,
+  updateCandidateProfile,
+  upsertSavedCandidate,
+} from '../repositories/resume/resumeRepository.js';
 
 function normalizeStringArray(value) {
   if (Array.isArray(value)) {
@@ -26,9 +36,7 @@ function normalizeStringArray(value) {
 
 export async function uploadCandidateResume(candidateUser, file) {
   const asset = await uploadCandidateResumeAsset(candidateUser, file, { kind: 'RESUME' });
-  const candidate = await prisma.candidateProfile.findUnique({
-    where: { id: candidateUser.candidateProfile.id },
-  });
+  const candidate = await findCandidateProfileById(candidateUser.candidateProfile.id);
   await indexCandidateResume(candidate);
   return {
     profile: serializeCandidateProfile(candidate, { includePrivate: true }),
@@ -37,16 +45,13 @@ export async function uploadCandidateResume(candidateUser, file) {
 }
 
 export async function saveCandidateProfile(candidateId, payload) {
-  const candidate = await prisma.candidateProfile.update({
-    where: { id: candidateId },
-    data: {
-      ...payload,
-      skills: payload.skills ? normalizeStringArray(payload.skills) : undefined,
-      preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
-      totalExperience: payload.totalExperience !== undefined ? Number(payload.totalExperience) : undefined,
-      currentCtcLpa: payload.currentCtcLpa !== undefined ? Number(payload.currentCtcLpa) : undefined,
-      expectedCtcLpa: payload.expectedCtcLpa !== undefined ? Number(payload.expectedCtcLpa) : undefined,
-    },
+  const candidate = await updateCandidateProfile(candidateId, {
+    ...payload,
+    skills: payload.skills ? normalizeStringArray(payload.skills) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    totalExperience: payload.totalExperience !== undefined ? Number(payload.totalExperience) : undefined,
+    currentCtcLpa: payload.currentCtcLpa !== undefined ? Number(payload.currentCtcLpa) : undefined,
+    expectedCtcLpa: payload.expectedCtcLpa !== undefined ? Number(payload.expectedCtcLpa) : undefined,
   });
 
   await indexCandidateResume(candidate);
@@ -56,26 +61,18 @@ export async function saveCandidateProfile(candidateId, payload) {
 
 export async function saveCandidateForRecruiter(actorUser, candidateId, organisationId = null, tag = null, requestMeta = {}) {
   const context = await requireOrganisationContext(actorUser, organisationId);
-  const candidate = await prisma.candidateProfile.findUnique({ where: { id: candidateId } });
+  const candidate = await findCandidateProfileById(candidateId);
   if (!candidate) {
     const error = new Error('Candidate not found.');
     error.statusCode = 404;
     throw error;
   }
 
-  const savedCandidate = await prisma.savedCandidate.upsert({
-    where: { recruiterId_candidateId: { recruiterId: actorUser.recruiterProfile.id, candidateId } },
-    update: {
-      organisationId: context.organisationId,
-      tag,
-    },
-    create: {
-      organisationId: context.organisationId,
-      recruiterId: actorUser.recruiterProfile.id,
-      candidateId,
-      tag,
-    },
-    include: { candidate: true },
+  const savedCandidate = await upsertSavedCandidate({
+    organisationId: context.organisationId,
+    recruiterId: actorUser.recruiterProfile.id,
+    candidateId,
+    tag,
   });
 
   await recordAuditLog({
@@ -93,13 +90,11 @@ export async function saveCandidateForRecruiter(actorUser, candidateId, organisa
 
 export async function removeSavedCandidate(actorUser, candidateId, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationContext(actorUser, organisationId);
-  const savedCandidate = await prisma.savedCandidate.findFirst({
-    where: {
-      organisationId: context.organisationId,
-      recruiterId: actorUser.recruiterProfile.id,
-      candidateId,
-    },
-  });
+  const savedCandidate = await findSavedCandidateByOrganisationRecruiterAndCandidate(
+    context.organisationId,
+    actorUser.recruiterProfile.id,
+    candidateId,
+  );
 
   if (!savedCandidate) {
     const error = new Error('Saved candidate not found.');
@@ -107,7 +102,7 @@ export async function removeSavedCandidate(actorUser, candidateId, organisationI
     throw error;
   }
 
-  await prisma.savedCandidate.delete({ where: { id: savedCandidate.id } });
+  await deleteSavedCandidateById(savedCandidate.id);
   await recordAuditLog({
     organisationId: context.organisationId,
     actorUserId: actorUser.id,
@@ -131,11 +126,8 @@ export async function getSavedCandidates(actorUser, filters = {}, organisationId
   };
 
   const [total, savedCandidates] = await Promise.all([
-    prisma.savedCandidate.count({ where }),
-    prisma.savedCandidate.findMany({
-      where,
-      include: { candidate: true, recruiter: { include: { user: true } } },
-      orderBy: { createdAt: 'desc' },
+    countSavedCandidates(where),
+    findSavedCandidates(where, {
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -189,20 +181,10 @@ export async function getCandidateResumeDownload(actorUser, candidateId, organis
       error.statusCode = 404;
       throw error;
     }
-    candidate = await prisma.candidateProfile.findUnique({
-      where: { id: candidateId },
-    });
+    candidate = await findCandidateProfileById(candidateId);
   } else {
     const context = await requireOrganisationContext(actorUser, organisationId);
-    candidate = await prisma.candidateProfile.findFirst({
-      where: {
-        id: candidateId,
-        OR: [
-          { applications: { some: { organisationId: context.organisationId } } },
-          { savedByRecruiters: { some: { organisationId: context.organisationId } } },
-        ],
-      },
-    });
+    candidate = await findCandidateResumeAccessForOrganisation(candidateId, context.organisationId);
   }
 
   if (!candidate) {
@@ -212,7 +194,7 @@ export async function getCandidateResumeDownload(actorUser, candidateId, organis
   }
 
   if (candidate.latestResumeAssetId) {
-    const asset = await prisma.resumeAsset.findUnique({ where: { id: candidate.latestResumeAssetId } });
+    const asset = await findResumeAssetById(candidate.latestResumeAssetId);
     if (!asset) {
       const error = new Error('Resume not found.');
       error.statusCode = 404;

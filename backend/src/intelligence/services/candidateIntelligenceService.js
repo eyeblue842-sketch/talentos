@@ -1,4 +1,3 @@
-import { prisma } from '../../config/db.js';
 import { env } from '../../config/env.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { enqueueBackgroundTask } from '../../services/backgroundTaskService.js';
@@ -13,6 +12,16 @@ import {
   supersedeCachedResults,
 } from './governanceService.js';
 import { executeStructuredPrompt } from './intelligenceRuntimeService.js';
+import {
+  findAccessibleCandidateForIntelligence,
+  findCandidateIntelligenceState,
+  findCandidateIntelligenceStateWithRelations,
+  findCandidateIntelligenceTaskActor,
+  findLatestCandidateIntelligenceResult,
+  findPendingCandidateIntelligenceTask,
+  markCandidateIntelligenceStateStale,
+  upsertCandidateIntelligenceStateRecord,
+} from '../repositories/candidateIntelligenceRepository.js';
 
 const FEATURE = 'CANDIDATE_INTELLIGENCE';
 const ENTITY_TYPE = 'CandidateIntelligence';
@@ -520,24 +529,7 @@ function buildCandidateIntelligenceInput(candidate, resumeAsset, importItem, det
 }
 
 async function getAccessibleCandidate(context, candidateId) {
-  const candidate = await prisma.candidateProfile.findFirst({
-    where: {
-      id: candidateId,
-      OR: [
-        { organisationId: context.organisationId },
-        { applications: { some: { organisationId: context.organisationId } } },
-        { savedByRecruiters: { some: { organisationId: context.organisationId } } },
-      ],
-    },
-    include: {
-      latestResumeAsset: true,
-      importedFromItems: {
-        where: { organisationId: context.organisationId },
-        orderBy: { updatedAt: 'desc' },
-        take: 1,
-      },
-    },
-  });
+  const candidate = await findAccessibleCandidateForIntelligence(context.organisationId, candidateId);
 
   if (!candidate) {
     const error = new Error('Candidate not found.');
@@ -549,19 +541,13 @@ async function getAccessibleCandidate(context, candidateId) {
 }
 
 async function getLatestResultForCandidate(organisationId, candidateId) {
-  return prisma.intelligenceResult.findFirst({
-    where: {
-      organisationId,
-      entityType: ENTITY_TYPE,
-      entityId: candidateId,
-      resultVersion: RESULT_VERSION,
-      promptVersion: PROMPT_VERSION,
-      dismissedAt: null,
-      supersededAt: null,
-    },
-    include: { execution: true },
-    orderBy: { createdAt: 'desc' },
-  });
+  return findLatestCandidateIntelligenceResult(
+    organisationId,
+    ENTITY_TYPE,
+    candidateId,
+    RESULT_VERSION,
+    PROMPT_VERSION,
+  );
 }
 
 async function upsertCandidateIntelligenceState(candidate, payload) {
@@ -573,15 +559,11 @@ async function upsertCandidateIntelligenceState(candidate, payload) {
     throw error;
   }
 
-  return prisma.candidateIntelligenceState.upsert({
-    where: {
-      organisationId_candidateId_kind: {
-        organisationId,
-        candidateId: candidate.id,
-        kind: payload.kind || DEFAULT_KIND,
-      },
-    },
-    create: {
+  return upsertCandidateIntelligenceStateRecord(
+    candidate.id,
+    organisationId,
+    payload.kind || DEFAULT_KIND,
+    {
       organisationId,
       candidateId: candidate.id,
       kind: payload.kind || DEFAULT_KIND,
@@ -614,7 +596,7 @@ async function upsertCandidateIntelligenceState(candidate, payload) {
       aiEnabled: Boolean(payload.aiEnabled),
       metadata: payload.metadata || {},
     },
-    update: {
+    {
       status: payload.status || undefined,
       latestExecutionId: payload.latestExecutionId === undefined ? undefined : payload.latestExecutionId,
       latestResultId: payload.latestResultId === undefined ? undefined : payload.latestResultId,
@@ -644,11 +626,7 @@ async function upsertCandidateIntelligenceState(candidate, payload) {
       aiEnabled: payload.aiEnabled === undefined ? undefined : Boolean(payload.aiEnabled),
       metadata: payload.metadata === undefined ? undefined : payload.metadata,
     },
-    include: {
-      latestExecution: true,
-      latestResult: { include: { execution: true } },
-    },
-  });
+  );
 }
 
 function buildExecutionSection(state, execution, extra = {}) {
@@ -695,15 +673,7 @@ function buildApiResponseFromStoredResult(state, result, extra = {}) {
 }
 
 async function ensureGenerationTask(candidate, actorUserId, state, forceRegenerate = false) {
-  const existingTask = await prisma.backgroundTask.findFirst({
-    where: {
-      type: 'CANDIDATE_INTELLIGENCE_GENERATION',
-      entityType: 'CandidateProfile',
-      entityId: candidate.id,
-      status: { in: ['PENDING', 'RUNNING', 'RETRY_SCHEDULED'] },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const existingTask = await findPendingCandidateIntelligenceTask('CandidateProfile', candidate.id);
   if (existingTask) return existingTask;
 
   const idempotencyKey = forceRegenerate
@@ -866,19 +836,11 @@ async function storeDeterministicOnlyResult(context) {
 export async function getCandidateIntelligence(actorUser, payload, requestMeta = {}) {
   const candidateId = payload.candidateId;
   const context = await buildCandidateContext(actorUser, candidateId, 'read');
-  const existingState = await prisma.candidateIntelligenceState.findUnique({
-    where: {
-      organisationId_candidateId_kind: {
-        organisationId: context.permissionContext.organisationId,
-        candidateId,
-        kind: DEFAULT_KIND,
-      },
-    },
-    include: {
-      latestExecution: true,
-      latestResult: { include: { execution: true } },
-    },
-  });
+  const existingState = await findCandidateIntelligenceStateWithRelations(
+    context.permissionContext.organisationId,
+    candidateId,
+    DEFAULT_KIND,
+  );
   const state = await markStateForCurrentSource(context, existingState);
 
   const cached = await getFreshCachedResult({
@@ -953,15 +915,11 @@ export async function getCandidateIntelligence(actorUser, payload, requestMeta =
 
 export async function getCandidateIntelligenceStatus(actorUser, payload) {
   const context = await buildCandidateContext(actorUser, payload.candidateId, 'read');
-  const existingState = await prisma.candidateIntelligenceState.findUnique({
-    where: {
-      organisationId_candidateId_kind: {
-        organisationId: context.permissionContext.organisationId,
-        candidateId: payload.candidateId,
-        kind: DEFAULT_KIND,
-      },
-    },
-  });
+  const existingState = await findCandidateIntelligenceState(
+    context.permissionContext.organisationId,
+    payload.candidateId,
+    DEFAULT_KIND,
+  );
   const state = await markStateForCurrentSource(context, existingState);
   const latest = await getLatestResultForCandidate(context.permissionContext.organisationId, payload.candidateId);
 
@@ -1046,10 +1004,7 @@ export async function runCandidateIntelligenceGenerationTask(task) {
   if (!candidateId) return 'cancelled';
 
   const actorUser = requestedByUserId
-    ? await prisma.user.findUnique({
-        where: { id: requestedByUserId },
-        include: { recruiterProfile: true, candidateProfile: true },
-      })
+    ? await findCandidateIntelligenceTaskActor(requestedByUserId)
     : null;
 
   if (!actorUser) return 'cancelled';
@@ -1211,14 +1166,11 @@ export async function runCandidateIntelligenceGenerationTask(task) {
 }
 
 export async function markCandidateIntelligenceStale(candidateId, reason = 'SOURCE_CHANGED') {
-  return prisma.candidateIntelligenceState.updateMany({
-    where: { candidateId },
-    data: {
-      status: 'STALE',
-      staleReason: String(reason).slice(0, 120),
-      lastSourceChangedAt: new Date(),
-    },
-  }).catch(() => ({ count: 0 }));
+  return markCandidateIntelligenceStateStale(
+    candidateId,
+    String(reason).slice(0, 120),
+    new Date(),
+  ).catch(() => ({ count: 0 }));
 }
 
 export {

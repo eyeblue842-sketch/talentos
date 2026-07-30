@@ -3,6 +3,10 @@ import { prisma } from '../../config/db.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { requireEnterprisePermission } from '../../services/enterprisePermissionService.js';
 import { searchSemanticCandidates } from './semanticSearchService.js';
+import {
+  createOrganisationFeature,
+  findOrganisationFeature,
+} from '../repositories/featureAccessRepository.js';
 
 function serializeSavedSearch(row) {
   return savedCandidateSearchResponseSchema.parse({
@@ -27,23 +31,14 @@ function serializeSavedSearch(row) {
 
 async function requireSavedSearchFeature(actorUser, permission, flagKey) {
   const context = await requireEnterprisePermission(actorUser, permission);
-  const flag = await prisma.featureFlag.findUnique({
-    where: {
-      organisationId_key: {
-        organisationId: context.organisationId,
-        key: flagKey,
-      },
-    },
-  }).catch(() => null);
+  const flag = await findOrganisationFeature(context.organisationId, flagKey).catch(() => null);
 
   if (!flag) {
-    await prisma.featureFlag.create({
-      data: {
+    await createOrganisationFeature({
         organisationId: context.organisationId,
         key: flagKey,
         description: `Semantic search capability: ${flagKey}`,
         enabled: false,
-      },
     }).catch(() => {});
   }
 

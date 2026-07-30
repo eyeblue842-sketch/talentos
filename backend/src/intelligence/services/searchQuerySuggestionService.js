@@ -2,6 +2,10 @@ import { semanticSearchSuggestionResponseSchema } from '@careeriz/shared';
 import { prisma } from '../../config/db.js';
 import { requireEnterprisePermission } from '../../services/enterprisePermissionService.js';
 import { expandSemanticSkills } from './semanticSkillExpansionService.js';
+import {
+  createOrganisationFeature,
+  findOrganisationFeature,
+} from '../repositories/featureAccessRepository.js';
 
 function uniqueSuggestions(items = []) {
   const seen = new Set();
@@ -16,23 +20,17 @@ function uniqueSuggestions(items = []) {
 }
 
 async function ensureSuggestionFeature(context) {
-  const flag = await prisma.featureFlag.findUnique({
-    where: {
-      organisationId_key: {
-        organisationId: context.organisationId,
-        key: 'intelligence.search_suggestions',
-      },
-    },
-  }).catch(() => null);
+  const flag = await findOrganisationFeature(
+    context.organisationId,
+    'intelligence.search_suggestions',
+  ).catch(() => null);
 
   if (!flag) {
-    await prisma.featureFlag.create({
-      data: {
+    await createOrganisationFeature({
         organisationId: context.organisationId,
         key: 'intelligence.search_suggestions',
         description: 'Semantic search suggestions',
         enabled: false,
-      },
     }).catch(() => {});
   }
 

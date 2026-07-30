@@ -1,4 +1,3 @@
-import { prisma } from '../../config/db.js';
 import { env } from '../../config/env.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { enqueueBackgroundTask } from '../../services/backgroundTaskService.js';
@@ -18,6 +17,18 @@ import { buildCandidateJobMatchSourceFingerprint, getCandidateJobMatchContractVe
 import { calculateCandidateJobMatchScore } from './candidateMatchScoringService.js';
 import { buildCandidateMatchEvidenceCatalog } from './candidateMatchEvidenceService.js';
 import { resolveActiveMatchScoringProfileVersion } from './matchScoringProfileService.js';
+import {
+  findAccessibleCandidateForMatch,
+  findAccessibleJobForMatch,
+  findCandidateIntelligenceStateForMatch,
+  findCandidateJobMatchState,
+  findCandidateJobMatchStateWithRelations,
+  findCandidateMatchTaskActor,
+  findJobDescriptionStateForMatch,
+  findLatestCandidateMatchResult,
+  findPendingCandidateMatchTask,
+  upsertCandidateJobMatchStateRecord,
+} from '../repositories/candidateMatchEngineRepository.js';
 
 const FEATURE = 'CANDIDATE_MATCH';
 const ENTITY_TYPE = 'CandidateJobMatch';
@@ -453,19 +464,7 @@ function buildLegacyCompatibilityResponse(response) {
 }
 
 async function getAccessibleCandidate(context, candidateId) {
-  const candidate = await prisma.candidateProfile.findFirst({
-    where: {
-      id: candidateId,
-      OR: [
-        { organisationId: context.organisationId },
-        { applications: { some: { organisationId: context.organisationId } } },
-        { savedByRecruiters: { some: { organisationId: context.organisationId } } },
-      ],
-    },
-    include: {
-      latestResumeAsset: true,
-    },
-  });
+  const candidate = await findAccessibleCandidateForMatch(context.organisationId, candidateId);
 
   if (!candidate) {
     const error = new Error('Candidate not found.');
@@ -477,15 +476,7 @@ async function getAccessibleCandidate(context, candidateId) {
 }
 
 async function getAccessibleJob(context, jobId) {
-  const job = await prisma.job.findFirst({
-    where: {
-      id: jobId,
-      organisationId: context.organisationId,
-    },
-    include: {
-      requisition: true,
-    },
-  });
+  const job = await findAccessibleJobForMatch(context.organisationId, jobId);
 
   if (!job) {
     const error = new Error('Job not found.');
@@ -504,24 +495,8 @@ async function getContext(actorUser, candidateId, jobId, mode = 'read', options 
   ]);
 
   const [candidateIntelligenceState, jobDescriptionState] = await Promise.all([
-    prisma.candidateIntelligenceState.findUnique({
-      where: {
-        organisationId_candidateId_kind: {
-          organisationId: permissionContext.organisationId,
-          candidateId,
-          kind: 'PROFILE_OVERVIEW',
-        },
-      },
-    }),
-    prisma.jobDescriptionState.findUnique({
-      where: {
-        organisationId_jobId_kind: {
-          organisationId: permissionContext.organisationId,
-          jobId,
-          kind: 'FULL_DESCRIPTION',
-        },
-      },
-    }),
+    findCandidateIntelligenceStateForMatch(permissionContext.organisationId, candidateId, 'PROFILE_OVERVIEW'),
+    findJobDescriptionStateForMatch(permissionContext.organisationId, jobId, 'FULL_DESCRIPTION'),
   ]);
 
   const scoringProfileVersion = await resolveActiveMatchScoringProfileVersion(
@@ -571,31 +546,21 @@ async function getContext(actorUser, candidateId, jobId, mode = 'read', options 
 }
 
 async function getLatestResult(organisationId, candidateId, jobId) {
-  return prisma.intelligenceResult.findFirst({
-    where: {
-      organisationId,
-      entityType: ENTITY_TYPE,
-      entityId: buildEntityId(candidateId, jobId),
-      resultVersion: RESULT_VERSION,
-      promptVersion: PROMPT_VERSION,
-      dismissedAt: null,
-      supersededAt: null,
-    },
-    include: { execution: true },
-    orderBy: { createdAt: 'desc' },
-  });
+  return findLatestCandidateMatchResult(
+    organisationId,
+    ENTITY_TYPE,
+    buildEntityId(candidateId, jobId),
+    RESULT_VERSION,
+    PROMPT_VERSION,
+  );
 }
 
 async function upsertState(context, payload = {}) {
-  return prisma.candidateJobMatchState.upsert({
-    where: {
-      organisationId_candidateId_jobId: {
-        organisationId: context.permissionContext.organisationId,
-        candidateId: context.candidate.id,
-        jobId: context.job.id,
-      },
-    },
-    create: {
+  return upsertCandidateJobMatchStateRecord(
+    context.permissionContext.organisationId,
+    context.candidate.id,
+    context.job.id,
+    {
       organisationId: context.permissionContext.organisationId,
       candidateId: context.candidate.id,
       jobId: context.job.id,
@@ -628,7 +593,7 @@ async function upsertState(context, payload = {}) {
       aiEnabled: payload.aiEnabled === undefined ? context.aiEnabled : Boolean(payload.aiEnabled),
       metadata: payload.metadata || { version: STATE_METADATA_VERSION },
     },
-    update: {
+    {
       status: payload.status === undefined ? undefined : payload.status,
       latestExecutionId: payload.latestExecutionId === undefined ? undefined : payload.latestExecutionId,
       latestResultId: payload.latestResultId === undefined ? undefined : payload.latestResultId,
@@ -658,11 +623,7 @@ async function upsertState(context, payload = {}) {
       aiEnabled: payload.aiEnabled === undefined ? undefined : Boolean(payload.aiEnabled),
       metadata: payload.metadata === undefined ? undefined : payload.metadata,
     },
-    include: {
-      latestExecution: true,
-      latestResult: { include: { execution: true } },
-    },
-  });
+  );
 }
 
 async function markStateForCurrentSource(context, existingState = null) {
@@ -700,15 +661,7 @@ async function markStateForCurrentSource(context, existingState = null) {
 
 async function ensureGenerationTask(context, state, actorUserId, forceRegenerate = false) {
   const entityId = buildEntityId(context.candidate.id, context.job.id);
-  const existingTask = await prisma.backgroundTask.findFirst({
-    where: {
-      type: 'CANDIDATE_MATCH_GENERATION',
-      entityType: ENTITY_TYPE,
-      entityId,
-      status: { in: ['PENDING', 'RUNNING', 'RETRY_SCHEDULED'] },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const existingTask = await findPendingCandidateMatchTask(ENTITY_TYPE, entityId);
   if (existingTask) return existingTask;
 
   const idempotencyKey = forceRegenerate
@@ -948,19 +901,11 @@ async function generateAndPersistMatch(context, requestedByUserId = null) {
 
 export async function getCandidateJobMatch(actorUser, payload, requestMeta = {}) {
   const context = await getContext(actorUser, payload.candidateId, payload.jobId, 'read', payload);
-  const existingState = await prisma.candidateJobMatchState.findUnique({
-    where: {
-      organisationId_candidateId_jobId: {
-        organisationId: context.permissionContext.organisationId,
-        candidateId: context.candidate.id,
-        jobId: context.job.id,
-      },
-    },
-    include: {
-      latestExecution: true,
-      latestResult: { include: { execution: true } },
-    },
-  });
+  const existingState = await findCandidateJobMatchStateWithRelations(
+    context.permissionContext.organisationId,
+    context.candidate.id,
+    context.job.id,
+  );
   const state = await markStateForCurrentSource(context, existingState);
   const entityId = buildEntityId(context.candidate.id, context.job.id);
 
@@ -1031,15 +976,11 @@ export async function getCandidateJobMatch(actorUser, payload, requestMeta = {})
 
 export async function getCandidateJobMatchStatus(actorUser, payload) {
   const context = await getContext(actorUser, payload.candidateId, payload.jobId, 'read', payload);
-  const existingState = await prisma.candidateJobMatchState.findUnique({
-    where: {
-      organisationId_candidateId_jobId: {
-        organisationId: context.permissionContext.organisationId,
-        candidateId: context.candidate.id,
-        jobId: context.job.id,
-      },
-    },
-  });
+  const existingState = await findCandidateJobMatchState(
+    context.permissionContext.organisationId,
+    context.candidate.id,
+    context.job.id,
+  );
   const state = await markStateForCurrentSource(context, existingState);
   const latest = await getLatestResult(context.permissionContext.organisationId, context.candidate.id, context.job.id);
   const stale = Boolean(latest && latest.sourceFingerprint !== context.sourceFingerprint);
@@ -1114,10 +1055,7 @@ export async function runCandidateJobMatchGenerationTask(task) {
   const requestedByUserId = task.payload?.requestedByUserId || task.createdByUserId || null;
   if (!candidateId || !jobId || !requestedByUserId) return 'cancelled';
 
-  const actorUser = await prisma.user.findUnique({
-    where: { id: requestedByUserId },
-    include: { recruiterProfile: true, candidateProfile: true },
-  });
+  const actorUser = await findCandidateMatchTaskActor(requestedByUserId);
   if (!actorUser) return 'cancelled';
 
   const context = await getContext(actorUser, candidateId, jobId, 'read', {
@@ -1154,15 +1092,11 @@ export async function getCandidateJobMatchCompatibility(actorUser, payload, requ
       promptVersion: PROMPT_VERSION,
     });
     if (cached) {
-      const existingState = await prisma.candidateJobMatchState.findUnique({
-        where: {
-          organisationId_candidateId_jobId: {
-            organisationId: context.permissionContext.organisationId,
-            candidateId: context.candidate.id,
-            jobId: context.job.id,
-          },
-        },
-      });
+      const existingState = await findCandidateJobMatchState(
+        context.permissionContext.organisationId,
+        context.candidate.id,
+        context.job.id,
+      );
       return buildLegacyCompatibilityResponse(buildApiResponse(existingState, cached, {
         cacheHit: true,
         stale: false,

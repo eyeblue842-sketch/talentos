@@ -1,10 +1,60 @@
 import crypto from 'crypto';
-import { prisma } from '../config/db.js';
 import { storePrivateFile, readPrivateFileNodeStream } from '../config/storage.js';
 import { requireOrganisationRole, requireOrganisationContext } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { enqueueBackgroundTask } from './backgroundTaskService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import {
+  archiveResumeAssetRecord,
+  countApplicationResumeSnapshotReferences,
+  countCandidateJobApplications,
+  countJobScreeningQuestions,
+  countRecruiterJobApplications,
+  countScreeningTemplates,
+  createJobScreeningQuestionRecord,
+  createResumeAssetRecord,
+  createScreeningTemplateRecord,
+  deactivateOtherPrimaryResumes,
+  deleteJobScreeningQuestionRecord,
+  deleteResumeAssetRecord,
+  findActiveJobScreeningQuestions,
+  findActiveReplacementResume,
+  findApplicationResumeSnapshot,
+  findApplicationScreeningAnswerFile,
+  findCandidateJobApplicationDetail,
+  findCandidateJobApplications,
+  findCandidateProfile,
+  findCandidateProfileWithUser,
+  findCandidateResumeAssetsByCandidate,
+  findCandidateWithdrawalApplication,
+  findJobApplicationByJobAndCandidate,
+  findJobForApplicationValidation,
+  findJobForOrganisation,
+  findJobScreeningQuestion,
+  findJobScreeningQuestionIds,
+  findJobScreeningQuestions,
+  findOwnedDownloadResumeAsset,
+  findOwnedResumeAsset,
+  findPublicJobBySlug,
+  findRecruiterJobApplicationDetail,
+  findRecruiterJobApplications,
+  findScreeningFileAsset,
+  findScreeningTemplate,
+  findScreeningTemplates,
+  markResumeAssetPrimary,
+  reorderJobScreeningQuestionsRecord,
+  restoreResumeAssetRecord,
+  setPrimaryResumeAssetRecord,
+  submitJobApplicationRecord,
+  updateCandidateProfileLatestResume,
+  updateCandidateProfileRecord,
+  updateCandidateProfileResumeLink,
+  updateJobScreeningQuestionRecord,
+  updateResumeAssetParsedReview,
+  updateResumeAssetParsing,
+  updateScreeningTemplateRecord,
+  withdrawCandidateApplicationRecord,
+} from '../repositories/applicationWorkflow/applicationWorkflowRepository.js';
 
 const recruiterWritableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const recruiterReadableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -521,14 +571,7 @@ function generatePublicReference() {
 }
 
 async function ensureJobForOrganisation(jobId, organisationId) {
-  const job = await prisma.job.findFirst({
-    where: { id: jobId, organisationId },
-    include: {
-      organisation: true,
-      screeningQuestions: { orderBy: { displayOrder: 'asc' } },
-      _count: { select: { applications: true, submittedApplications: true } },
-    },
-  });
+  const job = await findJobForOrganisation(jobId, organisationId);
   if (!job) {
     const error = new Error('Job not found.');
     error.statusCode = 404;
@@ -538,25 +581,7 @@ async function ensureJobForOrganisation(jobId, organisationId) {
 }
 
 async function ensurePublicJob(slug) {
-  const job = await prisma.job.findFirst({
-    where: {
-      slug,
-      isPublic: true,
-      archivedAt: null,
-      organisation: {
-        status: 'ACTIVE',
-        careersEnabled: true,
-      },
-    },
-    include: {
-      organisation: true,
-      screeningQuestions: {
-        where: { isActive: true },
-        orderBy: { displayOrder: 'asc' },
-      },
-      _count: { select: { submittedApplications: true } },
-    },
-  });
+  const job = await findPublicJobBySlug(slug);
   if (!job) {
     const error = new Error('Job not found.');
     error.statusCode = 404;
@@ -566,9 +591,7 @@ async function ensurePublicJob(slug) {
 }
 
 async function ensureTemplate(organisationId, templateId) {
-  const template = await prisma.screeningQuestionTemplate.findFirst({
-    where: { id: templateId, organisationId },
-  });
+  const template = await findScreeningTemplate(organisationId, templateId);
   if (!template) {
     const error = new Error('Screening question template not found.');
     error.statusCode = 404;
@@ -578,14 +601,7 @@ async function ensureTemplate(organisationId, templateId) {
 }
 
 async function ensureOwnedResumeAsset(candidateId, assetId) {
-  const asset = await prisma.resumeAsset.findFirst({
-    where: {
-      id: assetId,
-      candidateId,
-      kind: 'RESUME',
-      status: { not: 'DELETED' },
-    },
-  });
+  const asset = await findOwnedResumeAsset(candidateId, assetId);
   if (!asset) {
     const error = new Error('Resume not found.');
     error.statusCode = 404;
@@ -595,58 +611,13 @@ async function ensureOwnedResumeAsset(candidateId, assetId) {
 }
 
 async function ensureAnswerFileAsset(candidateId, assetId) {
-  const asset = await prisma.resumeAsset.findFirst({
-    where: { id: assetId, candidateId, kind: 'SCREENING_FILE' },
-  });
+  const asset = await findScreeningFileAsset(candidateId, assetId);
   if (!asset) {
     const error = new Error('Uploaded file not found.');
     error.statusCode = 404;
     throw error;
   }
   return asset;
-}
-
-async function createApplicationNotifications(tx, payload) {
-  const recruiterIds = await tx.organisationMembership.findMany({
-    where: {
-      organisationId: payload.organisationId,
-      status: 'ACTIVE',
-      role: { in: ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'] },
-    },
-    select: { userId: true },
-  });
-
-  const notifications = recruiterIds.map((row) => tx.notification.create({
-    data: {
-      organisationId: payload.organisationId,
-      recipientUserId: row.userId,
-      type: 'APPLICATION',
-      title: 'New application received',
-      message: `${payload.candidateName} applied to ${payload.jobTitle}.`,
-      entityType: 'JobApplication',
-      entityId: payload.jobApplicationId,
-      metadata: {
-        applicationId: payload.jobApplicationId,
-      },
-    },
-  }));
-
-  notifications.push(tx.notification.create({
-    data: {
-      organisationId: payload.organisationId,
-      recipientUserId: payload.candidateUserId,
-      type: 'APPLICATION',
-      title: 'Application submitted',
-      message: `Your application for ${payload.jobTitle} was submitted successfully.`,
-      entityType: 'Application',
-      entityId: payload.jobApplicationId,
-      metadata: {
-        applicationId: payload.jobApplicationId,
-      },
-    },
-  }));
-
-  await Promise.all(notifications);
 }
 
 export async function listScreeningTemplates(actorUser, filters = {}, organisationId = null) {
@@ -664,15 +635,9 @@ export async function listScreeningTemplates(actorUser, filters = {}, organisati
         ]
       : undefined,
   };
-  const total = await prisma.screeningQuestionTemplate.count({ where });
+  const total = await countScreeningTemplates(where);
   const page = clampPage(requestedPage, pageSize, total);
-  const rows = await prisma.screeningQuestionTemplate.findMany({
-    where,
-    include: { _count: { select: { jobScreeningQuestions: true } } },
-    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  const rows = await findScreeningTemplates(where, (page - 1) * pageSize, pageSize);
   return {
     items: rows.map(serializeTemplate),
     meta: buildMeta(total, page, pageSize),
@@ -685,21 +650,19 @@ export async function createScreeningTemplate(actorUser, payload, organisationId
     ...payload,
     required: payload.isRequiredByDefault ?? payload.required ?? false,
   });
-  const created = await prisma.screeningQuestionTemplate.create({
-    data: {
-      organisationId: context.organisationId,
-      createdById: actorUser.id,
-      questionText: normalized.questionText,
-      internalLabel: normalized.internalLabel,
-      helpText: normalized.helpText,
-      placeholder: normalized.placeholder,
-      questionType: normalized.questionType,
-      isRequiredByDefault: Boolean(payload.isRequiredByDefault ?? payload.required),
-      displayOrder: normalized.displayOrder,
-      isActive: payload.isActive !== false,
-      config: normalized.config,
-      validationConfig: normalized.validationConfig,
-    },
+  const created = await createScreeningTemplateRecord({
+    organisationId: context.organisationId,
+    createdById: actorUser.id,
+    questionText: normalized.questionText,
+    internalLabel: normalized.internalLabel,
+    helpText: normalized.helpText,
+    placeholder: normalized.placeholder,
+    questionType: normalized.questionType,
+    isRequiredByDefault: Boolean(payload.isRequiredByDefault ?? payload.required),
+    displayOrder: normalized.displayOrder,
+    isActive: payload.isActive !== false,
+    config: normalized.config,
+    validationConfig: normalized.validationConfig,
   });
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -717,20 +680,17 @@ export async function updateScreeningTemplate(actorUser, templateId, payload, or
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
   const existing = await ensureTemplate(context.organisationId, templateId);
   const normalized = validateQuestionConfiguration({ ...existing, ...payload });
-  const updated = await prisma.screeningQuestionTemplate.update({
-    where: { id: templateId },
-    data: {
-      questionText: normalized.questionText,
-      internalLabel: normalized.internalLabel,
-      helpText: normalized.helpText,
-      placeholder: normalized.placeholder,
-      questionType: normalized.questionType,
-      isRequiredByDefault: payload.isRequiredByDefault ?? existing.isRequiredByDefault,
-      displayOrder: normalized.displayOrder,
-      isActive: payload.isActive ?? existing.isActive,
-      config: normalized.config,
-      validationConfig: normalized.validationConfig,
-    },
+  const updated = await updateScreeningTemplateRecord(templateId, {
+    questionText: normalized.questionText,
+    internalLabel: normalized.internalLabel,
+    helpText: normalized.helpText,
+    placeholder: normalized.placeholder,
+    questionType: normalized.questionType,
+    isRequiredByDefault: payload.isRequiredByDefault ?? existing.isRequiredByDefault,
+    displayOrder: normalized.displayOrder,
+    isActive: payload.isActive ?? existing.isActive,
+    config: normalized.config,
+    validationConfig: normalized.validationConfig,
   });
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -752,21 +712,19 @@ export async function archiveScreeningTemplate(actorUser, templateId, isActive, 
 export async function duplicateScreeningTemplate(actorUser, templateId, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
   const existing = await ensureTemplate(context.organisationId, templateId);
-  const created = await prisma.screeningQuestionTemplate.create({
-    data: {
-      organisationId: context.organisationId,
-      createdById: actorUser.id,
-      questionText: `${existing.questionText} (Copy)`,
-      internalLabel: existing.internalLabel,
-      helpText: existing.helpText,
-      placeholder: existing.placeholder,
-      questionType: existing.questionType,
-      isRequiredByDefault: existing.isRequiredByDefault,
-      displayOrder: existing.displayOrder,
-      isActive: existing.isActive,
-      config: existing.config,
-      validationConfig: existing.validationConfig,
-    },
+  const created = await createScreeningTemplateRecord({
+    organisationId: context.organisationId,
+    createdById: actorUser.id,
+    questionText: `${existing.questionText} (Copy)`,
+    internalLabel: existing.internalLabel,
+    helpText: existing.helpText,
+    placeholder: existing.placeholder,
+    questionType: existing.questionType,
+    isRequiredByDefault: existing.isRequiredByDefault,
+    displayOrder: existing.displayOrder,
+    isActive: existing.isActive,
+    config: existing.config,
+    validationConfig: existing.validationConfig,
   });
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -783,38 +741,31 @@ export async function duplicateScreeningTemplate(actorUser, templateId, organisa
 
 export async function listJobScreeningQuestions(actorUser, jobId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
-  const rows = await prisma.jobScreeningQuestion.findMany({
-    where: { organisationId: context.organisationId, jobId },
-    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-  });
+  const rows = await findJobScreeningQuestions({ organisationId: context.organisationId, jobId });
   return rows.map(serializeQuestion);
 }
 
 export async function addJobScreeningQuestion(actorUser, jobId, payload, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
   await ensureJobForOrganisation(jobId, context.organisationId);
-  const nextOrder = await prisma.jobScreeningQuestion.count({
-    where: { organisationId: context.organisationId, jobId },
-  });
+  const nextOrder = await countJobScreeningQuestions({ organisationId: context.organisationId, jobId });
   const normalized = validateQuestionConfiguration({ ...payload, displayOrder: payload.displayOrder ?? nextOrder });
-  const created = await prisma.jobScreeningQuestion.create({
-    data: {
-      organisationId: context.organisationId,
-      jobId,
-      templateId: normalized.templateId,
-      createdById: actorUser.id,
-      questionText: normalized.questionText,
-      internalLabel: normalized.internalLabel,
-      helpText: normalized.helpText,
-      placeholder: normalized.placeholder,
-      questionType: normalized.questionType,
-      required: normalized.required,
-      displayOrder: normalized.displayOrder,
-      isActive: normalized.isActive,
-      config: normalized.config,
-      validationConfig: normalized.validationConfig,
-      rules: normalized.rules,
-    },
+  const created = await createJobScreeningQuestionRecord({
+    organisationId: context.organisationId,
+    jobId,
+    templateId: normalized.templateId,
+    createdById: actorUser.id,
+    questionText: normalized.questionText,
+    internalLabel: normalized.internalLabel,
+    helpText: normalized.helpText,
+    placeholder: normalized.placeholder,
+    questionType: normalized.questionType,
+    required: normalized.required,
+    displayOrder: normalized.displayOrder,
+    isActive: normalized.isActive,
+    config: normalized.config,
+    validationConfig: normalized.validationConfig,
+    rules: normalized.rules,
   });
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -847,30 +798,25 @@ export async function addJobQuestionFromLibrary(actorUser, jobId, templateId, or
 
 export async function updateJobScreeningQuestion(actorUser, jobId, questionId, payload, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
-  const existing = await prisma.jobScreeningQuestion.findFirst({
-    where: { id: questionId, jobId, organisationId: context.organisationId },
-  });
+  const existing = await findJobScreeningQuestion({ id: questionId, jobId, organisationId: context.organisationId });
   if (!existing) {
     const error = new Error('Screening question not found.');
     error.statusCode = 404;
     throw error;
   }
   const normalized = validateQuestionConfiguration({ ...existing, ...payload });
-  const updated = await prisma.jobScreeningQuestion.update({
-    where: { id: questionId },
-    data: {
-      questionText: normalized.questionText,
-      internalLabel: normalized.internalLabel,
-      helpText: normalized.helpText,
-      placeholder: normalized.placeholder,
-      questionType: normalized.questionType,
-      required: normalized.required,
-      displayOrder: normalized.displayOrder,
-      isActive: payload.isActive ?? existing.isActive,
-      config: normalized.config,
-      validationConfig: normalized.validationConfig,
-      rules: normalized.rules,
-    },
+  const updated = await updateJobScreeningQuestionRecord(questionId, {
+    questionText: normalized.questionText,
+    internalLabel: normalized.internalLabel,
+    helpText: normalized.helpText,
+    placeholder: normalized.placeholder,
+    questionType: normalized.questionType,
+    required: normalized.required,
+    displayOrder: normalized.displayOrder,
+    isActive: payload.isActive ?? existing.isActive,
+    config: normalized.config,
+    validationConfig: normalized.validationConfig,
+    rules: normalized.rules,
   });
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -887,19 +833,13 @@ export async function updateJobScreeningQuestion(actorUser, jobId, questionId, p
 
 export async function reorderJobScreeningQuestions(actorUser, jobId, questionIds, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
-  const rows = await prisma.jobScreeningQuestion.findMany({
-    where: { organisationId: context.organisationId, jobId },
-    select: { id: true },
-  });
+  const rows = await findJobScreeningQuestionIds({ organisationId: context.organisationId, jobId });
   if (rows.length !== questionIds.length || rows.some((row) => !questionIds.includes(row.id))) {
     const error = new Error('Question order payload is invalid.');
     error.statusCode = 422;
     throw error;
   }
-  await prisma.$transaction(questionIds.map((id, index) => prisma.jobScreeningQuestion.update({
-    where: { id },
-    data: { displayOrder: index },
-  })));
+  await reorderJobScreeningQuestionsRecord(questionIds);
   await recordAuditLog({
     organisationId: context.organisationId,
     actorUserId: actorUser.id,
@@ -914,9 +854,7 @@ export async function reorderJobScreeningQuestions(actorUser, jobId, questionIds
 
 export async function duplicateJobScreeningQuestion(actorUser, jobId, questionId, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
-  const question = await prisma.jobScreeningQuestion.findFirst({
-    where: { id: questionId, jobId, organisationId: context.organisationId },
-  });
+  const question = await findJobScreeningQuestion({ id: questionId, jobId, organisationId: context.organisationId });
   if (!question) {
     const error = new Error('Screening question not found.');
     error.statusCode = 404;
@@ -939,15 +877,13 @@ export async function duplicateJobScreeningQuestion(actorUser, jobId, questionId
 
 export async function removeJobScreeningQuestion(actorUser, jobId, questionId, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, recruiterWritableRoles, organisationId);
-  const question = await prisma.jobScreeningQuestion.findFirst({
-    where: { id: questionId, jobId, organisationId: context.organisationId },
-  });
+  const question = await findJobScreeningQuestion({ id: questionId, jobId, organisationId: context.organisationId });
   if (!question) {
     const error = new Error('Screening question not found.');
     error.statusCode = 404;
     throw error;
   }
-  await prisma.jobScreeningQuestion.delete({ where: { id: questionId } });
+  await deleteJobScreeningQuestionRecord(questionId);
   await recordAuditLog({
     organisationId: context.organisationId,
     actorUserId: actorUser.id,
@@ -963,10 +899,7 @@ export async function removeJobScreeningQuestion(actorUser, jobId, questionId, o
 export async function previewJobQuestions(actorUser, jobId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
   await ensureJobForOrganisation(jobId, context.organisationId);
-  const questions = await prisma.jobScreeningQuestion.findMany({
-    where: { organisationId: context.organisationId, jobId, isActive: true },
-    orderBy: { displayOrder: 'asc' },
-  });
+  const questions = await findActiveJobScreeningQuestions({ organisationId: context.organisationId, jobId, isActive: true });
   return questions.map((question) => ({
     id: question.id,
     questionText: question.questionText,
@@ -980,14 +913,7 @@ export async function previewJobQuestions(actorUser, jobId, organisationId = nul
 }
 
 export async function listCandidateResumeAssets(candidateUser) {
-  const rows = await prisma.resumeAsset.findMany({
-    where: {
-      candidateId: candidateUser.candidateProfile.id,
-      kind: 'RESUME',
-      status: { not: 'DELETED' },
-    },
-    orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-  });
+  const rows = await findCandidateResumeAssetsByCandidate(candidateUser.candidateProfile.id);
   return rows.map(serializeResumeAsset);
 }
 
@@ -1012,46 +938,29 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
   }
   const stored = await storePrivateFile(file, { prefix: kind === 'RESUME' ? 'resumes' : 'screening-files' });
   const candidateProfile = kind === 'RESUME'
-    ? await prisma.candidateProfile.findUnique({
-        where: { id: candidateUser.candidateProfile.id },
-      })
+    ? await findCandidateProfile(candidateUser.candidateProfile.id)
     : null;
   const parsePreview = kind === 'RESUME'
     ? buildDeterministicParse(stored.originalFilename, candidateProfile)
     : { parsingStatus: 'PENDING', parsedData: null };
-  const asset = await prisma.resumeAsset.create({
-    data: {
-      candidateId: candidateUser.candidateProfile.id,
-      ownerUserId: candidateUser.id,
-      kind,
-      status: 'ACTIVE',
-      source: 'UPLOAD',
-      isPrimary: kind === 'RESUME',
-      storageKey: stored.storageKey,
-      storageProvider: stored.storageProvider,
-      originalFilename: stored.originalFilename,
-      mimeType: stored.mimeType,
-      sizeBytes: stored.sizeBytes,
-      parsingStatus: parsePreview.parsingStatus,
-      parsedData: parsePreview.parsedData,
-    },
+  const asset = await createResumeAssetRecord({
+    candidateId: candidateUser.candidateProfile.id,
+    ownerUserId: candidateUser.id,
+    kind,
+    status: 'ACTIVE',
+    source: 'UPLOAD',
+    isPrimary: kind === 'RESUME',
+    storageKey: stored.storageKey,
+    storageProvider: stored.storageProvider,
+    originalFilename: stored.originalFilename,
+    mimeType: stored.mimeType,
+    sizeBytes: stored.sizeBytes,
+    parsingStatus: parsePreview.parsingStatus,
+    parsedData: parsePreview.parsedData,
   });
   if (kind === 'RESUME') {
-    await prisma.resumeAsset.updateMany({
-      where: {
-        candidateId: candidateUser.candidateProfile.id,
-        kind: 'RESUME',
-        id: { not: asset.id },
-      },
-      data: { isPrimary: false },
-    });
-    await prisma.candidateProfile.update({
-      where: { id: candidateUser.candidateProfile.id },
-      data: {
-        latestResumeAssetId: asset.id,
-        resumeUrl: `/api/candidate/resumes/${asset.id}/download`,
-      },
-    });
+    await deactivateOtherPrimaryResumes(candidateUser.candidateProfile.id, asset.id);
+    await updateCandidateProfileLatestResume(candidateUser.candidateProfile.id, asset.id);
     await markCandidateIntelligenceStale(candidateUser.candidateProfile.id, 'RESUME_ASSET_UPDATED');
     await enqueueBackgroundTask({
       type: 'RESUME_PARSING',
@@ -1070,17 +979,10 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
 export async function getPublicJobApplyContext(slug, candidateUser = null) {
   const job = await ensurePublicJob(slug);
   const candidateProfile = candidateUser?.role === 'CANDIDATE'
-    ? await prisma.candidateProfile.findUnique({ where: { id: candidateUser.candidateProfile.id } })
+    ? await findCandidateProfile(candidateUser.candidateProfile.id)
     : null;
   const hasApplied = candidateProfile
-    ? Boolean(await prisma.jobApplication.findUnique({
-        where: {
-          jobId_candidateId: {
-            jobId: job.id,
-            candidateId: candidateProfile.id,
-          },
-        },
-      }))
+    ? Boolean(await findJobApplicationByJobAndCandidate(job.id, candidateProfile.id))
     : false;
   const eligibility = buildEligibility(job, job._count.submittedApplications, hasApplied, candidateProfile);
   return {
@@ -1117,27 +1019,14 @@ export async function getPublicJobApplyContext(slug, candidateUser = null) {
 }
 
 export async function validateApplicationAnswers(candidateUser, payload) {
-  const candidateProfile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateUser.candidateProfile.id },
-  });
-  const job = await prisma.job.findFirst({
-    where: { id: payload.jobId },
-    include: {
-      screeningQuestions: {
-        where: { isActive: true },
-        orderBy: { displayOrder: 'asc' },
-      },
-      _count: { select: { submittedApplications: true } },
-    },
-  });
+  const candidateProfile = await findCandidateProfile(candidateUser.candidateProfile.id);
+  const job = await findJobForApplicationValidation(payload.jobId);
   if (!job) {
     const error = new Error('Job not found.');
     error.statusCode = 404;
     throw error;
   }
-  const hasApplied = Boolean(await prisma.jobApplication.findUnique({
-    where: { jobId_candidateId: { jobId: job.id, candidateId: candidateProfile.id } },
-  }));
+  const hasApplied = Boolean(await findJobApplicationByJobAndCandidate(job.id, candidateProfile.id));
   const eligibility = buildEligibility(job, job._count.submittedApplications, hasApplied, candidateProfile);
   if (!eligibility.canApply) {
     const error = new Error(eligibility.reasonCode || 'Application is not available.');
@@ -1192,10 +1081,7 @@ export async function validateApplicationAnswers(candidateUser, payload) {
 }
 
 export async function submitJobApplication(candidateUser, payload, requestMeta = {}) {
-  const candidateProfile = await prisma.candidateProfile.findUnique({
-    where: { id: candidateUser.candidateProfile.id },
-    include: { user: true },
-  });
+  const candidateProfile = await findCandidateProfileWithUser(candidateUser.candidateProfile.id);
   if (!candidateProfile) {
     const error = new Error('Candidate profile not found.');
     error.statusCode = 404;
@@ -1208,175 +1094,17 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
   const answersByQuestionId = new Map((payload.answers || []).map((answer) => [answer.questionId, answer]));
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const freshJob = await tx.job.findUnique({
-        where: { id: payload.jobId },
-        include: { _count: { select: { submittedApplications: true } } },
-      });
-      if (!freshJob) {
-        const error = new Error('Job not found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      const duplicate = await tx.jobApplication.findUnique({
-        where: { jobId_candidateId: { jobId: payload.jobId, candidateId: candidateProfile.id } },
-      });
-      if (duplicate) {
-        const error = new Error('You have already applied to this job.');
-        error.statusCode = 409;
-        error.code = 'ALREADY_APPLIED';
-        throw error;
-      }
-
-      const application = await tx.application.create({
-        data: {
-          organisationId: freshJob.organisationId,
-          jobId: freshJob.id,
-          candidateId: candidateProfile.id,
-          statusLabel: 'Applied',
-          currentStage: 'APPLIED',
-          activities: {
-            create: {
-              organisationId: freshJob.organisationId,
-              eventType: 'APPLICATION_SUBMITTED',
-              message: 'Application submitted.',
-            },
-          },
-        },
-      });
-
-      const jobApplication = await tx.jobApplication.create({
-        data: {
-          publicReference: generatePublicReference(),
-          organisationId: freshJob.organisationId,
-          jobId: freshJob.id,
-          candidateId: candidateProfile.id,
-          applicationId: application.id,
-          candidateStatusUpdatedAt: new Date(),
-          sourceType: source.sourceType,
-          sourceName: source.sourceName,
-          sourceCampaign: source.sourceCampaign,
-          utmSource: source.utmSource,
-          utmMedium: source.utmMedium,
-          utmCampaign: source.utmCampaign,
-          utmTerm: source.utmTerm,
-          utmContent: source.utmContent,
-          referrer: source.referrer,
-          directLinkIdentifier: source.directLinkIdentifier,
-          screeningSummary: {
-            totalQuestions: validation.questions.length,
-            answeredQuestions: (payload.answers || []).length,
-          },
-        },
-      });
-
-      await tx.applicationResumeSnapshot.create({
-        data: {
-          organisationId: freshJob.organisationId,
-          applicationId: jobApplication.id,
-          resumeAssetId: resumeAsset.id,
-          storageKey: resumeAsset.storageKey,
-          storageProvider: resumeAsset.storageProvider,
-          filename: resumeAsset.originalFilename,
-          mimeType: resumeAsset.mimeType,
-          sizeBytes: resumeAsset.sizeBytes,
-        },
-      });
-
-      const answerCreates = [];
-      const flagCreates = [];
-      const screeningResults = [];
-
-      for (const question of validation.questions) {
-        const rawAnswer = answersByQuestionId.get(question.id) || {};
-        const validatedAnswer = validateAnswerAgainstQuestion(question, rawAnswer);
-        const matchingRules = (question.rules || []).filter((rule) => evaluateRule(rule.operator, validatedAnswer.answerValue, rule.value));
-        const screeningOutcome = matchingRules[0]?.outcome || null;
-
-        answerCreates.push(tx.applicationScreeningAnswer.create({
-          data: {
-            organisationId: freshJob.organisationId,
-            applicationId: jobApplication.id,
-            originalQuestionId: question.id,
-            fileAssetId: validatedAnswer.fileAssetId,
-            questionTextSnapshot: question.questionText,
-            internalLabelSnapshot: question.internalLabel,
-            helpTextSnapshot: question.helpText,
-            placeholderSnapshot: question.placeholder,
-            questionTypeSnapshot: question.questionType,
-            optionsSnapshot: question.config || {},
-            validationSnapshot: question.validationConfig || {},
-            requiredSnapshot: question.required,
-            answerValue: validatedAnswer.answerValue,
-            screeningOutcome,
-          },
-        }));
-
-        for (const rule of matchingRules) {
-          flagCreates.push(tx.applicationFlag.create({
-            data: {
-              organisationId: freshJob.organisationId,
-              applicationId: jobApplication.id,
-              questionId: question.id,
-              outcome: rule.outcome,
-              operator: rule.operator,
-              internalReason: rule.reason,
-              metadata: {
-                questionText: question.questionText,
-                ruleValue: rule.value,
-                answerValue: validatedAnswer.answerValue,
-              },
-            },
-          }));
-        }
-
-        if (screeningOutcome) {
-          screeningResults.push({
-            questionId: question.id,
-            outcome: screeningOutcome,
-            ruleCount: matchingRules.length,
-          });
-        }
-      }
-
-      await Promise.all(answerCreates);
-      await Promise.all(flagCreates);
-
-      await tx.jobApplication.update({
-        where: { id: jobApplication.id },
-        data: {
-          screeningSummary: {
-            totalQuestions: validation.questions.length,
-            answeredQuestions: (payload.answers || []).length,
-            flags: screeningResults.length,
-            outcomes: screeningResults,
-          },
-        },
-      });
-
-      await tx.applicationTimeline.create({
-        data: {
-          organisationId: freshJob.organisationId,
-          applicationId: jobApplication.id,
-          actorUserId: candidateUser.id,
-          eventType: 'APPLICATION_SUBMITTED',
-          message: 'Application submitted.',
-          metadata: {
-            publicReference: jobApplication.publicReference,
-          },
-          isCandidateVisible: true,
-        },
-      });
-
-      await createApplicationNotifications(tx, {
-        organisationId: freshJob.organisationId,
-        candidateUserId: candidateUser.id,
-        candidateName: candidateProfile.fullName,
-        jobTitle: freshJob.title,
-        jobApplicationId: jobApplication.id,
-      });
-
-      return { jobApplication, application };
+    const result = await submitJobApplicationRecord({
+      payload,
+      candidateUserId: candidateUser.id,
+      candidateProfile,
+      validationQuestions: validation.questions,
+      resumeAsset,
+      source,
+      answersByQuestionId,
+      validateAnswerAgainstQuestion,
+      evaluateRule,
+      generatePublicReference,
     });
 
     await recordAuditLog({
@@ -1599,21 +1327,14 @@ export async function listRecruiterJobApplications(actorUser, filters = {}, orga
     application: filters.status ? { statusLabel: filters.status } : undefined,
     flags: filters.hasFlags ? { some: {} } : undefined,
   };
-  const total = await prisma.jobApplication.count({ where });
+  const total = await countRecruiterJobApplications(where);
   const page = clampPage(requestedPage, pageSize, total);
-  const rows = await prisma.jobApplication.findMany({
+  const rows = await findRecruiterJobApplications(
     where,
-    include: {
-      job: { include: { organisation: true } },
-      candidate: true,
-      application: true,
-      flags: true,
-      resumeSnapshot: true,
-    },
-    orderBy: { submittedAt: filters.direction === 'asc' ? 'asc' : 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+    { submittedAt: filters.direction === 'asc' ? 'asc' : 'desc' },
+    (page - 1) * pageSize,
+    pageSize,
+  );
   return {
     items: rows.map((row) => ({
       id: row.id,
@@ -1644,46 +1365,7 @@ export async function listRecruiterJobApplications(actorUser, filters = {}, orga
 
 export async function getRecruiterJobApplicationDetail(actorUser, jobApplicationId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
-  const application = await prisma.jobApplication.findFirst({
-    where: { id: jobApplicationId, organisationId: context.organisationId },
-    include: {
-      job: { include: { organisation: true } },
-      candidate: { include: { user: true } },
-      application: {
-        include: {
-          notes: {
-            include: {
-              author: true,
-            },
-            orderBy: { createdAt: 'desc' },
-          },
-          activities: {
-            include: {
-              actorUser: true,
-            },
-            orderBy: { createdAt: 'desc' },
-          },
-          interviewProcesses: {
-            include: {
-              rounds: {
-                include: {
-                  owner: true,
-                  panelMembers: { include: { user: true } },
-                  feedbacks: { include: { interviewer: true } },
-                },
-                orderBy: { sequence: 'asc' },
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-          },
-        },
-      },
-      resumeSnapshot: true,
-      answers: { include: { fileAsset: true }, orderBy: { createdAt: 'asc' } },
-      flags: { orderBy: { createdAt: 'desc' } },
-      timeline: { orderBy: { createdAt: 'desc' } },
-    },
-  });
+  const application = await findRecruiterJobApplicationDetail(jobApplicationId, context.organisationId);
   if (!application) {
     const error = new Error('Application not found.');
     error.statusCode = 404;
@@ -1693,36 +1375,7 @@ export async function getRecruiterJobApplicationDetail(actorUser, jobApplication
 }
 
 export async function getCandidateApplicationDetail(candidateUser, jobApplicationId) {
-  const application = await prisma.jobApplication.findFirst({
-    where: {
-      id: jobApplicationId,
-      candidateId: candidateUser.candidateProfile.id,
-    },
-    include: {
-      job: { include: { organisation: true } },
-      candidate: { include: { user: true } },
-      application: {
-        include: {
-          interviewProcesses: {
-            include: {
-              rounds: {
-                include: {
-                  owner: true,
-                  panelMembers: { include: { user: true } },
-                  feedbacks: { include: { interviewer: true } },
-                },
-                orderBy: { sequence: 'asc' },
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-          },
-        },
-      },
-      resumeSnapshot: true,
-      answers: { include: { fileAsset: true }, orderBy: { createdAt: 'asc' } },
-      timeline: { where: { isCandidateVisible: true }, orderBy: { createdAt: 'desc' } },
-    },
-  });
+  const application = await findCandidateJobApplicationDetail(jobApplicationId, candidateUser.candidateProfile.id);
   if (!application) {
     const error = new Error('Application not found.');
     error.statusCode = 404;
@@ -1822,20 +1475,9 @@ export async function listCandidateJobApplications(candidateUser, filters = {}) 
     }
   })();
 
-  const total = await prisma.jobApplication.count({ where });
+  const total = await countCandidateJobApplications(where);
   const page = clampPage(requestedPage, pageSize, total);
-  const rows = await prisma.jobApplication.findMany({
-    where,
-    include: {
-      job: { include: { organisation: true } },
-      application: true,
-      resumeSnapshot: true,
-      timeline: { where: { isCandidateVisible: true }, orderBy: { createdAt: 'desc' }, take: 5 },
-    },
-    orderBy,
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  const rows = await findCandidateJobApplications(where, orderBy, (page - 1) * pageSize, pageSize);
   return {
     items: rows.map((row) => {
       const candidateStatus = buildCandidateApplicationStatus(row);
@@ -1872,16 +1514,7 @@ export async function listCandidateJobApplications(candidateUser, filters = {}) 
 }
 
 export async function getCandidateApplicationWithdrawalEligibility(candidateUser, jobApplicationId) {
-  const application = await prisma.jobApplication.findFirst({
-    where: {
-      id: jobApplicationId,
-      candidateId: candidateUser.candidateProfile.id,
-    },
-    include: {
-      application: true,
-      job: true,
-    },
-  });
+  const application = await findCandidateWithdrawalApplication(jobApplicationId, candidateUser.candidateProfile.id);
 
   if (!application) {
     const error = new Error('Application not found.');
@@ -1900,17 +1533,7 @@ export async function getCandidateApplicationWithdrawalEligibility(candidateUser
 }
 
 export async function withdrawCandidateApplication(candidateUser, jobApplicationId, payload = {}, requestMeta = {}) {
-  const existing = await prisma.jobApplication.findFirst({
-    where: {
-      id: jobApplicationId,
-      candidateId: candidateUser.candidateProfile.id,
-    },
-    include: {
-      application: true,
-      job: true,
-      candidate: { include: { user: true } },
-    },
-  });
+  const existing = await findCandidateWithdrawalApplication(jobApplicationId, candidateUser.candidateProfile.id);
 
   if (!existing) {
     const error = new Error('Application not found.');
@@ -1930,91 +1553,12 @@ export async function withdrawCandidateApplication(candidateUser, jobApplication
     throw error;
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.application.update({
-      where: { id: existing.application.id },
-      data: {
-        currentStage: 'WITHDRAWN',
-        statusLabel: 'Withdrawn',
-      },
-    });
-
-    await tx.jobApplication.update({
-      where: { id: existing.id },
-      data: {
-        withdrawnAt: new Date(),
-        withdrawalReason: payload.reason || null,
-        withdrawalNote: payload.note || null,
-        withdrawnByUserId: candidateUser.id,
-        candidateStatusUpdatedAt: new Date(),
-      },
-    });
-
-    await tx.applicationTimeline.create({
-      data: {
-        organisationId: existing.organisationId,
-        applicationId: existing.id,
-        actorUserId: candidateUser.id,
-        eventType: 'APPLICATION_WITHDRAWN',
-        message: getCandidateTimelineMessage('WITHDRAWN', existing.job.title),
-        metadata: {
-          reason: payload.reason || null,
-        },
-        isCandidateVisible: true,
-      },
-    });
-
-    await tx.applicationActivity.create({
-      data: {
-        organisationId: existing.organisationId,
-        applicationId: existing.application.id,
-        actorUserId: candidateUser.id,
-        eventType: 'APPLICATION_WITHDRAWN',
-        message: 'Candidate withdrew the application.',
-        metadata: {
-          reason: payload.reason || null,
-        },
-      },
-    });
-
-    const recruiterIds = await tx.organisationMembership.findMany({
-      where: {
-        organisationId: existing.organisationId,
-        status: 'ACTIVE',
-        role: { in: ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'] },
-      },
-      select: { userId: true },
-    });
-
-    await Promise.all(recruiterIds.map((row) => tx.notification.create({
-      data: {
-        organisationId: existing.organisationId,
-        recipientUserId: row.userId,
-        type: 'APPLICATION',
-        title: 'Application withdrawn',
-        message: `${existing.candidate.fullName} withdrew their application for ${existing.job.title}.`,
-        entityType: 'JobApplication',
-        entityId: existing.id,
-        metadata: {
-          applicationId: existing.id,
-        },
-      },
-    })));
-
-    await tx.notification.create({
-      data: {
-        organisationId: existing.organisationId,
-        recipientUserId: candidateUser.id,
-        type: 'APPLICATION',
-        title: 'Application withdrawn',
-        message: `You withdrew your application for ${existing.job.title}.`,
-        entityType: 'Application',
-        entityId: existing.id,
-        metadata: {
-          applicationId: existing.id,
-        },
-      },
-    });
+  await withdrawCandidateApplicationRecord({
+    existing,
+    candidateUserId: candidateUser.id,
+    timelineMessage: getCandidateTimelineMessage('WITHDRAWN', existing.job.title),
+    reason: payload.reason || null,
+    note: payload.note || null,
   });
 
   await recordAuditLog({
@@ -2036,128 +1580,41 @@ export async function updateCandidateResumeAssetState(candidateUser, assetId, ac
   const asset = await ensureOwnedResumeAsset(candidateUser.candidateProfile.id, assetId);
 
   if (action === 'SET_PRIMARY') {
-    await prisma.$transaction([
-      prisma.resumeAsset.updateMany({
-        where: {
-          candidateId: candidateUser.candidateProfile.id,
-          kind: 'RESUME',
-          id: { not: asset.id },
-        },
-        data: { isPrimary: false },
-      }),
-      prisma.resumeAsset.update({
-        where: { id: asset.id },
-        data: {
-          isPrimary: true,
-          status: 'ACTIVE',
-          archivedAt: null,
-        },
-      }),
-      prisma.candidateProfile.update({
-        where: { id: candidateUser.candidateProfile.id },
-        data: {
-          latestResumeAssetId: asset.id,
-          resumeUrl: `/api/candidate/resumes/${asset.id}/download`,
-          onboardingSkippedResume: false,
-        },
-      }),
-    ]);
+    await setPrimaryResumeAssetRecord(candidateUser.candidateProfile.id, asset.id);
   } else if (action === 'ARCHIVE') {
     if (asset.isPrimary) {
-      const replacement = await prisma.resumeAsset.findFirst({
-        where: {
-          candidateId: candidateUser.candidateProfile.id,
-          kind: 'RESUME',
-          status: 'ACTIVE',
-          id: { not: asset.id },
-        },
-        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      });
+      const replacement = await findActiveReplacementResume(candidateUser.candidateProfile.id, asset.id);
       if (!replacement) {
         const error = new Error('Upload another resume before archiving your primary resume.');
         error.statusCode = 409;
         throw error;
       }
-      await prisma.resumeAsset.update({
-        where: { id: replacement.id },
-        data: { isPrimary: true },
-      });
-      await prisma.candidateProfile.update({
-        where: { id: candidateUser.candidateProfile.id },
-        data: {
-          latestResumeAssetId: replacement.id,
-          resumeUrl: `/api/candidate/resumes/${replacement.id}/download`,
-        },
-      });
+      await markResumeAssetPrimary(replacement.id);
+      await updateCandidateProfileResumeLink(candidateUser.candidateProfile.id, replacement.id);
     }
 
-    await prisma.resumeAsset.update({
-      where: { id: asset.id },
-      data: {
-        status: 'ARCHIVED',
-        isPrimary: false,
-        archivedAt: new Date(),
-      },
-    });
+    await archiveResumeAssetRecord(asset.id);
   } else if (action === 'DELETE') {
-    const applicationReferences = await prisma.applicationResumeSnapshot.count({
-      where: { resumeAssetId: asset.id },
-    });
+    const applicationReferences = await countApplicationResumeSnapshotReferences(asset.id);
     if (applicationReferences > 0) {
       const error = new Error('This resume is referenced by an application snapshot and cannot be deleted.');
       error.statusCode = 409;
       throw error;
     }
     if (asset.isPrimary) {
-      const replacement = await prisma.resumeAsset.findFirst({
-        where: {
-          candidateId: candidateUser.candidateProfile.id,
-          kind: 'RESUME',
-          status: 'ACTIVE',
-          id: { not: asset.id },
-        },
-        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      });
-      await prisma.candidateProfile.update({
-        where: { id: candidateUser.candidateProfile.id },
-        data: {
-          latestResumeAssetId: replacement?.id || null,
-          resumeUrl: replacement ? `/api/candidate/resumes/${replacement.id}/download` : null,
-        },
-      });
+      const replacement = await findActiveReplacementResume(candidateUser.candidateProfile.id, asset.id);
+      await updateCandidateProfileResumeLink(candidateUser.candidateProfile.id, replacement?.id || null);
       if (replacement) {
-        await prisma.resumeAsset.update({
-          where: { id: replacement.id },
-          data: { isPrimary: true },
-        });
+        await markResumeAssetPrimary(replacement.id);
       }
     }
 
-    await prisma.resumeAsset.update({
-      where: { id: asset.id },
-      data: {
-        status: 'DELETED',
-        isPrimary: false,
-        archivedAt: new Date(),
-      },
-    });
+    await deleteResumeAssetRecord(asset.id);
   } else if (action === 'RESTORE') {
-    await prisma.resumeAsset.update({
-      where: { id: asset.id },
-      data: {
-        status: 'ACTIVE',
-        archivedAt: null,
-      },
-    });
+    await restoreResumeAssetRecord(asset.id);
   } else if (action === 'RETRY_PARSE') {
     const nextParse = buildDeterministicParse(asset.originalFilename, candidateUser.candidateProfile);
-    await prisma.resumeAsset.update({
-      where: { id: asset.id },
-      data: {
-        parsingStatus: nextParse.parsingStatus,
-        parsedData: nextParse.parsedData,
-      },
-    });
+    await updateResumeAssetParsing(asset.id, nextParse.parsingStatus, nextParse.parsedData);
   }
 
   await recordAuditLog({
@@ -2193,23 +1650,18 @@ export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, 
   }
 
   if (Object.keys(updateData).length) {
-    await prisma.candidateProfile.update({
-      where: { id: candidateUser.candidateProfile.id },
-      data: updateData,
-    });
+    await updateCandidateProfileRecord(candidateUser.candidateProfile.id, updateData);
   }
 
-  await prisma.resumeAsset.update({
-    where: { id: asset.id },
-    data: {
-      parsingStatus: asset.parsedData?.availableFields?.length ? 'PARTIAL' : asset.parsingStatus,
-      parsedData: {
-        ...(asset.parsedData || {}),
-        acceptedFields: fields,
-        lastReviewedAt: new Date().toISOString(),
-      },
+  await updateResumeAssetParsedReview(
+    asset.id,
+    {
+      ...(asset.parsedData || {}),
+      acceptedFields: fields,
+      lastReviewedAt: new Date().toISOString(),
     },
-  });
+    asset.parsedData?.availableFields?.length ? 'PARTIAL' : asset.parsingStatus,
+  );
 
   await recordAuditLog({
     actorUserId: candidateUser.id,
@@ -2229,9 +1681,7 @@ export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, 
 }
 
 export async function getOwnedResumeDownload(candidateUser, assetId) {
-  const asset = await prisma.resumeAsset.findFirst({
-    where: { id: assetId, candidateId: candidateUser.candidateProfile.id, status: { not: 'DELETED' } },
-  });
+  const asset = await findOwnedDownloadResumeAsset(assetId, candidateUser.candidateProfile.id);
   if (!asset) {
     const error = new Error('File not found.');
     error.statusCode = 404;
@@ -2245,12 +1695,7 @@ export async function getOwnedResumeDownload(candidateUser, assetId) {
 
 export async function getRecruiterApplicationResumeDownload(actorUser, jobApplicationId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
-  const snapshot = await prisma.applicationResumeSnapshot.findFirst({
-    where: {
-      applicationId: jobApplicationId,
-      organisationId: context.organisationId,
-    },
-  });
+  const snapshot = await findApplicationResumeSnapshot(jobApplicationId, context.organisationId);
   if (!snapshot) {
     const error = new Error('Resume snapshot not found.');
     error.statusCode = 404;
@@ -2264,14 +1709,7 @@ export async function getRecruiterApplicationResumeDownload(actorUser, jobApplic
 
 export async function getRecruiterAnswerFileDownload(actorUser, assetId, jobApplicationId, organisationId = null) {
   const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
-  const answer = await prisma.applicationScreeningAnswer.findFirst({
-    where: {
-      applicationId: jobApplicationId,
-      organisationId: context.organisationId,
-      fileAssetId: assetId,
-    },
-    include: { fileAsset: true },
-  });
+  const answer = await findApplicationScreeningAnswerFile(jobApplicationId, context.organisationId, assetId);
   if (!answer?.fileAsset) {
     const error = new Error('Uploaded file not found.');
     error.statusCode = 404;
