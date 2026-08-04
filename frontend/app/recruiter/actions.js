@@ -38,6 +38,22 @@ function asNullableString(value) {
   return normalized || null;
 }
 
+function asNullableDateTime(value) {
+  const normalized = String(value || '').trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  const date = new Date(normalized);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
 function buildJobPayload(formData) {
   return {
     title: String(formData.get('title') || '').trim(),
@@ -57,7 +73,7 @@ function buildJobPayload(formData) {
     requisitionId: asNullableString(formData.get('requisitionId')),
     hiringManagerId: asNullableString(formData.get('hiringManagerId')),
     recruiterId: asNullableString(formData.get('recruiterId')),
-    applicationDeadline: asNullableString(formData.get('applicationDeadline')),
+    applicationDeadline: asNullableDateTime(formData.get('applicationDeadline')),
     applicationOpensAt: asNullableString(formData.get('applicationOpensAt')),
     applicationClosesAt: asNullableString(formData.get('applicationClosesAt')),
     maxApplications: formData.get('maxApplications') ? Number(formData.get('maxApplications')) : null,
