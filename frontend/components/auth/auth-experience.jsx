@@ -236,7 +236,9 @@ export function AuthExperience({
     try {
       const response = await postJson('/api/auth/login', loginForm);
       const user = response.data.user;
-      const target = resolvePostAuthRoute(user.role, nextHref);
+      const target = user.mustChangePassword
+        ? `/change-password${nextHref ? `?next=${encodeURIComponent(nextHref)}` : ''}`
+        : resolvePostAuthRoute(user.role, nextHref);
       window.location.assign(target);
     } catch (error) {
       setErrorMessage(error.message);
@@ -416,30 +418,40 @@ export function AuthExperience({
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                   </div>
                 ) : null}
-                <Input
-                  label={audience === 'employer' ? 'Work email' : 'Email'}
-                  type="email"
-                  value={loginForm.email}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setLoginForm((current) => ({ ...current, email: value }));
-                    setResetEmail(value);
+                <form
+                  className="grid gap-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleLogin();
                   }}
-                  placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
-                />
-                <PasswordField
-                  label="Password"
-                  value={loginForm.password}
-                  onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                />
-                <FormActions className="justify-between">
-                  <Button onClick={handleLogin} loading={pendingAction === 'login'}>
-                    Sign in
-                  </Button>
-                  <Button type="button" variant="link" onClick={() => setIsResetFlow((current) => !current)}>
-                    Forgot password
-                  </Button>
-                </FormActions>
+                >
+                  <Input
+                    label={audience === 'employer' ? 'Work email' : 'Email'}
+                    type="email"
+                    autoComplete="username"
+                    value={loginForm.email}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setLoginForm((current) => ({ ...current, email: value }));
+                      setResetEmail(value);
+                    }}
+                    placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
+                  />
+                  <PasswordField
+                    label="Password"
+                    autoComplete="current-password"
+                    value={loginForm.password}
+                    onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                  />
+                  <FormActions className="justify-between">
+                    <Button type="submit" loading={pendingAction === 'login'}>
+                      Sign in
+                    </Button>
+                    <Button type="button" variant="link" onClick={() => setIsResetFlow((current) => !current)}>
+                      Forgot password
+                    </Button>
+                  </FormActions>
+                </form>
                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
                   <Link href={alternateRoutes.register} className="font-semibold text-[var(--color-primary)]">
                     {audience === 'candidate' ? 'Create a candidate profile' : 'Create employer workspace/account'}

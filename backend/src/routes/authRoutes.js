@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  changePasswordHandler,
   emailVerificationConfirm,
   emailVerificationRequest,
   login,
@@ -19,6 +20,7 @@ import { createRateLimiter } from '../middleware/rateLimit.js';
 import { validateSchema } from '../middleware/schema.js';
 import { isPersonalEmail } from '../utils/email.js';
 import {
+  changePasswordSchema,
   loginSchema,
   oauthCallbackSchema,
   passwordResetConfirmSchema,
@@ -43,7 +45,11 @@ authRouter.post(
 );
 
 authRouter.post('/login', createRateLimiter({ keyPrefix: 'auth:login', limit: 10 }), validateSchema(loginSchema), login);
-authRouter.get('/me', auth(), me);
+// /me and /logout must stay reachable even while a password change is
+// required - /me is how the frontend discovers mustChangePassword in the
+// first place (requireUser(), the change-password page, and the post-login
+// redirect all depend on it), and logout must always be an escape hatch.
+authRouter.get('/me', auth([], { allowPasswordChangeRequired: true }), me);
 authRouter.post(
   '/password-reset/request',
   createRateLimiter({ keyPrefix: 'auth:password-reset-request', limit: 5 }),
@@ -83,5 +89,12 @@ authRouter.post(
   oauthCallback
 );
 authRouter.post('/oauth/exchange', createRateLimiter({ keyPrefix: 'auth:oauth-exchange', limit: 10 }), validateSchema(tokenConfirmationSchema), oauthExchange);
-authRouter.post('/logout', auth(), logout);
+authRouter.post(
+  '/change-password',
+  auth([], { allowPasswordChangeRequired: true }),
+  createRateLimiter({ keyPrefix: 'auth:change-password', limit: 10 }),
+  validateSchema(changePasswordSchema),
+  changePasswordHandler
+);
+authRouter.post('/logout', auth([], { allowPasswordChangeRequired: true }), logout);
 authRouter.patch('/recruiter-profile', auth(['RECRUITER']), saveRecruiterProfile);

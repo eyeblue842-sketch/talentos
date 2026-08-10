@@ -18,7 +18,8 @@
     "db:test:status": "node ./scripts/run-with-test-db.js npx prisma migrate status --schema prisma/schema.prisma",
     "db:test:migrate": "node ./scripts/run-with-test-db.js npx prisma migrate deploy --schema prisma/schema.prisma",
     "db:test:reset": "node ./scripts/run-with-test-db.js npx prisma migrate reset --force --skip-generate --skip-seed --schema prisma/schema.prisma",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "seed:test-admin": "node scripts/seed-test-admin.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1094.0",

@@ -268,6 +268,50 @@ export async function confirmEmailVerification(token) {
   return { verified: true };
 }
 
+export async function changePassword(userId, currentPassword, newPassword) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    const error = new Error('User not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isValid) {
+    const error = new Error('Current password is incorrect.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (currentPassword === newPassword) {
+    const error = new Error('New password must be different from the current password.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash,
+      mustChangePassword: false,
+      sessionVersion: { increment: 1 },
+    },
+    include: {
+      recruiterProfile: { include: { organisation: true } },
+      candidateProfile: true,
+    },
+  });
+
+  const token = signToken({ userId: updatedUser.id, role: updatedUser.role, sessionVersion: updatedUser.sessionVersion });
+  const { activeMembership } = await resolveMembershipForRequest(updatedUser);
+  return {
+    token,
+    session: serializeAuthSession(updatedUser, getTokenExpiryIso(), activeMembership),
+  };
+}
+
 export async function logoutUser(userId) {
   await prisma.user.update({
     where: { id: userId },

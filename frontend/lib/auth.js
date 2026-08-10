@@ -82,6 +82,15 @@ export async function requireUser(role) {
     redirect('/auth');
   }
 
+  // Server-side enforcement lives in the backend auth() middleware; this
+  // redirect only keeps the UX honest by sending the user to the right page
+  // instead of letting every protected page 403 individually. The
+  // change-password page itself calls getCurrentUser() directly, not
+  // requireUser(), so it never redirects to itself.
+  if (user.mustChangePassword) {
+    redirect('/change-password');
+  }
+
   const requiredRoles = Array.isArray(role) ? role : role ? [role] : [];
   if (requiredRoles.length && !requiredRoles.includes(user.role)) {
     redirect(getHomeRouteForRole(user.role));
@@ -93,6 +102,10 @@ export async function requireUser(role) {
 export async function redirectIfAuthenticated() {
   const user = await getCurrentUser();
   if (!user) return null;
+
+  if (user.mustChangePassword) {
+    redirect('/change-password');
+  }
 
   redirect(getHomeRouteForRole(user.role));
 }

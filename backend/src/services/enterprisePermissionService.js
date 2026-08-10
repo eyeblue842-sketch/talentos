@@ -160,7 +160,11 @@ async function getPlatformOrganisationContext(requestedOrganisationId = null) {
 }
 
 export async function resolveEnterpriseContext(actorUser, requestedOrganisationId = null) {
-  if (actorUser.role === 'ADMIN') {
+  // PLATFORM_ADMIN is the opt-in equivalent of the legacy org-agnostic ADMIN
+  // bypass, for optional system-wide access. RECRUITER_ADMIN is intentionally
+  // excluded here - it is scoped to its own organisation via a real
+  // OrganisationMembership, same as any recruiter OWNER.
+  if (actorUser.role === 'ADMIN' || actorUser.role === 'PLATFORM_ADMIN') {
     return getPlatformOrganisationContext(requestedOrganisationId);
   }
 

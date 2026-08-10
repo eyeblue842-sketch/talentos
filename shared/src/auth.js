@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-export const userRoleSchema = z.enum(['RECRUITER', 'CANDIDATE', 'ADMIN']);
+export const userRoleSchema = z.enum([
+  'RECRUITER',
+  'CANDIDATE',
+  'ADMIN',
+  'CANDIDATE_ADMIN',
+  'RECRUITER_ADMIN',
+  'PLATFORM_ADMIN',
+]);
 export const signupUserRoleSchema = z.enum(['RECRUITER', 'CANDIDATE']);
 export const oauthProviderSchema = z.enum(['google', 'linkedin']);
 
@@ -37,12 +44,18 @@ export const passwordResetConfirmSchema = tokenConfirmationSchema.extend({
   password: z.string().min(8).max(72),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8).max(72),
+});
+
 export const authUserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   role: userRoleSchema,
   isActive: z.boolean(),
   emailVerified: z.boolean(),
+  mustChangePassword: z.boolean().optional(),
 });
 
 export const authSessionSchema = z.object({

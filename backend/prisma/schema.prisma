@@ -12,6 +12,15 @@ enum UserRole {
   RECRUITER
   CANDIDATE
   ADMIN
+  // Portal-scoped admin roles: CANDIDATE_ADMIN behaves as a normal candidate
+  // everywhere (no elevated access exists to grant yet - reserved for future
+  // candidate-portal-only admin surfaces). RECRUITER_ADMIN gets the existing
+  // recruiter/organisation admin panel scoped to its own organisation, same as
+  // any recruiter OWNER. PLATFORM_ADMIN is an explicit opt-in equivalent of the
+  // legacy org-agnostic ADMIN platform bypass, for optional system-wide access.
+  CANDIDATE_ADMIN
+  RECRUITER_ADMIN
+  PLATFORM_ADMIN
 }
 
 enum OrganisationStatus {
@@ -645,6 +654,7 @@ model User {
   isActive                   Boolean                     @default(true)
   accountStatus              UserAccountStatus           @default(ACTIVE)
   sessionVersion             Int                         @default(0)
+  mustChangePassword         Boolean                     @default(false)
   emailVerifiedAt            DateTime?
   lastLoginAt                DateTime?
   mfaEnabled                 Boolean                     @default(false)

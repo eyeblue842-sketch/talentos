@@ -5,6 +5,15 @@ const ROLE_HOME_ROUTES = {
   SUPER_ADMIN: '/admin',
   HIRING_MANAGER: '/recruiter',
   INTERVIEWER: '/recruiter/ats',
+  // CANDIDATE_ADMIN is a normal candidate account (no candidate-admin-only
+  // surface exists yet - the role is reserved for future use).
+  CANDIDATE_ADMIN: '/candidate/dashboard',
+  // RECRUITER_ADMIN gets the recruiter/organisation admin panel, scoped to its
+  // own organisation via a real membership - same as any recruiter OWNER.
+  RECRUITER_ADMIN: '/admin',
+  // PLATFORM_ADMIN is the opt-in equivalent of the legacy org-agnostic ADMIN
+  // bypass, for optional system-wide access.
+  PLATFORM_ADMIN: '/admin',
 };
 
 const WORKSPACE_PATH_PREFIXES = {
@@ -14,6 +23,9 @@ const WORKSPACE_PATH_PREFIXES = {
   SUPER_ADMIN: ['/admin'],
   HIRING_MANAGER: ['/recruiter', '/auth/invitations'],
   INTERVIEWER: ['/recruiter', '/auth/invitations'],
+  CANDIDATE_ADMIN: ['/candidate', '/jobs', '/companies'],
+  RECRUITER_ADMIN: ['/admin', '/recruiter', '/auth/invitations'],
+  PLATFORM_ADMIN: ['/admin'],
 };
 
 export { ROLE_HOME_ROUTES };

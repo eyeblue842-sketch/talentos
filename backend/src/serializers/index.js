@@ -465,6 +465,7 @@ export function serializeUser(user, options = {}) {
     role: user.role,
     isActive: user.isActive,
     accountStatus: user.accountStatus,
+    mustChangePassword: Boolean(user.mustChangePassword),
     emailVerified: Boolean(user.emailVerifiedAt),
     lastLoginAt: iso(user.lastLoginAt),
     mfaEnabled: user.mfaEnabled,

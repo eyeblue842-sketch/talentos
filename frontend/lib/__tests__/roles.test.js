@@ -27,4 +27,23 @@ describe('role routing', () => {
     expect(resolvePostAuthRoute('RECRUITER', '/auth')).toBe('/recruiter');
     expect(resolvePostAuthRoute('CANDIDATE', '/')).toBe('/candidate/dashboard');
   });
+
+  test('CANDIDATE_ADMIN behaves as a normal candidate: candidate home, no admin panel access', () => {
+    expect(getHomeRouteForRole('CANDIDATE_ADMIN')).toBe('/candidate/dashboard');
+    expect(resolvePostAuthRoute('CANDIDATE_ADMIN', '/candidate/applications')).toBe('/candidate/applications');
+    expect(resolvePostAuthRoute('CANDIDATE_ADMIN', '/admin')).toBe('/candidate/dashboard');
+  });
+
+  test('RECRUITER_ADMIN gets the admin panel plus the normal recruiter workspace', () => {
+    expect(getHomeRouteForRole('RECRUITER_ADMIN')).toBe('/admin');
+    expect(resolvePostAuthRoute('RECRUITER_ADMIN', '/admin')).toBe('/admin');
+    expect(resolvePostAuthRoute('RECRUITER_ADMIN', '/recruiter/jobs')).toBe('/recruiter/jobs');
+    expect(resolvePostAuthRoute('RECRUITER_ADMIN', '/candidate/applications')).toBe('/admin');
+  });
+
+  test('PLATFORM_ADMIN is scoped to the admin panel only', () => {
+    expect(getHomeRouteForRole('PLATFORM_ADMIN')).toBe('/admin');
+    expect(resolvePostAuthRoute('PLATFORM_ADMIN', '/admin')).toBe('/admin');
+    expect(resolvePostAuthRoute('PLATFORM_ADMIN', '/recruiter/jobs')).toBe('/admin');
+  });
 });

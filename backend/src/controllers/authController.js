@@ -1,4 +1,5 @@
 import {
+  changePassword,
   createPasswordResetSession,
   confirmEmailVerification,
   confirmPasswordReset,
@@ -89,6 +90,15 @@ export async function emailVerificationConfirm(req, res, next) {
 export async function saveRecruiterProfile(req, res, next) {
   try {
     const result = await updateRecruiterProfile(req.user.id, req.body);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function changePasswordHandler(req, res, next) {
+  try {
+    const result = await changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
