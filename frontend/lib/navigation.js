@@ -3,15 +3,22 @@ import { isFeatureEnabled } from '@/lib/feature-flags';
 const bulkResumeImportEnabled = isFeatureEnabled('bulkResumeImport');
 
 export const recruiterNav = [
-  { label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard' },
-  { label: 'Jobs', href: '/recruiter/jobs', icon: 'BriefcaseBusiness' },
-  { label: 'Requisitions', href: '/recruiter/requisitions', icon: 'ClipboardList' },
-  { label: 'Resume Database', href: '/recruiter/database', icon: 'Database' },
-  ...(bulkResumeImportEnabled ? [{ label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),
-  { label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
-  { label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
+  { label: 'Home', href: '/recruiter/home', icon: 'LayoutDashboard', exact: true },
+  {
+    label: 'Recruitment',
+    icon: 'BriefcaseBusiness',
+    children: [
+      { id: 'recruitment-overview', label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard', exact: true },
+      { id: 'recruitment-jobs', label: 'Job Posts', href: '/recruiter/jobs', icon: 'ClipboardList' },
+      { id: 'recruitment-job-responses', label: 'Job Responses', href: '/recruiter/job-responses', icon: 'GitPullRequestArrow' },
+      { id: 'recruitment-resume-search', label: 'Resume Search', href: '/recruiter/database', icon: 'Database' },
+      { id: 'recruitment-ats', label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
+      { id: 'recruitment-interviews', label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
+      ...(bulkResumeImportEnabled ? [{ id: 'recruitment-import', label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),
+    ],
+  },
   { label: 'Members', href: '/recruiter/members', icon: 'Users' },
-  { label: 'Notifications', href: '/recruiter/notifications', icon: 'BarChart3' },
+  { label: 'Notifications', href: '/recruiter/notifications', icon: 'Bell' },
   { label: 'Settings', href: '/recruiter/settings', icon: 'Settings2' },
 ];
 
@@ -46,8 +53,8 @@ export const adminNav = [
 ];
 
 export function getNavigationForRole(role) {
-  if (role === 'CANDIDATE') return candidateNav;
-  if (role === 'RECRUITER') return recruiterNav;
-  if (role === 'ADMIN' || role === 'SUPER_ADMIN') return adminNav;
+  if (role === 'CANDIDATE' || role === 'CANDIDATE_ADMIN') return candidateNav;
+  if (role === 'RECRUITER' || role === 'RECRUITER_ADMIN') return recruiterNav;
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'PLATFORM_ADMIN') return adminNav;
   return [];
 }

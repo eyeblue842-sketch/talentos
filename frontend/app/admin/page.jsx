@@ -1,19 +1,28 @@
+import { BriefcaseBusiness } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { adminNav } from '@/lib/navigation';
 import { getAdminOverview } from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
 
 export default async function AdminPage() {
-  let overview = null;
-  let error = '';
+  const [overviewSettled, currentUser] = await Promise.all([
+    getAdminOverview().then(
+      (value) => ({ value, error: '' }),
+      (caught) => ({ value: null, error: caught.message })
+    ),
+    getCurrentUser(),
+  ]);
+  const overview = overviewSettled.value;
+  const error = overviewSettled.error;
 
-  try {
-    overview = await getAdminOverview();
-  } catch (caught) {
-    error = caught.message;
-  }
+  // RECRUITER_ADMIN owns the recruiter application - the admin console is an
+  // additional surface for it, not its primary workspace, so it needs a way
+  // back. Plain ADMIN/PLATFORM_ADMIN accounts have no recruiter workspace to
+  // return to.
+  const isRecruiterOwner = currentUser?.role === 'RECRUITER_ADMIN';
 
   return (
     <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav}>
@@ -22,6 +31,7 @@ export default async function AdminPage() {
         title="Operate the organization platform from one workspace"
         description="Manage organization configuration, roles, users, workflows, audit visibility, feature flags, and hiring analytics on top of the existing Careeriz platform."
         breadcrumb={[{ label: 'Admin' }, { label: 'Overview' }]}
+        secondaryActions={isRecruiterOwner ? [{ label: 'Recruiter Workspace', href: '/recruiter/home', icon: BriefcaseBusiness }] : []}
       />
 
       {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}

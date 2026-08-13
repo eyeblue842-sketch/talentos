@@ -98,7 +98,7 @@ describe('public landing and authentication redesign', () => {
     fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     await waitFor(() => {
-      expect(window.location.assign).toHaveBeenCalledWith('/recruiter');
+      expect(window.location.assign).toHaveBeenCalledWith('/recruiter/home');
     });
   });
 

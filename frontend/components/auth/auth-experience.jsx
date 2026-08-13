@@ -190,7 +190,7 @@ export function AuthExperience({
   const [isResetFlow, setIsResetFlow] = useState(initialSearchParams.authStatus === 'password-reset-ready');
 
   const nextHref = useMemo(
-    () => safeInternalPath(initialSearchParams.next, audience === 'employer' ? '/recruiter' : '/candidate/dashboard'),
+    () => safeInternalPath(initialSearchParams.next, audience === 'employer' ? '/recruiter/home' : '/candidate/dashboard'),
     [audience, initialSearchParams.next],
   );
 

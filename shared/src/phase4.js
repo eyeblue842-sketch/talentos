@@ -70,6 +70,44 @@ const stringArrayField = (maxItems = 20, maxLength = 80) =>
     return [];
   }, z.array(z.string().trim().min(1).max(maxLength)).max(maxItems));
 
+const emptyStringToNull = (value) => {
+  if (value == null) return null;
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+};
+
+const optionalNullableTextField = (label, maxLength) => z.preprocess(
+  emptyStringToNull,
+  z.union([
+    z.string()
+      .trim()
+      .min(2, `${label} must contain at least 2 characters.`)
+      .max(maxLength, `${label} must be ${maxLength} characters or fewer.`),
+    z.null(),
+  ]).optional(),
+);
+
+const candidateStringArrayField = (label, maxItems = 20, maxLength = 80) => z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}, z.array(
+  z.string()
+    .trim()
+    .min(1, `${label} cannot contain empty values.`)
+    .max(maxLength, `Each ${label.toLowerCase()} entry must be ${maxLength} characters or fewer.`),
+).max(maxItems, `Maximum ${maxItems} ${label.toLowerCase()} allowed.`));
+
 const jsonArrayField = (maxItems = 100) => z.preprocess((value) => {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -105,16 +143,35 @@ const notificationPreferencesSchema = z.object({
   }).partial().optional(),
 }).partial();
 
+const optionalUrlField = (label) => z.union([
+  z.string().trim().url(`Enter a valid ${label} URL.`),
+  z.literal(''),
+  z.null(),
+]).optional();
+
+const optionalDateField = z.union([
+  z.string().datetime(),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid last working date.'),
+  z.literal(''),
+  z.null(),
+]).optional();
+
 export const candidateProfileUpdateSchema = z.object({
   fullName: z.string().trim().min(2).max(120).optional(),
-  phoneNumber: z.string().trim().min(7).max(30).optional().nullable(),
-  headline: z.string().trim().min(2).max(160).optional().nullable(),
-  currentTitle: z.string().trim().min(2).max(160).optional().nullable(),
-  currentEmployer: z.string().trim().min(2).max(160).optional().nullable(),
-  currentDesignation: z.string().trim().min(2).max(160).optional().nullable(),
-  location: z.string().trim().min(2).max(160).optional().nullable(),
+  phoneNumber: z.preprocess(
+    emptyStringToNull,
+    z.union([
+      z.string().trim().min(7, 'Phone number must contain at least 7 characters.').max(30, 'Phone number must be 30 characters or fewer.'),
+      z.null(),
+    ]).optional(),
+  ),
+  headline: optionalNullableTextField('Resume headline', 160),
+  currentTitle: optionalNullableTextField('Current title', 160),
+  currentEmployer: optionalNullableTextField('Current employer', 160),
+  currentDesignation: optionalNullableTextField('Current designation', 160),
+  location: optionalNullableTextField('Current location', 160),
   totalExperience: z.coerce.number().int().min(0).max(60).optional(),
-  skills: stringArrayField(50, 80).optional(),
+  skills: candidateStringArrayField('Skills', 50, 80).optional(),
   skillEntries: jsonArrayField(200).optional(),
   experienceEntries: jsonArrayField(200).optional(),
   educationEntries: jsonArrayField(200).optional(),
@@ -122,21 +179,29 @@ export const candidateProfileUpdateSchema = z.object({
   languageEntries: jsonArrayField(200).optional(),
   projectEntries: jsonArrayField(200).optional(),
   portfolioLinks: jsonArrayField(100).optional(),
-  preferredRoles: stringArrayField(20, 120).optional(),
-  preferredLocations: stringArrayField(20, 160).optional(),
+  preferredRoles: candidateStringArrayField('Preferred roles', 20, 120).optional(),
+  preferredLocations: candidateStringArrayField('Preferred locations', 20, 160).optional(),
   workplacePreferences: z.array(workplaceTypeSchema).max(3).optional(),
   employmentPreferences: z.array(employmentTypeSchema).max(4).optional(),
   availability: availabilityStatusSchema.optional(),
   noticePeriodDays: z.coerce.number().int().min(0).max(365).optional().nullable(),
   employmentStatus: candidateEmploymentStatusSchema.optional().nullable(),
-  lastWorkingDate: z.string().datetime().optional().nullable().or(z.literal('')),
-  currentCtcLpa: z.coerce.number().int().min(0).max(1000).optional().nullable(),
-  expectedCtcLpa: z.coerce.number().int().min(0).max(1000).optional().nullable(),
+  lastWorkingDate: optionalDateField,
+  currentCtcLpa: z.coerce.number()
+    .min(0, 'Current CTC cannot be negative.')
+    .max(10000, 'Enter the amount in lakh or crore, not the full rupee amount.')
+    .optional()
+    .nullable(),
+  expectedCtcLpa: z.coerce.number()
+    .min(0, 'Expected CTC cannot be negative.')
+    .max(10000, 'Enter the amount in lakh or crore, not the full rupee amount.')
+    .optional()
+    .nullable(),
   summary: z.string().trim().max(4000).optional().nullable(),
-  profileImageUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
-  portfolioUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
-  linkedInUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
-  githubUrl: z.string().trim().url().optional().nullable().or(z.literal('')),
+  profileImageUrl: optionalUrlField('profile image'),
+  portfolioUrl: optionalUrlField('portfolio'),
+  linkedInUrl: optionalUrlField('LinkedIn'),
+  githubUrl: optionalUrlField('GitHub'),
   searchableProfile: z.boolean().optional(),
   phoneVisibleToRecruiters: z.boolean().optional(),
   salaryVisibleToRecruiters: z.boolean().optional(),
@@ -153,7 +218,7 @@ export const candidateProfileUpdateSchema = z.object({
 
   return true;
 }, {
-  message: 'Expected salary must be greater than or equal to current salary.',
+  message: 'Expected annual CTC must be at least your current CTC.',
   path: ['expectedCtcLpa'],
 });
 
@@ -535,6 +600,10 @@ export const jobApplicationListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(1000).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
   jobId: z.string().min(1).optional(),
+  stage: z.string().trim().max(80).optional(),
+  jobStatus: z.string().trim().max(80).optional(),
+  recruiterId: z.string().min(1).optional(),
+  search: z.string().trim().max(160).optional(),
   status: z.string().trim().max(80).optional(),
   screeningOutcome: screeningOutcomeSchema.optional(),
   hasFlags: z.coerce.boolean().optional(),

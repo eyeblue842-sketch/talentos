@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { Tabs } from '@/components/ui/tabs';
+import { CandidateAvatar } from '@/components/ui/candidate-avatar';
 import { recruiterNav } from '@/lib/navigation';
 import {
   getCandidateJobMatch,
@@ -27,6 +28,9 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
   const { candidateId } = await params;
   const query = await searchParams;
   const selectedJobId = typeof query?.jobId === 'string' ? query.jobId : '';
+  const returnTo = typeof query?.returnTo === 'string' && query.returnTo.startsWith('/recruiter/database/results')
+    ? query.returnTo
+    : '/recruiter/database/results';
 
   let candidate = null;
   let organisation = null;
@@ -83,8 +87,8 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
         eyebrow={organisation?.slug || 'Careeriz Hire'}
         title={candidate?.fullName || 'Candidate Profile'}
         description={candidate?.title || 'Recruiter candidate detail'}
-        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search', href: '/recruiter/database' }, { label: 'Profile' }]}
-        secondaryActions={[{ label: 'Back to Search', href: '/recruiter/database' }]}
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search', href: returnTo }, { label: 'Profile' }]}
+        secondaryActions={[{ label: 'Back to Search', href: returnTo }]}
       />
 
       {error ? <Card><p className="text-sm text-[var(--color-text-secondary)]">{error}</p></Card> : null}
@@ -92,18 +96,26 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
       {candidate ? (
         <>
           <Card className="bg-[var(--surface)]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
+            <div className="flex flex-wrap items-start gap-4">
+              <CandidateAvatar src={candidate.profileImageUrl} name={candidate.fullName} sizeClassName="h-20 w-20" />
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="brand">{candidate.matchScore}% match</Badge>
                   <Badge variant="neutral">Resume {candidate.resumeScore}</Badge>
                   <Badge variant="neutral">{candidate.globalHiringStatus}</Badge>
                 </div>
-                <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{candidate.location || 'Location not shared'} • {candidate.totalExperienceLabel} • {candidate.noticePeriod}</p>
+                <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{candidate.location || 'Location not shared'} • {candidate.totalExperienceLabel || `${candidate.totalExperience || 0} yrs`} • {candidate.noticePeriod || 'Availability not added'}</p>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--color-text-secondary)]">
+                  <span>{candidate.currentDesignation || candidate.currentTitle || 'Designation not added'}</span>
+                  <span>{candidate.currentEmployer || candidate.currentCompany || 'Company not added'}</span>
+                  {candidate.preferredLocations?.length ? <span>Preferred: {candidate.preferredLocations.join(', ')}</span> : null}
+                  {candidate.salaryVisible ? <span>Current CTC: {candidate.currentSalary ?? 'Not disclosed'} LPA</span> : null}
+                  {candidate.salaryVisible ? <span>Expected CTC: {candidate.expectedSalary ?? 'Not disclosed'} LPA</span> : null}
+                </div>
               </div>
               <div className="flex flex-wrap gap-3">
-                {candidate.resumeUrl ? (
-                  <Link href={candidate.resumeUrl} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">
+                {candidate.resumeDownloadUrl ? (
+                  <Link href={candidate.resumeDownloadUrl} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">
                     <Download size={16} aria-hidden="true" />
                     Download Resume
                   </Link>
@@ -129,17 +141,17 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
             items={[
               {
                 value: 'overview',
-                label: 'Overview',
+                label: 'Profile Details',
                 content: (
                   <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
                     <Card>
-                      <h2 className="text-2xl font-semibold text-[var(--color-text)]">AI Summary</h2>
-                      <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">{candidate.aiSummary}</p>
+                      <h2 className="text-2xl font-semibold text-[var(--color-text)]">Professional Summary</h2>
+                      <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">{candidate.summary || 'No professional summary is available.'}</p>
 
                       <div className="mt-6 grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-[var(--line)] p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">Current Company</p>
-                          <p className="mt-2 font-semibold text-[var(--color-text)]">{candidate.currentCompany}</p>
+                          <p className="mt-2 font-semibold text-[var(--color-text)]">{candidate.currentEmployer || candidate.currentCompany || 'Not added'}</p>
                         </div>
                         <div className="rounded-2xl border border-[var(--line)] p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">Salary Range</p>
@@ -151,6 +163,83 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
                         <h3 className="text-lg font-semibold text-[var(--color-text)]">Skills</h3>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {candidate.skills.map((skill) => <Badge key={skill} variant="neutral">{skill}</Badge>)}
+                        </div>
+                      </div>
+
+                      <div className="mt-6">
+                        <h3 className="text-lg font-semibold text-[var(--color-text)]">Work Experience</h3>
+                        <div className="mt-3 space-y-3">
+                          {(candidate.experienceEntries || []).length ? candidate.experienceEntries.map((entry, index) => (
+                            <div key={`${entry.id || entry.company || 'experience'}-${index}`} className="rounded-2xl border border-[var(--line)] px-4 py-4">
+                              <p className="font-semibold text-[var(--color-text)]">{entry.title || entry.jobTitle || entry.designation || 'Role not added'}</p>
+                              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{entry.company || entry.employer || 'Company not added'}</p>
+                              <p className="mt-2 text-xs text-[var(--color-text-muted)]">{entry.startDate || entry.startYear || 'Start date not added'} - {entry.isCurrent ? 'Present' : (entry.endDate || entry.endYear || 'End date not added')}</p>
+                              {entry.description ? <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{entry.description}</p> : null}
+                            </div>
+                          )) : <p className="text-sm text-[var(--color-text-secondary)]">No structured work experience is available.</p>}
+                        </div>
+                      </div>
+
+                      <div className="mt-6">
+                        <h3 className="text-lg font-semibold text-[var(--color-text)]">Education</h3>
+                        <div className="mt-3 space-y-3">
+                          {(candidate.educationEntries || []).length ? candidate.educationEntries.map((entry, index) => (
+                            <div key={`${entry.id || entry.degree || 'education'}-${index}`} className="rounded-2xl border border-[var(--line)] px-4 py-4">
+                              <p className="font-semibold text-[var(--color-text)]">{entry.degree || entry.course || 'Qualification not added'}</p>
+                              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{entry.institution || entry.school || 'Institute not added'}</p>
+                              {entry.endYear || entry.completionYear ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">Completed {entry.endYear || entry.completionYear}</p> : null}
+                            </div>
+                          )) : <p className="text-sm text-[var(--color-text-secondary)]">No structured education is available.</p>}
+                        </div>
+                      </div>
+
+                      {(candidate.projectEntries || []).length ? (
+                        <div className="mt-6">
+                          <h3 className="text-lg font-semibold text-[var(--color-text)]">Projects</h3>
+                          <div className="mt-3 space-y-3">
+                            {candidate.projectEntries.map((entry, index) => (
+                              <div key={`${entry.id || entry.projectName || 'project'}-${index}`} className="rounded-2xl border border-[var(--line)] px-4 py-4">
+                                <p className="font-semibold text-[var(--color-text)]">{entry.projectName || entry.name || 'Project'}</p>
+                                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{entry.clientOrCompany || entry.company || entry.role || 'Project details not added'}</p>
+                                {entry.technologies?.length ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">{entry.technologies.join(' | ')}</p> : null}
+                                {entry.description ? <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{entry.description}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {(candidate.certificationEntries || []).length ? (
+                        <div className="mt-6">
+                          <h3 className="text-lg font-semibold text-[var(--color-text)]">Certifications</h3>
+                          <div className="mt-3 space-y-2">
+                            {candidate.certificationEntries.map((entry, index) => (
+                              <div key={`${entry.id || entry.name || 'certification'}-${index}`} className="rounded-2xl border border-[var(--line)] px-4 py-3">
+                                <p className="font-semibold text-[var(--color-text)]">{entry.name || entry.title}</p>
+                                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{entry.issuer || entry.organization || 'Issuer not added'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {(candidate.languageEntries || []).length ? (
+                        <div className="mt-6">
+                          <h3 className="text-lg font-semibold text-[var(--color-text)]">Languages</h3>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {candidate.languageEntries.map((entry, index) => <Badge key={`${entry.id || entry.language || 'language'}-${index}`} variant="neutral">{entry.language || entry.name}{entry.proficiency ? ` - ${entry.proficiency}` : ''}</Badge>)}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-6">
+                        <h3 className="text-lg font-semibold text-[var(--color-text)]">Career Preferences</h3>
+                        <div className="mt-3 grid gap-2 text-sm text-[var(--color-text-secondary)] md:grid-cols-2">
+                          <p>Preferred roles: {candidate.preferredRoles?.length ? candidate.preferredRoles.join(', ') : 'Not added'}</p>
+                          <p>Employment: {candidate.employmentPreferences?.length ? candidate.employmentPreferences.join(', ') : 'Not added'}</p>
+                          <p>Workplace: {candidate.workplacePreferences?.length ? candidate.workplacePreferences.join(', ') : 'Not added'}</p>
+                          <p>Work authorization: {candidate.workAuthorization || 'Not added'}</p>
+                          <p>Relocation: {candidate.willingToRelocate == null ? 'Not added' : candidate.willingToRelocate ? 'Willing to relocate' : 'Not willing to relocate'}</p>
                         </div>
                       </div>
 
@@ -185,8 +274,9 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
                           <div className="mt-4 rounded-2xl border border-[var(--line)] px-4 py-3">
                             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                               <Mail size={16} aria-hidden="true" />
-                              {candidate.contactEmail}
+                              {candidate.contactEmail || 'Email not shared'}
                             </div>
+                            {candidate.contactPhone ? <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Phone: {candidate.contactPhone}</p> : null}
                             <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Visible because organisation access rules allow recruiter detail access for this candidate.</p>
                           </div>
                         ) : (
@@ -201,6 +291,24 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
                       </Card>
                     </div>
                   </div>
+                ),
+              },
+              {
+                value: 'resume',
+                label: 'Attached CV',
+                content: (
+                  <Card>
+                    <h2 className="text-xl font-semibold text-[var(--color-text)]">Attached CV</h2>
+                    {candidate.resumeDownloadUrl ? (
+                      <div className="mt-4 space-y-4">
+                        <p className="text-sm text-[var(--color-text-secondary)]">View the original resume supplied by this candidate.</p>
+                        <div className="flex flex-wrap gap-3">
+                          <Link href={candidate.resumeDownloadUrl} className="inline-flex items-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white"><Download size={16} aria-hidden="true" />View Resume</Link>
+                          <Link href={candidate.resumeDownloadUrl} download className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line)] px-4 py-2 text-sm font-semibold"><Download size={16} aria-hidden="true" />Download Resume</Link>
+                        </div>
+                      </div>
+                    ) : <p className="mt-4 text-sm text-[var(--color-text-secondary)]">No resume is attached to this profile.</p>}
+                  </Card>
                 ),
               },
               {

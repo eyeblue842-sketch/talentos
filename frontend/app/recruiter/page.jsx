@@ -20,9 +20,9 @@ export default async function RecruiterDashboardPage() {
     <WorkspaceShell brand={organisation.name} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation.slug}
-        title="Operations command center"
-        description="Manage organisation roles, requisitions, candidate flow, and hiring execution inside Careeriz."
-        breadcrumb={[{ label: 'Recruiter' }, { label: 'Dashboard' }]}
+        title="Recruitment overview"
+        description="Track hiring execution, open roles, candidate flow, and offer movement across your Careeriz workspace."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Recruitment Overview' }]}
       />
         <div className="grid gap-4 md:grid-cols-4">
           <StatCard label="Active jobs" value={dashboard.activeJobsCount} helper={`Total jobs: ${dashboard.jobsCount}`} />

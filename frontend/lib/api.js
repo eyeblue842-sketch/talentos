@@ -73,6 +73,12 @@ export async function getOrganisationInvitations() {
   return response.data;
 }
 
+export async function getOrganisationAuditLogs() {
+  const token = await requireToken();
+  const response = await requestBackend('/organisations/audit-logs', { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function createOrganisationInvitation(payload) {
   const token = await requireToken();
   const response = await requestBackend('/organisations/invitations', {
@@ -1059,6 +1065,25 @@ export async function getJobIntelligence(payload) {
   const response = await requestBackend('/intelligence/job', {
     method: 'POST',
     body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function uploadCandidateProfilePhoto(file) {
+  const token = await requireToken();
+  const body = new FormData();
+  body.set('photo', file);
+  const response = await requestBackend('/candidate/profile-photo', {
+    method: 'POST',
+    body,
+  }, token);
+  return response.data;
+}
+
+export async function removeCandidateProfilePhoto() {
+  const token = await requireToken();
+  const response = await requestBackend('/candidate/profile-photo', {
+    method: 'DELETE',
   }, token);
   return response.data;
 }

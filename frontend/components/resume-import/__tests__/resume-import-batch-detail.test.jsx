@@ -9,6 +9,7 @@ const router = {
 };
 
 const toastPush = vi.fn();
+let workerOnline = true;
 
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
@@ -28,11 +29,19 @@ describe('ResumeImportBatchDetailExperience', () => {
     router.push.mockReset();
     router.refresh.mockReset();
     toastPush.mockReset();
+    workerOnline = true;
     global.fetch = vi.fn(async (url, init = {}) => {
       if (String(url).includes('/retry-failed')) {
         return {
           ok: true,
           json: async () => ({ success: true, data: { retriedCount: 1 } }),
+        };
+      }
+
+      if (String(url).includes('/worker-status')) {
+        return {
+          ok: true,
+          json: async () => ({ success: true, data: { online: workerOnline, staleThresholdMs: 45000, workerCount: workerOnline ? 1 : 0 } }),
         };
       }
 
@@ -162,5 +171,62 @@ describe('ResumeImportBatchDetailExperience', () => {
       );
     });
     expect(toastPush).toHaveBeenCalledWith(expect.objectContaining({ tone: 'success' }));
+  });
+
+  const processingBatch = {
+    id: 'batch-1',
+    createdByUserId: 'user-1',
+    totalItemCount: 1,
+    processedCount: 0,
+    successCount: 0,
+    reviewCount: 0,
+    duplicateCount: 0,
+    failedCount: 0,
+    status: 'PROCESSING',
+    createdAt: '2026-07-27T08:00:00.000Z',
+    startedAt: '2026-07-27T08:01:00.000Z',
+    completedAt: null,
+    durationMs: null,
+  };
+
+  test('shows the worker-offline banner when no worker has a recent heartbeat and the batch is still active', async () => {
+    workerOnline = false;
+
+    render(
+      <ResumeImportBatchDetailExperience
+        initialBatch={processingBatch}
+        initialItems={[]}
+        initialMeta={{ page: 1, pageCount: 1, total: 0 }}
+        initialQuery={{}}
+        batchId="batch-1"
+        historyHref="/recruiter/candidates/import/history"
+        itemHrefBase="/recruiter/candidates/import/batch-1/items"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/resume-processing worker is offline/i)).toBeInTheDocument();
+    });
+  });
+
+  test('does not show the worker-offline banner when a worker is online', async () => {
+    workerOnline = true;
+
+    render(
+      <ResumeImportBatchDetailExperience
+        initialBatch={processingBatch}
+        initialItems={[]}
+        initialMeta={{ page: 1, pageCount: 1, total: 0 }}
+        initialQuery={{}}
+        batchId="batch-1"
+        historyHref="/recruiter/candidates/import/history"
+        itemHrefBase="/recruiter/candidates/import/batch-1/items"
+      />
+    );
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/worker-status'), expect.anything());
+    });
+    expect(screen.queryByText(/resume-processing worker is offline/i)).not.toBeInTheDocument();
   });
 });

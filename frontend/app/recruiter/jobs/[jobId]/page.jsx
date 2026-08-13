@@ -133,6 +133,10 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                   </div>
                   <p className="mt-2 text-sm text-[var(--muted)]">{job.location} • {job.employmentType} {job.workplaceType ? `• ${job.workplaceType}` : ''}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">Applicants: {job.applicationsCount || 0} • Requisition: {job.requisition?.requisitionCode || 'None'}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {job.salaryMin != null || job.salaryMax != null ? `${job.currency || 'INR'} ${job.salaryMin ?? '?'}-${job.salaryMax ?? '?'} LPA` : 'Salary not set'}
+                    {!job.publicSalaryEnabled ? <span className="ml-2 font-semibold text-amber-600">Salary hidden from candidates</span> : null}
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <form action={updateJobStatusAction.bind(null, job.id)}>
@@ -185,8 +189,8 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                   </select>
                   <input name="experienceMin" type="number" min="0" defaultValue={job.experienceMin} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
                   <input name="experienceMax" type="number" min="0" defaultValue={job.experienceMax} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="salaryMin" type="number" min="0" defaultValue={job.salaryMin ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="salaryMax" type="number" min="0" defaultValue={job.salaryMax ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
+                  <input name="salaryMin" type="number" min="0" defaultValue={job.salaryMin ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
+                  <input name="salaryMax" type="number" min="0" defaultValue={job.salaryMax ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
                   <input name="currency" defaultValue={job.currency || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
                   <input name="numberOfOpenings" type="number" min="1" defaultValue={job.numberOfOpenings || 1} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
                   <input name="department" defaultValue={job.department || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
@@ -202,7 +206,10 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
                     <option value="BOTH">Both</option>
                   </select>
                   <label className="flex items-center gap-2 text-sm"><input name="isPublic" type="checkbox" defaultChecked={job.isPublic} /> Public job page</label>
-                  <label className="flex items-center gap-2 text-sm"><input name="publicSalaryEnabled" type="checkbox" defaultChecked={job.publicSalaryEnabled} /> Show salary publicly</label>
+                  <label className="flex items-center gap-2 text-sm" title="Salary stays required internally for matching and hiring intelligence; this only controls the public/candidate-facing job page.">
+                    <input name="hideSalaryFromCandidates" type="checkbox" defaultChecked={!job.publicSalaryEnabled} /> Hide salary from candidates
+                    {!job.publicSalaryEnabled ? <span className="text-xs font-semibold text-amber-600">Salary hidden from candidates</span> : null}
+                  </label>
                   <label className="flex items-center gap-2 text-sm"><input name="featuredInPortal" type="checkbox" defaultChecked={job.featuredInPortal} /> Feature on portal</label>
                   <label className="flex items-center gap-2 text-sm"><input name="autoCloseOnTargetHire" type="checkbox" defaultChecked={job.autoCloseOnTargetHire} /> Auto-close on target hires</label>
                   <select name="status" defaultValue={job.status} className="rounded-2xl border border-[var(--line)] px-4 py-3">

@@ -11,13 +11,16 @@ import {
 } from '@/lib/roles';
 
 function getPublicOrigin(request) {
+  if (process.env.PUBLIC_APP_URL) {
+    return process.env.PUBLIC_APP_URL;
+  }
+
   const proto =
-    request.headers.get('x-forwarded-proto') || 'https';
+    request.headers.get('x-forwarded-proto') || 'http';
 
   const host =
     request.headers.get('x-forwarded-host') ||
-    request.headers.get('host') ||
-    'careeriz.com';
+    request.headers.get('host');
 
   return `${proto}://${host}`;
 }

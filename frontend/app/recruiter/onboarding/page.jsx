@@ -20,7 +20,7 @@ export default async function RecruiterOnboardingPage({ searchParams }) {
   }
 
   if (state?.onboardingCompleted) {
-    redirect('/recruiter');
+    redirect('/recruiter/home');
   }
 
   return (
@@ -98,7 +98,7 @@ export default async function RecruiterOnboardingPage({ searchParams }) {
               <Button type="submit" trailingIcon={ArrowRight}>
                 Complete workspace setup
               </Button>
-              <Button as="a" href="/recruiter" variant="outline">
+              <Button as="a" href="/recruiter/home" variant="outline">
                 Back to recruiter dashboard
               </Button>
             </div>

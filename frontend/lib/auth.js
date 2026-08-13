@@ -28,14 +28,20 @@ async function parseJson(response) {
 export async function requestBackend(path, options = {}, token) {
   const cookieStore = await cookies();
   const activeOrganisationId = cookieStore.get(ORGANISATION_COOKIE)?.value || null;
+  const isMultipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeOrganisationId ? { 'x-organisation-id': activeOrganisationId } : {}),
+    ...(options.headers || {}),
+  };
+
+  if (!isMultipart && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${BACKEND_API_BASE_URL}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(activeOrganisationId ? { 'x-organisation-id': activeOrganisationId } : {}),
-      ...(options.headers || {}),
-    },
+    headers,
     cache: 'no-store',
   });
 

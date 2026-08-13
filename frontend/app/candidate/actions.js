@@ -11,12 +11,14 @@ import {
   requestCandidateAccountDeactivation,
   requestCandidateInterviewReschedule,
   requestCandidateOfferRevisionResponse,
+  removeCandidateProfilePhoto,
   saveCandidateOnboarding,
   saveResumeBuilderLink,
   markAllCandidateNotificationsRead,
   markCandidateNotificationRead,
   saveCandidateJob,
   unsaveCandidateJob,
+  uploadCandidateProfilePhoto,
   updateCandidateResumeAssetState,
   updateCandidateProfile,
   updateCandidateSettings,
@@ -113,55 +115,183 @@ function collectCommaSeparated(formData, field) {
     .filter(Boolean);
 }
 
+function normalizeOptionalText(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
+}
+
+function normalizeOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function dedupeCaseInsensitive(values) {
+  const seen = new Set();
+  const normalized = [];
+
+  for (const item of values) {
+    const text = String(item ?? '').trim();
+    if (!text) continue;
+    const key = text.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(text);
+  }
+
+  return normalized;
+}
+
+function collectNormalizedStringArray(formData, field) {
+  return dedupeCaseInsensitive(collectCommaSeparated(formData, field));
+}
+
 function collectMultiValue(formData, field) {
   return formData.getAll(field).map((item) => String(item)).filter(Boolean);
 }
 
-function parseJsonArrayField(formData, field) {
+function readBooleanFormValue(formData, field) {
+  const value = String(formData.get(field) || '').toLowerCase();
+  return value === 'on' || value === 'true' || value === '1';
+}
+
+function parseOptionalJsonArrayField(formData, field) {
+  if (!formData.has(field)) return undefined;
   const raw = String(formData.get(field) || '').trim();
   if (!raw) return [];
   return JSON.parse(raw);
 }
 
+function parseOptionalJsonStringArrayField(formData, field) {
+  if (!formData.has(field)) return undefined;
+  const raw = String(formData.get(field) || '').trim();
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function buildCandidateProfileSectionPayload(formData) {
+  const activeSection = String(formData.get('activeSection') || '').trim();
+
+  switch (activeSection) {
+    case 'profile-snapshot':
+      return {
+        fullName: String(formData.get('fullName') || '').trim(),
+        phoneNumber: normalizeOptionalText(formData.get('phoneNumber')),
+        currentTitle: normalizeOptionalText(formData.get('currentTitle')),
+        currentEmployer: normalizeOptionalText(formData.get('currentEmployer')),
+        currentDesignation: normalizeOptionalText(formData.get('currentDesignation')),
+        location: normalizeOptionalText(formData.get('location')),
+        totalExperience: Number(formData.get('totalExperience') || 0),
+        noticePeriodDays: normalizeOptionalNumber(formData.get('noticePeriodDays')),
+        currentCtcLpa: normalizeOptionalNumber(formData.get('currentCtcLpa')),
+      };
+    case 'resume-headline':
+      return {
+        headline: normalizeOptionalText(formData.get('headline')),
+      };
+    case 'key-skills':
+      return {
+        skills: collectNormalizedStringArray(formData, 'skills'),
+      };
+    case 'employment':
+      return {
+        experienceEntries: parseOptionalJsonArrayField(formData, 'experienceEntries'),
+      };
+    case 'education':
+      return {
+        educationEntries: parseOptionalJsonArrayField(formData, 'educationEntries'),
+      };
+    case 'projects':
+      return {
+        projectEntries: parseOptionalJsonArrayField(formData, 'projectEntries'),
+      };
+    case 'profile-summary':
+      return {
+        summary: normalizeOptionalText(formData.get('summary')),
+        portfolioUrl: normalizeOptionalText(formData.get('portfolioUrl')),
+        linkedInUrl: normalizeOptionalText(formData.get('linkedInUrl')),
+        githubUrl: normalizeOptionalText(formData.get('githubUrl')),
+      };
+    case 'certifications':
+      return {
+        certificationEntries: parseOptionalJsonArrayField(formData, 'certificationEntries'),
+      };
+    case 'career-profile':
+      return {
+        preferredRoles: collectNormalizedStringArray(formData, 'preferredRoles'),
+        preferredLocations: collectNormalizedStringArray(formData, 'preferredLocations'),
+        workplacePreferences: parseOptionalJsonStringArrayField(formData, 'workplacePreferencesJson') ?? collectMultiValue(formData, 'workplacePreferences'),
+        employmentPreferences: parseOptionalJsonStringArrayField(formData, 'employmentPreferencesJson') ?? collectMultiValue(formData, 'employmentPreferences'),
+        availability: String(formData.get('availability') || '').trim() || undefined,
+        employmentStatus: String(formData.get('employmentStatus') || '').trim() || null,
+        noticePeriodDays: normalizeOptionalNumber(formData.get('noticePeriodDays')),
+        expectedCtcLpa: normalizeOptionalNumber(formData.get('expectedCtcLpa')),
+        profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
+      };
+    case 'personal-details':
+      return {
+        languageEntries: parseOptionalJsonArrayField(formData, 'languageEntries'),
+      };
+    case 'privacy':
+      return {
+        searchableProfile: readBooleanFormValue(formData, 'searchableProfile'),
+        phoneVisibleToRecruiters: readBooleanFormValue(formData, 'phoneVisibleToRecruiters'),
+        salaryVisibleToRecruiters: readBooleanFormValue(formData, 'salaryVisibleToRecruiters'),
+        resumeVisibleToRecruiters: readBooleanFormValue(formData, 'resumeVisibleToRecruiters'),
+      };
+    default:
+      return {
+        fullName: String(formData.get('fullName') || '').trim(),
+        phoneNumber: normalizeOptionalText(formData.get('phoneNumber')),
+        headline: normalizeOptionalText(formData.get('headline')),
+        currentTitle: normalizeOptionalText(formData.get('currentTitle')),
+        currentEmployer: normalizeOptionalText(formData.get('currentEmployer')),
+        currentDesignation: normalizeOptionalText(formData.get('currentDesignation')),
+        location: normalizeOptionalText(formData.get('location')),
+        totalExperience: Number(formData.get('totalExperience') || 0),
+        skills: collectNormalizedStringArray(formData, 'skills'),
+        skillEntries: parseOptionalJsonArrayField(formData, 'skillEntries'),
+        experienceEntries: parseOptionalJsonArrayField(formData, 'experienceEntries'),
+        educationEntries: parseOptionalJsonArrayField(formData, 'educationEntries'),
+        certificationEntries: parseOptionalJsonArrayField(formData, 'certificationEntries'),
+        languageEntries: parseOptionalJsonArrayField(formData, 'languageEntries'),
+        projectEntries: parseOptionalJsonArrayField(formData, 'projectEntries'),
+        portfolioLinks: parseOptionalJsonArrayField(formData, 'portfolioLinks'),
+        preferredRoles: collectNormalizedStringArray(formData, 'preferredRoles'),
+        preferredLocations: collectNormalizedStringArray(formData, 'preferredLocations'),
+        workplacePreferences: parseOptionalJsonStringArrayField(formData, 'workplacePreferencesJson') ?? collectMultiValue(formData, 'workplacePreferences'),
+        employmentPreferences: parseOptionalJsonStringArrayField(formData, 'employmentPreferencesJson') ?? collectMultiValue(formData, 'employmentPreferences'),
+        availability: String(formData.get('availability') || '').trim() || undefined,
+        employmentStatus: String(formData.get('employmentStatus') || '').trim() || null,
+        lastWorkingDate: normalizeOptionalText(formData.get('lastWorkingDate')),
+        noticePeriodDays: normalizeOptionalNumber(formData.get('noticePeriodDays')),
+        currentCtcLpa: normalizeOptionalNumber(formData.get('currentCtcLpa')),
+        expectedCtcLpa: normalizeOptionalNumber(formData.get('expectedCtcLpa')),
+        summary: normalizeOptionalText(formData.get('summary')),
+        portfolioUrl: normalizeOptionalText(formData.get('portfolioUrl')),
+        linkedInUrl: normalizeOptionalText(formData.get('linkedInUrl')),
+        githubUrl: normalizeOptionalText(formData.get('githubUrl')),
+        searchableProfile: readBooleanFormValue(formData, 'searchableProfile'),
+        phoneVisibleToRecruiters: readBooleanFormValue(formData, 'phoneVisibleToRecruiters'),
+        salaryVisibleToRecruiters: readBooleanFormValue(formData, 'salaryVisibleToRecruiters'),
+        resumeVisibleToRecruiters: readBooleanFormValue(formData, 'resumeVisibleToRecruiters'),
+        profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
+      };
+  }
+}
+
 export async function updateCandidateProfileAction(formData) {
-  await updateCandidateProfile({
-    fullName: String(formData.get('fullName') || ''),
-    phoneNumber: String(formData.get('phoneNumber') || ''),
-    headline: String(formData.get('headline') || ''),
-    currentTitle: String(formData.get('currentTitle') || ''),
-    currentEmployer: String(formData.get('currentEmployer') || ''),
-    currentDesignation: String(formData.get('currentDesignation') || ''),
-    location: String(formData.get('location') || ''),
-    totalExperience: Number(formData.get('totalExperience') || 0),
-    skills: collectCommaSeparated(formData, 'skills'),
-    skillEntries: parseJsonArrayField(formData, 'skillEntries'),
-    experienceEntries: parseJsonArrayField(formData, 'experienceEntries'),
-    educationEntries: parseJsonArrayField(formData, 'educationEntries'),
-    certificationEntries: parseJsonArrayField(formData, 'certificationEntries'),
-    languageEntries: parseJsonArrayField(formData, 'languageEntries'),
-    projectEntries: parseJsonArrayField(formData, 'projectEntries'),
-    portfolioLinks: parseJsonArrayField(formData, 'portfolioLinks'),
-    preferredRoles: collectCommaSeparated(formData, 'preferredRoles'),
-    preferredLocations: collectCommaSeparated(formData, 'preferredLocations'),
-    workplacePreferences: collectMultiValue(formData, 'workplacePreferences'),
-    employmentPreferences: collectMultiValue(formData, 'employmentPreferences'),
-    availability: String(formData.get('availability') || ''),
-    employmentStatus: String(formData.get('employmentStatus') || '') || null,
-    lastWorkingDate: String(formData.get('lastWorkingDate') || '') || null,
-    noticePeriodDays: formData.get('noticePeriodDays') ? Number(formData.get('noticePeriodDays')) : null,
-    currentCtcLpa: formData.get('currentCtcLpa') ? Number(formData.get('currentCtcLpa')) : null,
-    expectedCtcLpa: formData.get('expectedCtcLpa') ? Number(formData.get('expectedCtcLpa')) : null,
-    summary: String(formData.get('summary') || ''),
-    profileImageUrl: String(formData.get('profileImageUrl') || ''),
-    portfolioUrl: String(formData.get('portfolioUrl') || ''),
-    linkedInUrl: String(formData.get('linkedInUrl') || ''),
-    githubUrl: String(formData.get('githubUrl') || ''),
-    searchableProfile: formData.get('searchableProfile') === 'on',
-    phoneVisibleToRecruiters: formData.get('phoneVisibleToRecruiters') === 'on',
-    salaryVisibleToRecruiters: formData.get('salaryVisibleToRecruiters') === 'on',
-    resumeVisibleToRecruiters: formData.get('resumeVisibleToRecruiters') === 'on',
-    profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
-  });
+  const profilePhotoAction = String(formData.get('profilePhotoAction') || 'keep');
+  const profilePhoto = formData.get('profilePhoto');
+
+  if (profilePhotoAction === 'remove') {
+    await removeCandidateProfilePhoto();
+  } else if (profilePhoto instanceof File && profilePhoto.size > 0) {
+    await uploadCandidateProfilePhoto(profilePhoto);
+  }
+
+  await updateCandidateProfile(buildCandidateProfileSectionPayload(formData));
 
   revalidatePath('/candidate');
   revalidatePath('/candidate/dashboard');
@@ -244,6 +374,7 @@ export async function applyResumeParsedUpdatesAction(formData) {
   if (!assetId) return;
   await applyCandidateResumeParsedUpdates(assetId, {
     acceptAll: formData.get('acceptAll') === 'true',
+    dismiss: formData.get('dismiss') === 'true',
     fields: formData.getAll('fields').map((value) => String(value)),
   });
   revalidatePath('/candidate');
@@ -362,10 +493,13 @@ export async function withdrawCandidateApplicationAction(previousState, formData
 }
 
 function buildActionError(error) {
+  const fieldErrors = error.details?.fieldErrors || {};
   return {
     status: 'error',
-    message: error.message || 'Unable to save your changes.',
-    fieldErrors: error.details?.fieldErrors || {},
+    message: error.message === 'Validation failed.'
+      ? 'Please correct the highlighted fields.'
+      : error.message || 'Unable to save your changes.',
+    fieldErrors,
   };
 }
 

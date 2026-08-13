@@ -12,19 +12,13 @@ export async function GET(request) {
     '/candidate/dashboard'
   );
 
-  const forwardedProto =
-    request.headers.get('x-forwarded-proto') || 'https';
-
-  const forwardedHost =
-    request.headers.get('x-forwarded-host') ||
-    request.headers.get('host') ||
-    'careeriz.com';
-
-  const publicOrigin = `${forwardedProto}://${forwardedHost}`;
+  const oauthBaseUrl =
+    process.env.OAUTH_PUBLIC_BASE_URL ||
+    'http://127.0.0.1:5000';
 
   const backendUrl = new URL(
     '/api/auth/oauth/google/start',
-    publicOrigin
+    oauthBaseUrl
   );
 
   backendUrl.searchParams.set('role', 'CANDIDATE');
