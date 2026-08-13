@@ -15,6 +15,12 @@ export default defineConfig({
     globals: true,
     css: false,
     pool: 'threads',
+    exclude: [
+      'e2e/**',
+      'node_modules/**',
+      '.next/**',
+      'test-results/**',
+    ],
     coverage: {
       reporter: ['text', 'lcov'],
     },

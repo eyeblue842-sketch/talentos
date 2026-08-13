@@ -44,7 +44,12 @@ authRouter.post(
   signup
 );
 
-authRouter.post('/login', createRateLimiter({ keyPrefix: 'auth:login', limit: 10 }), validateSchema(loginSchema), login);
+authRouter.post(
+  '/login',
+  createRateLimiter({ keyPrefix: 'auth:login', limit: Number(process.env.AUTH_LOGIN_RATE_LIMIT || 10) }),
+  validateSchema(loginSchema),
+  login
+);
 // /me and /logout must stay reachable even while a password change is
 // required - /me is how the frontend discovers mustChangePassword in the
 // first place (requireUser(), the change-password page, and the post-login

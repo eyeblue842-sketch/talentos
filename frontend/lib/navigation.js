@@ -11,6 +11,8 @@ export const recruiterNav = [
       { id: 'recruitment-overview', label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard', exact: true },
       { id: 'recruitment-jobs', label: 'Job Posts', href: '/recruiter/jobs', icon: 'ClipboardList' },
       { id: 'recruitment-job-responses', label: 'Job Responses', href: '/recruiter/job-responses', icon: 'GitPullRequestArrow' },
+      { id: 'recruitment-network', label: 'Network', href: '/recruiter/network', icon: 'Users' },
+      { id: 'recruitment-messages', label: 'Messages', href: '/recruiter/messages', icon: 'Mail' },
       { id: 'recruitment-resume-search', label: 'Resume Search', href: '/recruiter/database', icon: 'Database' },
       { id: 'recruitment-ats', label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
       { id: 'recruitment-interviews', label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
@@ -25,6 +27,8 @@ export const recruiterNav = [
 export const candidateNav = [
   { label: 'Dashboard', href: '/candidate/dashboard', icon: 'LayoutDashboard' },
   { label: 'Find Jobs', href: '/candidate/jobs', icon: 'Search' },
+  { label: 'Network', href: '/candidate/network', icon: 'Users' },
+  { label: 'Messages', href: '/candidate/messages', icon: 'Mail' },
   { label: 'Saved Jobs', href: '/candidate/saved-jobs', icon: 'BriefcaseBusiness' },
   { label: 'Applications', href: '/candidate/applications', icon: 'ClipboardList' },
   { label: 'Interviews', href: '/candidate/interviews', icon: 'CalendarDays' },

@@ -4,6 +4,10 @@ import { apiError } from '../utils/response.js';
 
 const buckets = new Map();
 
+export function resetRateLimiterBuckets() {
+  buckets.clear();
+}
+
 function cleanupExpired(now) {
   for (const [key, value] of buckets.entries()) {
     if (value.resetAt <= now) {
@@ -12,13 +16,14 @@ function cleanupExpired(now) {
   }
 }
 
-export function createRateLimiter({ keyPrefix, limit, windowMinutes = env.rateLimitWindowMinutes }) {
+export function createRateLimiter({ keyPrefix, limit, windowMinutes = env.rateLimitWindowMinutes, keyResolver } = {}) {
   const windowMs = windowMinutes * 60 * 1000;
   const maxRequests = limit || env.rateLimitMaxRequests;
 
   return async (req, res, next) => {
     const now = Date.now();
-    const identity = `${req.ip}:${req.body?.email || req.params?.applicationId || 'anonymous'}`;
+    const customIdentity = typeof keyResolver === 'function' ? keyResolver(req) : null;
+    const identity = String(customIdentity || `${req.ip}:${req.body?.email || req.params?.applicationId || 'anonymous'}`);
     const key = `${keyPrefix}:${identity}`;
     const redisClient = await getRedisClient().catch(() => null);
     if (redisClient) {
