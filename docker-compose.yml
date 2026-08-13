@@ -106,6 +106,13 @@ services:
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-5000}
       WORKER_SCHEDULER_INTERVAL_MS: ${WORKER_SCHEDULER_INTERVAL_MS:-30000}
       TASK_RETENTION_DAYS: ${TASK_RETENTION_DAYS:-30}
+      DOCUMENT_PROCESSOR_ENABLED: ${DOCUMENT_PROCESSOR_ENABLED:-false}
+      DOCUMENT_PROCESSOR_URL: ${DOCUMENT_PROCESSOR_URL:-http://document-processor:8081}
+      DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS: ${DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS:-3000}
+      DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS: ${DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS:-120000}
+      DOCUMENT_PROCESSOR_MAX_RETRIES: ${DOCUMENT_PROCESSOR_MAX_RETRIES:-1}
+      DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD: ${DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD:-5}
+      DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS: ${DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS:-30000}
     ports:
       - "5000:5000"
     healthcheck:
@@ -172,8 +179,96 @@ services:
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-5000}
       WORKER_SCHEDULER_INTERVAL_MS: ${WORKER_SCHEDULER_INTERVAL_MS:-30000}
       TASK_RETENTION_DAYS: ${TASK_RETENTION_DAYS:-30}
+      DOCUMENT_PROCESSOR_ENABLED: ${DOCUMENT_PROCESSOR_ENABLED:-false}
+      DOCUMENT_PROCESSOR_URL: ${DOCUMENT_PROCESSOR_URL:-http://document-processor:8081}
+      DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS: ${DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS:-3000}
+      DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS: ${DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS:-120000}
+      DOCUMENT_PROCESSOR_MAX_RETRIES: ${DOCUMENT_PROCESSOR_MAX_RETRIES:-1}
+      DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD: ${DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD:-5}
+      DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS: ${DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS:-30000}
     volumes:
       - resume_storage:/app/backend/storage/resumes
+
+  document-processor:
+    build:
+      context: ./document-processor
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8081
+      MAX_CONCURRENT_REQUESTS: ${DOCPROC_MAX_CONCURRENT_REQUESTS:-2}
+      MAX_FILE_SIZE_MB: ${DOCPROC_MAX_FILE_SIZE_MB:-15}
+      MAX_PAGE_COUNT: ${DOCPROC_MAX_PAGE_COUNT:-50}
+      DOCLING_ENABLED: ${DOCPROC_DOCLING_ENABLED:-false}
+      PADDLEOCR_ENABLED: ${DOCPROC_PADDLEOCR_ENABLED:-false}
+      PREPROCESSING_ENABLED: ${DOCPROC_PREPROCESSING_ENABLED:-false}
+      GPU_ENABLED: "false"
+      LOG_LEVEL: ${DOCPROC_LOG_LEVEL:-INFO}
+      # Step 4.5: Docling worker pool lifecycle. See
+      # docs/document-processor.md for the measurement these are based on.
+      DOCLING_CONVERSION_TIMEOUT_SECONDS: ${DOCPROC_CONVERSION_TIMEOUT_SECONDS:-45}
+      DOCLING_QUEUE_CAPACITY: ${DOCPROC_QUEUE_CAPACITY:-1}
+      DOCLING_WORKER_MAX_DOCUMENTS: ${DOCPROC_WORKER_MAX_DOCUMENTS:-50}
+      DOCLING_WORKER_MAX_RSS_MB: ${DOCPROC_WORKER_MAX_RSS_MB:-2200}
+      DOCLING_WARMUP_TIMEOUT_SECONDS: ${DOCPROC_WARMUP_TIMEOUT_SECONDS:-150}
+      # Step 6: OCR worker pool -- a SEPARATE process from Docling's (see
+      # app/worker/instance.py), with its own timeout/queue/RSS policy.
+      # OCR_WORKER_MAX_RSS_MB is a provisional estimate, NOT measured
+      # (real paddleocr could not run in the dev sandbox this was written
+      # in -- see docs/document-processor.md's Step 6 dependency-gate
+      # section) -- re-measure for real before treating it as final.
+      OCR_CONVERSION_TIMEOUT_SECONDS: ${DOCPROC_OCR_CONVERSION_TIMEOUT_SECONDS:-60}
+      OCR_QUEUE_CAPACITY: ${DOCPROC_OCR_QUEUE_CAPACITY:-1}
+      OCR_WORKER_MAX_DOCUMENTS: ${DOCPROC_OCR_WORKER_MAX_DOCUMENTS:-50}
+      OCR_WORKER_MAX_RSS_MB: ${DOCPROC_OCR_WORKER_MAX_RSS_MB:-1800}
+      OCR_WARMUP_TIMEOUT_SECONDS: ${DOCPROC_OCR_WARMUP_TIMEOUT_SECONDS:-300}
+      OCR_LANGUAGE: ${DOCPROC_OCR_LANGUAGE:-en}
+      # Points PaddleX's model cache at a path that can be pre-baked into
+      # the image or bind-mounted, so warm-up never depends on a network
+      # download at container start in a locked-down deployment. Unset by
+      # default (falls through to PaddleX's own default cache location).
+      PADDLEOCR_MODEL_DIR: ${DOCPROC_PADDLEOCR_MODEL_DIR:-}
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health/live', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # Docling worker: measured for real (Step 4 closure + Step 4.5
+    # worker-lifecycle measurement, see docs/document-processor.md) --
+    # sits at ~1.05GB RSS right after warm-up, grows ~15-19MB per
+    # conversion (5 sequential real conversions: 1199 -> 1265MB), peak
+    # ~1.57GB observed mid-conversion, worst case ~2.6-2.7GB before
+    # recycling kicks in.
+    #
+    # OCR worker (Step 6): NOT measured for real -- paddleocr/paddlepaddle
+    # could not be run in the dev sandbox this was written in (no Python
+    # 3.11/Docker locally; see docs/document-processor.md's Step 6
+    # dependency-gate section). Estimated from paddlepaddle's own ~195MB
+    # installed wheel size plus commonly-reported CPU inference RSS for
+    # PaddleOCR's full pipeline (several hundred MB to ~1.5GB across
+    # public reports) -- treat as a rough upper bound, not a measurement.
+    #
+    # Step 6 changed the sizing question itself: Docling and OCR now run
+    # as two INDEPENDENT worker pools that can genuinely be busy at the
+    # same time (unlike Step 5's single shared pool, where only one heavy
+    # job ever ran at once across every engine) -- so this container's
+    # memory budget must now cover BOTH pools' peaks simultaneously, not
+    # just one. 6g/3cpu is a provisional estimate (Docling's real ~2.7GB
+    # worst case + OCR's estimated ~1.8GB ceiling + parent/OS overhead,
+    # with headroom) -- MUST be re-measured for real (Linux/Python 3.11,
+    # real paddleocr, production-scale documents) before being treated as
+    # final. If real measurement shows the combined footprint is large
+    # relative to available host memory, or the two pools need
+    # independently tunable resource limits/scaling, prefer splitting
+    # docling and ocr into SEPARATE containers/services over continuing to
+    # grow this one shared limit -- the two-pool code already isolates
+    # them at the process level, so that split would be a deployment
+    # change, not a code change. A future GPU variant must be a separate
+    # Dockerfile/service, never toggled via env var alone on this CPU image.
+    mem_limit: 6g
+    cpus: 3
 
   frontend:
     build:

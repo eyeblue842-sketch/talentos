@@ -67,6 +67,114 @@ jobs:
       - name: Docker build frontend
         run: docker build -f frontend/Dockerfile .
 
+  # Added as part of Track B Step 4 closure. This is the authoritative
+  # Python 3.11 verification for the document-processor service: local
+  # development in this repo has so far only run against Python 3.14 (this
+  # job targets what the Dockerfile actually pins, python:3.11-slim's
+  # matching interpreter), and runs on a real Linux runner rather than a
+  # cross-platform pip dry-run, which cannot correctly evaluate
+  # sys_platform-conditional dependency markers (e.g. a Windows-only
+  # pywin32 requirement on some transitive packages) when run from Windows.
+  # As of this commit this job has not yet had a real run recorded — mark
+  # any report that cites it as "pending actual execution" until a CI run
+  # completes and its logs are inspected.
+  document-processor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: document-processor/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+        working-directory: document-processor
+
+      - name: Lint (ruff check)
+        run: python -m ruff check app tests
+        working-directory: document-processor
+
+      - name: Tests (Docling disabled — the safe default)
+        run: python -m pytest -v
+        working-directory: document-processor
+
+      - name: Tests (Docling explicitly enabled)
+        run: python -m pytest -v tests/test_docling_engine.py tests/test_health_and_capabilities.py
+        working-directory: document-processor
+        env:
+          DOCLING_ENABLED: "true"
+
+      - name: Docker build document-processor
+        run: docker build -f document-processor/Dockerfile document-processor
+
+  # Step 6B: REAL PaddleOCR validation -- authored but never executed as of
+  # this commit (prepared from a dev sandbox with no Docker and no Python
+  # 3.11/3.13 interpreter locally; see docs/document-processor.md's Step 6
+  # dependency-gate section and the Step 6B closure report). Deliberately
+  # gated to workflow_dispatch only, not push/PR: installing paddlepaddle
+  # (~195MB wheel) plus PP-OCRv5 model weights on every push would be slow
+  # and wasteful for a capability that stays PADDLEOCR_ENABLED=false by
+  # default anyway. Mark any report that cites this job's results as
+  # "pending actual execution" until a real run's logs are inspected --
+  # exactly the same caveat the `document-processor` job above carried
+  # before its own first real run.
+  document-processor-ocr-real-validation:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: document-processor/requirements-dev.txt
+
+      - name: Install dependencies (including real paddleocr/paddlepaddle)
+        run: pip install -r requirements-dev.txt
+        working-directory: document-processor
+
+      - name: Verify hash-locked install reproduces the same environment
+        run: pip install --require-hashes -r requirements-lock.txt --dry-run
+        working-directory: document-processor
+
+      - name: Real PaddleOCR API/accuracy/orientation/resource validation
+        run: python -m pytest -v -s tests/test_ocr_real_engine.py
+        working-directory: document-processor
+        env:
+          PADDLEOCR_ENABLED: "true"
+          DOCLING_ENABLED: "true"
+          PREPROCESSING_ENABLED: "true"
+
+      - name: Real reliability matrix against the live engine
+        run: python -m pytest -v tests/test_ocr_worker_pools.py
+        working-directory: document-processor
+        env:
+          PADDLEOCR_ENABLED: "true"
+          DOCLING_ENABLED: "true"
+          PREPROCESSING_ENABLED: "true"
+
+      - name: Docker build (production target, Python 3.11 + hash lock)
+        run: docker build -f document-processor/Dockerfile document-processor
+
+      - name: Container health/readiness/shutdown check
+        run: |
+          set -e
+          docker run -d --name docproc-validate -p 8081:8081 \
+            -e DOCLING_ENABLED=true -e PADDLEOCR_ENABLED=true -e PREPROCESSING_ENABLED=true \
+            document-processor
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8081/health/live && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8081/health/ready
+          docker stop docproc-validate
+          docker logs docproc-validate
+          docker rm docproc-validate
+
   deploy-staging:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     needs: validate
