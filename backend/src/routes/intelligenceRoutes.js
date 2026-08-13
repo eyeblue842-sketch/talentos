@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
+import { upload } from '../middleware/upload.js';
 import {
   getCandidateProfileIntelligence,
   getCandidateProfileIntelligenceStatus,
@@ -57,6 +58,7 @@ import {
   postSimilarJobSearch,
   postExecuteSavedSemanticSearch,
   postTalentSearchParse,
+  postTalentSearchParseDocument,
 } from '../controllers/intelligenceController.js';
 
 export const intelligenceRouter = Router();
@@ -107,6 +109,7 @@ intelligenceRouter.post('/match/batch', postBatchCandidateMatch);
 intelligenceRouter.post('/job', postJobIntelligence);
 intelligenceRouter.post('/interview', postInterviewIntelligence);
 intelligenceRouter.post('/search/parse', postTalentSearchParse);
+intelligenceRouter.post('/search/parse-document', upload.single('file'), postTalentSearchParseDocument);
 intelligenceRouter.post('/search', postSemanticSearch);
 intelligenceRouter.post('/search/preview', postSemanticSearchPreview);
 intelligenceRouter.post('/search/intent', postSemanticSearchIntent);

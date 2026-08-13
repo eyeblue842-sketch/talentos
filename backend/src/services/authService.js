@@ -8,6 +8,7 @@ import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
 import { resolveMembershipForRequest } from './organisationAccessService.js';
 import { assertInitialSetupCompleted } from './setupService.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 
 function buildCandidateProfileData(payload) {
   const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
@@ -206,6 +207,10 @@ export async function loginUser(email, password) {
       candidateProfile: true,
     },
   });
+
+  if (updatedUser.candidateProfile) {
+    await touchCandidateLastActive(updatedUser.candidateProfile.id);
+  }
 
   const token = signToken({ userId: updatedUser.id, role: updatedUser.role, sessionVersion: updatedUser.sessionVersion });
   const { activeMembership } = await resolveMembershipForRequest(updatedUser);

@@ -31,14 +31,19 @@ function latestEmailLinkToken(paramName) {
 
 function withRelationsUser(user, include = {}) {
   if (!user) return null;
+  const recruiterProfile = state.recruiterProfiles.find((item) => item.userId === user.id) || null;
   return {
     ...clone(user),
-    recruiterProfile: include.recruiterProfile ? {
-      ...clone(state.recruiterProfiles.find((item) => item.userId === user.id) || null),
-      organisation: include.recruiterProfile.include?.organisation
-        ? clone(state.organisations.find((item) => item.id === state.recruiterProfiles.find((entry) => entry.userId === user.id)?.organisationId) || null)
-        : undefined,
-    } : undefined,
+    recruiterProfile: include.recruiterProfile
+      ? recruiterProfile
+        ? {
+            ...clone(recruiterProfile),
+            organisation: include.recruiterProfile.include?.organisation
+              ? clone(state.organisations.find((item) => item.id === recruiterProfile.organisationId) || null)
+              : undefined,
+          }
+        : null
+      : undefined,
     candidateProfile: include.candidateProfile ? clone(state.candidateProfiles.find((item) => item.userId === user.id) || null) : undefined,
   };
 }
@@ -282,6 +287,7 @@ function installPrismaMocks() {
   prisma.job ||= {};
   prisma.application ||= {};
   prisma.candidateProfile ||= {};
+  prisma.recruiterProfile ||= {};
   prisma.authToken ||= {};
   prisma.savedCandidate ||= {};
 
@@ -342,6 +348,31 @@ function installPrismaMocks() {
       user.sessionVersion += data.sessionVersion.increment;
       delete nextData.sessionVersion;
     }
+    if (data.recruiterProfile?.create) {
+      state.recruiterProfiles.push({
+        id: `recruiter-profile-${state.recruiterProfiles.length + 1}`,
+        userId: user.id,
+        ...data.recruiterProfile.create,
+      });
+      delete nextData.recruiterProfile;
+    }
+    if (data.candidateProfile?.create) {
+      state.candidateProfiles.push({
+        id: `candidate-profile-${state.candidateProfiles.length + 1}`,
+        userId: user.id,
+        preferredLocations: [],
+        currentCtcLpa: null,
+        expectedCtcLpa: null,
+        availability: 'IMMEDIATE',
+        summary: null,
+        resumeUrl: null,
+        profileViews: 0,
+        lastActiveAt: null,
+        updatedAt: new Date(),
+        ...data.candidateProfile.create,
+      });
+      delete nextData.candidateProfile;
+    }
     Object.assign(user, nextData, { updatedAt: new Date() });
     return withRelationsUser(user, include);
   };
@@ -388,7 +419,10 @@ function installPrismaMocks() {
   };
 
   prisma.candidateProfile.findUnique = async ({ where, include = {} }) => {
-    const candidate = state.candidateProfiles.find((item) => item.id === where.id);
+    const candidate = state.candidateProfiles.find((item) => (
+      (where.id && item.id === where.id)
+      || (where.userId && item.userId === where.userId)
+    ));
     return withRelationsCandidate(candidate, include);
   };
 
@@ -398,6 +432,37 @@ function installPrismaMocks() {
       candidates = candidates.filter((item) => where.id.in.includes(item.id));
     }
     return candidates.map((candidate) => withRelationsCandidate(candidate, include));
+  };
+  prisma.candidateProfile.create = async ({ data }) => {
+    const candidate = {
+      id: `candidate-profile-${state.candidateProfiles.length + 1}`,
+      preferredLocations: [],
+      currentCtcLpa: null,
+      expectedCtcLpa: null,
+      availability: 'IMMEDIATE',
+      summary: null,
+      resumeUrl: null,
+      profileViews: 0,
+      lastActiveAt: null,
+      updatedAt: new Date(),
+      ...data,
+    };
+    state.candidateProfiles.push(candidate);
+    return clone(candidate);
+  };
+
+  prisma.recruiterProfile.findUnique = async ({ where }) => clone(state.recruiterProfiles.find((item) => (
+    (where.id && item.id === where.id)
+    || (where.userId && item.userId === where.userId)
+  )) || null);
+  prisma.recruiterProfile.create = async ({ data }) => {
+    const recruiterProfile = {
+      id: `recruiter-profile-${state.recruiterProfiles.length + 1}`,
+      organisationId: null,
+      ...data,
+    };
+    state.recruiterProfiles.push(recruiterProfile);
+    return clone(recruiterProfile);
   };
 
   prisma.job.findUnique = async ({ where }) => clone(state.jobs.find((item) => item.id === where.id) || null);
@@ -1054,6 +1119,186 @@ test('OAuth role context is server-side, cannot be escalated client-side, and re
     assert.equal(recruiterCallback.statusCode, 302);
     assert.match(recruiterCallback.headers.location, /oauthError=/);
     assert.equal(state.users.some((item) => item.role === 'RECRUITER' && item.email === 'gmailuser@gmail.com'), false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('OAuth repairs a missing candidate profile for an existing candidate user', async () => {
+  state.users.push({
+    id: 'candidate-oauth-user',
+    email: 'oauthrepair@example.com',
+    passwordHash: await bcrypt.hash('Password123', 12),
+    role: 'CANDIDATE',
+    isActive: true,
+    sessionVersion: 0,
+    emailVerifiedAt: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+  });
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'oauth-access-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      email: 'oauthrepair@example.com',
+      name: 'OAuth Repair Candidate',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const start = await request(app).get('/api/auth/oauth/google/start?role=CANDIDATE&mode=login');
+    const stateToken = new URL(start.headers.location).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/api/auth/oauth/google/callback?code=oauth-code&state=${stateToken}`);
+
+    assert.equal(callback.statusCode, 302);
+    assert.match(callback.headers.location, /next=%2Fcandidate%2Fdashboard/);
+
+    const repairedUser = state.users.find((item) => item.id === 'candidate-oauth-user');
+    const repairedProfile = state.candidateProfiles.find((item) => item.userId === 'candidate-oauth-user');
+    assert.ok(repairedUser.emailVerifiedAt);
+    assert.ok(repairedProfile);
+    assert.equal(repairedProfile.fullName, 'OAuth Repair Candidate');
+    assert.equal(repairedProfile.email, 'oauthrepair@example.com');
+    assert.equal(repairedProfile.location, '');
+    assert.deepEqual(repairedProfile.preferredLocations, []);
+    assert.equal(repairedProfile.totalExperience, 0);
+    assert.deepEqual(repairedProfile.skills, []);
+    assert.match(repairedProfile.sharedResumeSlug, /^oauth-repair-candidate-\d+$/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('OAuth repairs a missing recruiter profile for an existing recruiter user', async () => {
+  state.users.push({
+    id: 'recruiter-oauth-user',
+    email: 'repair@company.com',
+    passwordHash: await bcrypt.hash('Password123', 12),
+    role: 'RECRUITER',
+    isActive: true,
+    sessionVersion: 0,
+    emailVerifiedAt: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+  });
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'oauth-access-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      email: 'repair@company.com',
+      name: 'Recruiter Repair',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const start = await request(app).get('/api/auth/oauth/google/start?role=RECRUITER&mode=login');
+    const stateToken = new URL(start.headers.location).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/api/auth/oauth/google/callback?code=oauth-code&state=${stateToken}`);
+
+    assert.equal(callback.statusCode, 302);
+    assert.match(callback.headers.location, /next=%2Frecruiter%2Fonboarding/);
+
+    const repairedUser = state.users.find((item) => item.id === 'recruiter-oauth-user');
+    const repairedProfile = state.recruiterProfiles.find((item) => item.userId === 'recruiter-oauth-user');
+    assert.ok(repairedUser.emailVerifiedAt);
+    assert.ok(repairedProfile);
+    assert.equal(repairedProfile.companyEmailDomain, 'company.com');
+    assert.deepEqual(repairedProfile.officeLocations, []);
+    assert.equal(repairedProfile.profileCompleted, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('OAuth leaves an existing user with the correct profile unchanged', async () => {
+  const originalEmailVerifiedAt = state.users.find((item) => item.id === 'candidate-1-user').emailVerifiedAt;
+  const originalProfileCount = state.candidateProfiles.length;
+  const originalProfileSnapshot = clone(state.candidateProfiles.find((item) => item.userId === 'candidate-1-user'));
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'oauth-access-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      email: 'candidate1@example.com',
+      name: 'Candidate One Updated Name',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const start = await request(app).get('/api/auth/oauth/google/start?role=CANDIDATE&mode=login');
+    const stateToken = new URL(start.headers.location).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/api/auth/oauth/google/callback?code=oauth-code&state=${stateToken}`);
+
+    assert.equal(callback.statusCode, 302);
+    assert.match(callback.headers.location, /next=%2Fcandidate%2Fdashboard/);
+    assert.equal(state.candidateProfiles.length, originalProfileCount);
+    assert.deepEqual(clone(state.candidateProfiles.find((item) => item.userId === 'candidate-1-user')), originalProfileSnapshot);
+    assert.equal(state.users.find((item) => item.id === 'candidate-1-user').emailVerifiedAt?.toISOString(), originalEmailVerifiedAt?.toISOString());
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('OAuth role mismatch still redirects with a conflict error', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'oauth-access-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      email: 'candidate1@example.com',
+      name: 'Candidate One',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const start = await request(app).get('/api/auth/oauth/google/start?role=RECRUITER&mode=login');
+    const stateToken = new URL(start.headers.location).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/api/auth/oauth/google/callback?code=oauth-code&state=${stateToken}`);
+
+    assert.equal(callback.statusCode, 302);
+    assert.match(callback.headers.location, /oauthError=This\+email\+is\+already\+linked\+to\+a\+different\+account\+type\./);
+    assert.equal(state.recruiterProfiles.some((item) => item.userId === 'candidate-1-user'), false);
   } finally {
     global.fetch = originalFetch;
   }

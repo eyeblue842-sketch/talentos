@@ -1,5 +1,5 @@
 import { prisma } from '../config/db.js';
-import { enqueueBackgroundTask } from './backgroundTaskService.js';
+import { enqueueBackgroundTask, recoverExpiredLeaseTasks } from './backgroundTaskService.js';
 
 function hoursFromNow(hours) {
   return new Date(Date.now() + (hours * 60 * 60 * 1000));
@@ -12,7 +12,30 @@ export async function scheduleProductionBackgroundTasks() {
     scheduleOfferReminderTasks(),
     scheduleOfferExpiryTasks(),
     scheduleCleanupTasks(),
+    recoverStuckTasks(),
   ]);
+}
+
+// Requeues (or dead-letters, if retries are exhausted) any task left in
+// RUNNING past its lease — the signal that the worker which claimed it
+// crashed, was killed, or lost its DB connection mid-task.
+export async function recoverStuckTasks() {
+  const recovered = await recoverExpiredLeaseTasks();
+  if (recovered.length) {
+    console.log(JSON.stringify({
+      level: 'warn',
+      event: 'worker.task.lease_expired_recovery',
+      count: recovered.length,
+      tasks: recovered.map((task) => ({
+        id: task.id,
+        type: task.type,
+        entityId: task.entityId,
+        previousOwner: task.previousOwner,
+        nextStatus: task.nextStatus,
+      })),
+    }));
+  }
+  return recovered;
 }
 
 export async function scheduleResumeParsingTasks() {

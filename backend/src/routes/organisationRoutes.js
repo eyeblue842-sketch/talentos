@@ -4,6 +4,7 @@ import { validateSchema } from '../middleware/schema.js';
 import {
   organisationInvitationCreateSchema,
   organisationInvitationTokenSchema,
+  organisationPostCreateSchema,
   organisationCreateSchema,
   organisationMemberCreateSchema,
   organisationMemberUpdateSchema,
@@ -22,6 +23,7 @@ import {
   getOrganisationMembers,
   getOrganisationOnboarding,
   postOrganisationInvitation,
+  postOrganisationPost,
   postOrganisationInvitationResend,
   postOrganisationInvitationRevoke,
 } from '../controllers/organisationController.js';
@@ -42,3 +44,4 @@ organisationRouter.post('/invitations/:invitationId/revoke', auth(['RECRUITER'])
 organisationRouter.get('/invitations/token/:token', getInvitationTokenDetail);
 organisationRouter.post('/invitations/accept', auth(['RECRUITER']), validateSchema(organisationInvitationTokenSchema), acceptInvitationToken);
 organisationRouter.get('/audit-logs', auth(['RECRUITER']), getOrganisationAuditLogs);
+organisationRouter.post('/current/posts', auth(['RECRUITER']), validateSchema(organisationPostCreateSchema), postOrganisationPost);

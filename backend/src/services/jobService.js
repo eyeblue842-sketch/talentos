@@ -97,13 +97,21 @@ function normalizeJobPayload(payload) {
     title: payload.title,
     description: payload.description,
     skillsRequired: payload.skillsRequired,
+    responsibilities: payload.responsibilities || [],
+    requirements: payload.requirements || [],
+    benefits: payload.benefits || [],
+    applicationNotificationEmail: payload.applicationNotificationEmail || null,
     experienceMin: payload.experienceMin,
     experienceMax: payload.experienceMax,
     salaryMin: payload.salaryMin ?? null,
     salaryMax: payload.salaryMax ?? null,
     currency: payload.currency || null,
     isPublic: payload.isPublic ?? true,
-    publicSalaryEnabled: payload.publicSalaryEnabled ?? false,
+    // Salary stays required internally (see jobCreateSchema/jobUpdateSchema); this
+    // flag only controls whether serializePublicJob is allowed to expose it to
+    // candidates. Defaults to visible - a job is only hidden when the recruiter
+    // explicitly checks "Hide salary from candidates".
+    publicSalaryEnabled: payload.publicSalaryEnabled ?? true,
     featuredInPortal: payload.featuredInPortal ?? false,
     visibility: payload.visibility || 'EXTERNAL',
     location: payload.location,

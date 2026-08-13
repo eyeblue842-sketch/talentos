@@ -1,6 +1,6 @@
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
-import { serializeOrganisation, serializeOrganisationMembership } from '../serializers/index.js';
+import { serializeOrganisation, serializeOrganisationMembership, serializeOrganisationPost } from '../serializers/index.js';
 import { canManageMembers, requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { createNotification } from './notificationService.js';
 import { recordAuditLog } from './auditLogService.js';
@@ -327,4 +327,35 @@ export async function updateOrganisationMember(actorUser, membershipId, payload,
   });
 
   return serializeOrganisationMembership(updated);
+}
+
+export async function createOrganisationPost(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'], organisationId);
+  const post = await prisma.organisationPost.create({
+    data: {
+      organisationId: context.organisationId,
+      authorUserId: actorUser.id,
+      content: payload.content.trim(),
+      imageUrl: normalizeOptionalString(payload.imageUrl),
+      status: payload.status || 'PUBLISHED',
+      publishedAt: payload.status === 'DRAFT' ? null : new Date(),
+    },
+    include: {
+      authorUser: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
+
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'organisation.post.create',
+    entityType: 'OrganisationPost',
+    entityId: post.id,
+    afterData: { status: post.status },
+    ...requestMeta,
+  });
+
+  return serializeOrganisationPost(post);
 }

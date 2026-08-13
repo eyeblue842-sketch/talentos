@@ -700,6 +700,8 @@ test('cross-organisation job access is hidden and range validation rejects inval
       skillsRequired: ['Node.js'],
       experienceMin: 5,
       experienceMax: 2,
+      salaryMin: 12,
+      salaryMax: 18,
       location: 'Remote',
     }),
     /Minimum experience must be less than or equal to maximum experience/

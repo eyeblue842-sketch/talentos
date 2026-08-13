@@ -6,6 +6,7 @@ import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
 import { isPersonalEmail } from '../utils/email.js';
 import { consumeAuthToken, issueAuthToken } from './authTokenService.js';
 import { serializeAuthSession, serializeUser } from '../serializers/index.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 
 const providerConfigs = {
   google: {
@@ -150,6 +151,39 @@ async function createPasswordHash() {
   return bcrypt.hash(crypto.randomUUID(), 12);
 }
 
+function buildCandidateProfileDefaults({ email, name }) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const fallbackName = normalizedEmail.split('@')[0];
+  const fullName = name?.trim() || fallbackName;
+
+  return {
+    fullName,
+    email: normalizedEmail,
+    location: '',
+    preferredLocations: [],
+    totalExperience: 0,
+    skills: [],
+    sharedResumeSlug: slugify(`${fullName}-${Date.now()}`, { lower: true, strict: true }),
+  };
+}
+
+function buildRecruiterProfileDefaults(email) {
+  const normalizedEmail = email.toLowerCase().trim();
+  return {
+    companyEmailDomain: normalizedEmail.split('@')[1],
+    officeLocations: [],
+    profileCompleted: false,
+  };
+}
+
+function logOAuthRepair(event, payload) {
+  console.info(JSON.stringify({
+    level: 'info',
+    event,
+    ...payload,
+  }));
+}
+
 async function findOrCreateOAuthUser({ email, name, role }) {
   const normalizedEmail = email.toLowerCase().trim();
   if (role === 'RECRUITER' && isPersonalEmail(normalizedEmail)) {
@@ -170,13 +204,100 @@ async function findOrCreateOAuthUser({ email, name, role }) {
       throw error;
     }
 
+    const updateData = {};
+    let repairedCandidateProfile = false;
+    let repairedRecruiterProfile = false;
+
     if (!user.emailVerifiedAt) {
-      user = await prisma.user.update({
+      updateData.emailVerifiedAt = new Date();
+    }
+
+    logOAuthRepair('oauth.user.repair.check', {
+      userId: user.id,
+      role: user.role,
+      candidateProfileMissing: role === 'CANDIDATE' ? !user.candidateProfile : false,
+      recruiterProfileMissing: role === 'RECRUITER' ? !user.recruiterProfile : false,
+      candidateProfileCreatePlanned: false,
+      recruiterProfileCreatePlanned: false,
+      userUpdatePlanned: Boolean(updateData.emailVerifiedAt),
+    });
+
+    if (role === 'CANDIDATE' && !user.candidateProfile) {
+      const existingCandidateProfile = await prisma.candidateProfile.findUnique({
+        where: { userId: user.id },
+      });
+      const shouldCreateCandidateProfile = !existingCandidateProfile;
+
+      logOAuthRepair('oauth.user.repair.candidate', {
+        userId: user.id,
+        role: user.role,
+        candidateProfileMissing: true,
+        candidateProfileCreatePlanned: shouldCreateCandidateProfile,
+        userUpdatePlanned: Boolean(updateData.emailVerifiedAt),
+      });
+
+      if (shouldCreateCandidateProfile) {
+        await prisma.candidateProfile.create({
+          data: {
+            userId: user.id,
+            ...buildCandidateProfileDefaults({ email: normalizedEmail, name }),
+          },
+        });
+        repairedCandidateProfile = true;
+      }
+    }
+
+    if (role === 'RECRUITER' && !user.recruiterProfile) {
+      const existingRecruiterProfile = await prisma.recruiterProfile.findUnique({
+        where: { userId: user.id },
+      });
+      const shouldCreateRecruiterProfile = !existingRecruiterProfile;
+
+      logOAuthRepair('oauth.user.repair.recruiter', {
+        userId: user.id,
+        role: user.role,
+        recruiterProfileMissing: true,
+        recruiterProfileCreatePlanned: shouldCreateRecruiterProfile,
+        userUpdatePlanned: Boolean(updateData.emailVerifiedAt),
+      });
+
+      if (shouldCreateRecruiterProfile) {
+        await prisma.recruiterProfile.create({
+          data: {
+            userId: user.id,
+            ...buildRecruiterProfileDefaults(normalizedEmail),
+          },
+        });
+        repairedRecruiterProfile = true;
+      }
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await prisma.user.update({
         where: { id: user.id },
-        data: { emailVerifiedAt: new Date() },
-        include: { recruiterProfile: true, candidateProfile: true },
+        data: updateData,
+      });
+
+      logOAuthRepair('oauth.user.repair.user_update', {
+        userId: user.id,
+        role: user.role,
+        userUpdateExecuted: true,
       });
     }
+
+    user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      include: { recruiterProfile: true, candidateProfile: true },
+    });
+
+    logOAuthRepair('oauth.user.repair.result', {
+      userId: user.id,
+      role: user.role,
+      repairedCandidateProfile,
+      repairedRecruiterProfile,
+      candidateProfileId: user.candidateProfile?.id || null,
+      recruiterProfileId: user.recruiterProfile?.id || null,
+    });
 
     return { user, isNewUser: false };
   }
@@ -191,22 +312,12 @@ async function findOrCreateOAuthUser({ email, name, role }) {
       emailVerifiedAt: new Date(),
       recruiterProfile: role === 'RECRUITER'
         ? {
-            create: {
-              companyEmailDomain: normalizedEmail.split('@')[1],
-              officeLocations: [],
-              profileCompleted: false,
-            },
+            create: buildRecruiterProfileDefaults(normalizedEmail),
           }
         : undefined,
       candidateProfile: role === 'CANDIDATE'
         ? {
-            create: {
-              fullName: name || normalizedEmail.split('@')[0],
-              location: '',
-              totalExperience: 0,
-              skills: [],
-              sharedResumeSlug: slugify(`${name || normalizedEmail}-${Date.now()}`, { lower: true, strict: true }),
-            },
+            create: buildCandidateProfileDefaults({ email: normalizedEmail, name }),
           }
         : undefined,
     },
@@ -223,7 +334,7 @@ function resolvePostAuthPath(user, nextPath, isNewUser = false) {
   }
 
   if (user.role === 'RECRUITER') {
-    return user.recruiterProfile?.profileCompleted ? '/recruiter' : '/recruiter/onboarding';
+    return user.recruiterProfile?.profileCompleted ? '/recruiter/home' : '/recruiter/onboarding';
   }
 
   return isNewUser ? '/candidate/onboarding' : '/candidate/dashboard';
@@ -258,6 +369,10 @@ async function finalizeOAuthCallback(provider, code, stateValue) {
     name: profile.name,
     role,
   });
+
+  if (user.candidateProfile) {
+    await touchCandidateLastActive(user.candidateProfile.id);
+  }
 
   return {
     user,

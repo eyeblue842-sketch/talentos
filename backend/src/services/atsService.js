@@ -7,6 +7,7 @@ import { requireOrganisationContext, requireOrganisationRole } from './organisat
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
 import { cancelInterviewMeeting, scheduleInterviewMeeting } from '../meeting/meetingService.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 
 const allowedStages = {
   APPLIED: ['SHORTLISTED', 'REJECTED'],
@@ -395,6 +396,8 @@ export async function applyToJob(candidateId, payload) {
       interviewProcesses: true,
     },
   });
+
+  await touchCandidateLastActive(candidateId);
 
   return serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true });
 }
@@ -875,7 +878,9 @@ export async function getCandidateApplications(candidateId) {
     orderBy: { appliedAt: 'desc' },
   });
 
-  return applications.map((application) => serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true }));
+  // Candidate-facing (GET /api/ats/applications is CANDIDATE-only): publicJob
+  // ensures a hidden salary never leaks through the embedded job.
+  return applications.map((application) => serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true, publicJob: true }));
 }
 
 export async function addCandidatesToAts(actorUser, payload, organisationId = null, requestMeta = {}) {

@@ -62,7 +62,9 @@ export function buildCandidateCard(candidate, organisationId) {
   const ownApplication = getOwnOrganisationApplication(candidate, organisationId);
   const organisationTags = [...new Set((candidate.savedByRecruiters || []).map((item) => item.tag).filter(Boolean))];
   const latestEducation = extractEducationEntries(candidate)[0];
-  const currentRole = extractExperienceEntries(candidate)[0];
+  const currentRole = extractExperienceEntries(candidate).find((entry) => entry.isCurrent || entry.currentlyWorking)
+    || extractExperienceEntries(candidate)[0];
+  const previousRole = extractExperienceEntries(candidate).find((entry) => !(entry.isCurrent || entry.currentlyWorking));
   const canRevealCompensation = Boolean(ownApplication || organisationTags.length);
 
   return {
@@ -74,12 +76,32 @@ export function buildCandidateCard(candidate, organisationId) {
       savedByOrganisation: organisationTags.length > 0,
       organisationTags,
     }),
-    currentCompany: currentRole?.company || null,
+    currentCompany: candidate.currentEmployer || currentRole?.company || null,
+    currentDesignation: candidate.currentDesignation || candidate.currentTitle || currentRole?.title || null,
+    previousCompany: previousRole?.company || previousRole?.employer || null,
+    previousDesignation: previousRole?.title || previousRole?.jobTitle || previousRole?.designation || null,
+    summary: candidate.summary || null,
+    profileImageUrl: candidate.profileImageUrl || null,
+    educationDetail: latestEducation ? {
+      degree: latestEducation.degree || latestEducation.course || null,
+      institution: latestEducation.institution || latestEducation.school || null,
+      completionYear: latestEducation.completionYear || latestEducation.endYear || null,
+    } : null,
+    resumeAvailable: Boolean(
+      (candidate.latestResumeAsset?.kind === 'RESUME' && candidate.latestResumeAsset?.status === 'ACTIVE')
+      || candidate.latestResumeAssetId
+      || candidate.resumeUrl,
+    ),
     noticePeriodDays: candidate.noticePeriodDays,
     currentSalary: canRevealCompensation ? candidate.currentCtcLpa : null,
     expectedSalary: canRevealCompensation ? candidate.expectedCtcLpa : null,
     salaryVisible: canRevealCompensation,
     preferredLocations: candidate.preferredLocations || [],
+    preferredRoles: candidate.preferredRoles || [],
+    employmentPreferences: candidate.employmentPreferences || [],
+    workplacePreferences: candidate.workplacePreferences || [],
+    willingToRelocate: candidate.willingToRelocate,
+    workAuthorization: candidate.workAuthorization || null,
     keySkills: (candidate.skills || []).slice(0, 8),
     resumeUpdatedAt: iso(candidate.updatedAt),
     lastActiveAt: iso(candidate.lastActiveAt),

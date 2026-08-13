@@ -4,6 +4,7 @@ import {
   serializeCandidatePrivateDetail,
   serializeResumeBuilder,
 } from '../../serializers/index.js';
+import { normalizeCandidateProfileForPresentation } from '../candidateProfileSanitizer.js';
 import {
   findApplicationsByOrganisationCandidateIds,
   findAuthorizedCandidateDetailRecord,
@@ -259,6 +260,7 @@ export async function getRecruiterCandidatePreview(actorUser, candidateId, organ
   const ownApplication = getOwnOrganisationApplication(candidate, context.organisationId);
   const canRevealPrivateFields = Boolean(ownApplication || candidate.savedByRecruiters.length);
   const currentRole = extractExperienceEntries(candidate)[0];
+  const safeProfile = normalizeCandidateProfileForPresentation(candidate);
 
   await recordAuditLog({
     organisationId: context.organisationId,
@@ -278,24 +280,41 @@ export async function getRecruiterCandidatePreview(actorUser, candidateId, organ
     fullName: candidate.fullName,
     headline: candidate.headline,
     currentTitle: candidate.currentTitle,
+    currentDesignation: safeProfile.currentDesignation,
+    currentEmployer: safeProfile.currentEmployer,
     title: candidate.currentTitle || candidate.headline || 'Candidate',
     location: candidate.location,
     preferredLocations: candidate.preferredLocations || [],
+    preferredRoles: candidate.preferredRoles || [],
+    employmentPreferences: candidate.employmentPreferences || [],
+    workplacePreferences: candidate.workplacePreferences || [],
+    willingToRelocate: candidate.willingToRelocate,
+    workAuthorization: candidate.workAuthorization || null,
     totalExperience: candidate.totalExperience,
     availability: candidate.availability,
     noticePeriodDays: candidate.noticePeriodDays,
     skills: candidate.skills || [],
-    summary: candidate.summary,
+    summary: safeProfile.summary,
+    experienceEntries: safeProfile.experienceEntries || [],
+    educationEntries: safeProfile.educationEntries || [],
+    projectEntries: safeProfile.projectEntries || [],
+    certificationEntries: safeProfile.certificationEntries || [],
+    languageEntries: safeProfile.languageEntries || [],
+    portfolioLinks: safeProfile.portfolioLinks || [],
+    profileImageUrl: safeProfile.profileImageUrl || null,
     resumeSummary: buildResumeSummary(candidate),
     currentCompany: currentRole?.company || null,
     currentSalary: canRevealPrivateFields ? candidate.currentCtcLpa : null,
     expectedSalary: canRevealPrivateFields ? candidate.expectedCtcLpa : null,
     salaryVisible: canRevealPrivateFields,
     emailVisible: canRevealPrivateFields,
-    contact: canRevealPrivateFields && (candidate.user?.email || candidate.email)
-      ? { email: candidate.user?.email || candidate.email }
+    contact: canRevealPrivateFields && (candidate.user?.email || candidate.email || safeProfile.phoneNumber)
+      ? { email: candidate.user?.email || candidate.email || null, phone: safeProfile.phoneNumber || null }
       : null,
     resumeDownloadUrl: canRevealPrivateFields && (candidate.resumeUrl || candidate.latestResumeAssetId)
+      ? `/api/resumes/candidate/${candidate.id}/download`
+      : null,
+    resumeUrl: canRevealPrivateFields && (candidate.resumeUrl || candidate.latestResumeAssetId)
       ? `/api/resumes/candidate/${candidate.id}/download`
       : null,
     resumeBuilder: candidate.resumeBuilder ? serializeResumeBuilder(candidate.resumeBuilder) : null,

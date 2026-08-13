@@ -113,6 +113,7 @@ import {
   searchSemanticCandidates,
 } from '../intelligence/services/semanticSearchService.js';
 import { parseTalentSearchQuery } from '../intelligence/services/talentSearchService.js';
+import { extractResumeText } from '../services/resumeImportUtils.js';
 import { getIntelligenceProviderHealth } from '../intelligence/services/providerService.js';
 
 function requestMeta(req) {
@@ -568,29 +569,82 @@ export async function postInterviewIntelligence(req, res, next) {
   }
 }
 
+async function runTalentSearchParse(user, payload) {
+  const legacy = await parseTalentSearchQuery(user, payload);
+  let parsedQuery = null;
+  let intent = null;
+
+  try {
+    [parsedQuery, intent] = await Promise.all([
+      getSemanticSearchParse(user, payload),
+      getSemanticSearchIntent(user, payload),
+    ]);
+  } catch {
+    parsedQuery = null;
+    intent = null;
+  }
+
+  return {
+    ...legacy,
+    searchMode: parsedQuery?.mode || null,
+    parsedQuery,
+    searchIntent: intent || null,
+  };
+}
+
 export async function postTalentSearchParse(req, res, next) {
   try {
     const payload = naturalLanguageTalentSearchSchema.parse(req.body);
-    const legacy = await parseTalentSearchQuery(req.user, payload);
-    let parsedQuery = null;
-    let intent = null;
+    const data = await runTalentSearchParse(req.user, payload);
+    return sendSuccess(res, 200, data);
+  } catch (error) {
+    return next(error);
+  }
+}
 
-    try {
-      [parsedQuery, intent] = await Promise.all([
-        getSemanticSearchParse(req.user, payload),
-        getSemanticSearchIntent(req.user, payload),
-      ]);
-    } catch {
-      parsedQuery = null;
-      intent = null;
+const DOCUMENT_MAX_QUERY_CHARS = 1000;
+const DOCUMENT_EXTENSION_BY_MIME = {
+  'application/pdf': '.pdf',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+};
+
+/**
+ * AI Assist "Upload Job Description" mode. Reuses the same safe upload
+ * middleware (multer, PDF/DOC/DOCX allow-list) already used by resume upload
+ * and import, the same resume text extraction used by the resume-parsing
+ * pipeline, and the same talent-search parsing used by postTalentSearchParse -
+ * no new AI client and no new architecture, only a thin wire-together so the
+ * recruiter Resume Search AI Assist modal can accept an uploaded JD file.
+ */
+export async function postTalentSearchParseDocument(req, res, next) {
+  try {
+    if (!req.file) {
+      const error = new Error('Upload a PDF, DOC or DOCX job description file.');
+      error.statusCode = 422;
+      throw error;
     }
 
-    const data = {
-      ...legacy,
-      searchMode: parsedQuery?.mode || null,
-      parsedQuery,
-      searchIntent: intent || null,
-    };
+    const extension = DOCUMENT_EXTENSION_BY_MIME[req.file.mimetype];
+    if (!extension) {
+      const error = new Error('Unsupported job description file type.');
+      error.statusCode = 422;
+      throw error;
+    }
+
+    const { text } = await extractResumeText({ extension, fileBuffer: req.file.buffer });
+    const trimmedText = String(text || '').trim();
+    if (trimmedText.length < 8) {
+      const error = new Error('Careeriz could not read enough text from this file to analyse it.');
+      error.statusCode = 422;
+      throw error;
+    }
+
+    const payload = naturalLanguageTalentSearchSchema.parse({
+      query: trimmedText.slice(0, DOCUMENT_MAX_QUERY_CHARS),
+      jobId: req.body?.jobId || undefined,
+    });
+    const data = await runTalentSearchParse(req.user, payload);
     return sendSuccess(res, 200, data);
   } catch (error) {
     return next(error);

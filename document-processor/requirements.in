@@ -1,0 +1,42 @@
+# Human-maintained source of truth for document-processor's Python
+# dependencies. requirements-lock.txt is GENERATED from this file (pip-compile
+# --generate-hashes) inside a real Python 3.11 Linux container -- never
+# hand-edited. Regenerate whenever this file changes.
+#
+# torch/torchvision are pinned to the OFFICIAL PyTorch CPU-only wheels via
+# direct URL + hash reference, NOT via a global --extra-index-url. This is
+# deliberate: adding --extra-index-url to a requirements file exposes EVERY
+# other package in this file to dependency-confusion risk (a malicious
+# package with the same name could be served from the second index).
+# Pinning torch/torchvision to an exact URL + hash instead means only these
+# two specific artifacts are sourced from PyTorch's host; every other
+# package below resolves exclusively from the default PyPI index.
+#
+# The default (unpinned-source) `torch` on PyPI resolves to a CUDA-enabled
+# Linux wheel that pulls in the full nvidia-*/cuda-toolkit/triton chain
+# (~2.5GB+) even though this service is CPU-only (GPU_ENABLED=false,
+# no GPU provisioned anywhere) -- confirmed by a real build attempt during
+# Step 6B. The CPU-only wheel below has no such dependency at all.
+#
+# Hashes below were independently verified: downloaded directly from
+# download.pytorch.org and re-hashed locally with sha256sum, matching the
+# index-published digest exactly (Step 6B CPU-only investigation).
+torch @ https://download.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl \
+    --hash=sha256:6746dbcbeb526eb61330b76b41ff1b4eb848951103a892eeb080dfa2b264667b
+torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.28.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl \
+    --hash=sha256:1dad604dfc0177ecebe0891bd9701fe2c62ec3f7819a247be541b3fb6effee99
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+python-multipart==0.0.32
+
+docling==2.119.0
+
+opencv-python==5.0.0.93
+pillow==12.3.0
+pypdfium2==5.12.1
+
+paddlepaddle==3.3.1
+paddlex==3.7.2
+paddleocr==3.7.0

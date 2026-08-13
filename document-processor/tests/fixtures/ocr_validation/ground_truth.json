@@ -1,0 +1,146 @@
+{
+  "01-clean-scanned-resume.png": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "02-jpg-resume.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "03-mobile-photo-perspective.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "04-rotated-90.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 90,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "05-rotated-180.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 180,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "06-rotated-270.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 270,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "07-low-contrast.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "08-shadow.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "09-glare.jpg": {
+    "fullName": "Priya Sharma",
+    "email": "priya.sharma.dev@example.invalid",
+    "phoneNormalized": "+919876543210",
+    "employer": "Vellora Systems Pvt Ltd",
+    "title": "Senior Backend Engineer",
+    "orientationDegrees": 0,
+    "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+  },
+  "10-two-column.png": {
+    "fullName": "Ananya Rao",
+    "email": "ananya.rao.qa@example.invalid",
+    "phoneNormalized": "+919000011122",
+    "title": "QA Lead",
+    "orientationDegrees": 0,
+    "isTwoColumn": true,
+    "expectedColumnOrder": [
+      "left",
+      "right"
+    ]
+  },
+  "11-table-resume.png": {
+    "hasTable": true,
+    "expectedCells": [
+      "Company",
+      "Title",
+      "Years",
+      "Kestrel Labs",
+      "Engineer",
+      "2018-2021",
+      "Vellora Systems",
+      "Sr Engineer",
+      "2021-Now"
+    ],
+    "orientationDegrees": 0
+  },
+  "12-mixed-digital-scanned.pdf": {
+    "page1": {
+      "fullName": "Rohan Iyer",
+      "email": "rohan.iyer.pm@example.invalid",
+      "title": "Product Manager",
+      "employer": "Meridian Retail Pvt Ltd",
+      "sourceType": "GOOD_DIGITAL_TEXT"
+    },
+    "page2": {
+      "sourceType": "IMAGE_ONLY",
+      "fullName": "Priya Sharma",
+      "email": "priya.sharma.dev@example.invalid",
+      "phoneNormalized": "+919876543210",
+      "employer": "Vellora Systems Pvt Ltd",
+      "title": "Senior Backend Engineer",
+      "orientationDegrees": 0,
+      "fullTextApprox": "Priya Sharma priya.sharma.dev@example.invalid +91 98765 43210 Senior Backend Engineer Vellora Systems Pvt Ltd 2021 - Present Built distributed order-processing services in Go and Python. Led a team of 4 engineers across two product lines. Education: B.Tech Computer Science, Anna University, 2016"
+    }
+  },
+  "13-indian-candidate.png": {
+    "fullName": "Deepak Nair",
+    "email": "deepak.nair.ops@example.invalid",
+    "phoneNormalized": "+918899022110",
+    "title": "Operations Manager",
+    "employer": "Coastal Freight Logistics Pvt Ltd",
+    "orientationDegrees": 0
+  },
+  "15-password-protected.pdf": {
+    "expectedBehavior": "PDF_PASSWORD_PROTECTED validation error, no OCR attempted"
+  },
+  "14-corrupt-truncated.jpg": {
+    "expectedBehavior": "IMAGE_CORRUPT_OR_UNREADABLE validation error, no OCR attempted"
+  },
+  "16-decompression-bomb.png": {
+    "expectedBehavior": "IMAGE_DIMENSION_TOO_LARGE or IMAGE_PIXEL_COUNT_TOO_LARGE validation error, rejected before decode"
+  }
+}

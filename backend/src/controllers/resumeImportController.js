@@ -14,6 +14,7 @@ import {
   streamResumeImportItemFile,
   updateResumeImportItem,
 } from '../services/resumeImportService.js';
+import { getWorkerHealthSummary } from '../services/workerHeartbeatService.js';
 import { sendSuccess } from '../utils/response.js';
 
 function pipeDownload(res, filename, mimeType, contentLength, stream) {
@@ -36,6 +37,21 @@ export async function postResumeImportBatch(req, res, next) {
   try {
     const result = await createResumeImportBatch(req.user, req.files || [], req.user.activeMembership?.organisationId, meta(req));
     sendSuccess(res, 201, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getResumeImportWorkerStatus(req, res, next) {
+  try {
+    // Recruiter-safe: excludes hostname/processId, which are operational
+    // environment details, not appropriate to expose outside admin surfaces.
+    const summary = await getWorkerHealthSummary({ includeHostDetail: false, workerType: 'BACKGROUND_WORKER' });
+    sendSuccess(res, 200, {
+      online: summary.online,
+      staleThresholdMs: summary.staleThresholdMs,
+      workerCount: summary.workers.length,
+    });
   } catch (error) {
     next(error);
   }

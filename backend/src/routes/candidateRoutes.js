@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import { validateSchema } from '../middleware/schema.js';
+import { handleCandidateProfilePhotoUpload } from '../middleware/candidateProfilePhotoUpload.js';
 import {
   candidateAccountDeactivationSchema,
   interviewRescheduleRequestCreateSchema,
@@ -18,6 +19,7 @@ import {
 import {
   createCandidateJobView,
   createSavedJob,
+  deleteCandidateProfilePhoto,
   deleteSavedJob,
   deleteCandidateRecentJobs,
   exportCandidateData,
@@ -26,6 +28,7 @@ import {
   getCandidateNotificationList,
   getCandidateOffers,
   getCandidateOnboarding,
+  getCandidateProfilePhoto,
   getCandidatePreferenceSettings,
   getCandidateProfile,
   getCandidateRecentJobs,
@@ -35,6 +38,7 @@ import {
   markCandidateNotifications,
   patchCandidateProfile,
   patchCandidateSettings,
+  postCandidateProfilePhoto,
   postCandidateInterviewRescheduleRequest,
   postCandidateAccountDeactivation,
   postCandidateOnboarding,
@@ -49,6 +53,9 @@ candidateRouter.get('/onboarding', getCandidateOnboarding);
 candidateRouter.post('/onboarding', validateSchema(candidateOnboardingUpdateSchema), postCandidateOnboarding);
 candidateRouter.get('/profile', getCandidateProfile);
 candidateRouter.patch('/profile', validateSchema(candidateProfileUpdateSchema), patchCandidateProfile);
+candidateRouter.get('/profile-photo', getCandidateProfilePhoto);
+candidateRouter.post('/profile-photo', handleCandidateProfilePhotoUpload, postCandidateProfilePhoto);
+candidateRouter.delete('/profile-photo', deleteCandidateProfilePhoto);
 candidateRouter.get('/settings', getCandidatePreferenceSettings);
 candidateRouter.patch('/settings', validateSchema(candidateSettingsUpdateSchema), patchCandidateSettings);
 candidateRouter.get('/interviews', getCandidateInterviews);

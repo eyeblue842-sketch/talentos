@@ -10,6 +10,7 @@ import { uploadCandidateResumeAsset } from './applicationWorkflowService.js';
 import { readPrivateFileNodeStream } from '../config/storage.js';
 import { openLegacyResumeFile } from './legacyResumeService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 import {
   countSavedCandidates,
   deleteSavedCandidateById,
@@ -55,6 +56,7 @@ export async function saveCandidateProfile(candidateId, payload) {
   });
 
   await indexCandidateResume(candidate);
+  await touchCandidateLastActive(candidateId);
   await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_PROFILE_UPDATED');
   return serializeCandidateProfile(candidate, { includePrivate: true });
 }

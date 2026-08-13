@@ -28,6 +28,11 @@ enum OrganisationStatus {
   INACTIVE
 }
 
+enum OrganisationPostStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum OrganisationUnitType {
   BUSINESS_UNIT
   DEPARTMENT
@@ -726,6 +731,7 @@ model User {
   semanticSearchQueries         SemanticSearchQuery[]      @relation("SemanticSearchQueryCreatedBy")
   semanticSearchExecutions      SemanticSearchExecution[]  @relation("SemanticSearchExecutionCreatedBy")
   ownedSavedCandidateSearches   SavedCandidateSearch[]     @relation("SavedCandidateSearchOwner")
+  organisationPosts             OrganisationPost[]         @relation("OrganisationPostAuthor")
 }
 
 model Organisation {
@@ -801,8 +807,26 @@ model Organisation {
   semanticSearchQueries      SemanticSearchQuery[]
   semanticSearchExecutions   SemanticSearchExecution[]
   savedCandidateSearches     SavedCandidateSearch[]
+  posts                      OrganisationPost[]
 
   @@index([status])
+}
+
+model OrganisationPost {
+  id            String                 @id @default(cuid())
+  organisationId String
+  authorUserId  String
+  content       String
+  imageUrl      String?
+  status        OrganisationPostStatus @default(PUBLISHED)
+  publishedAt   DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  organisation  Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  authorUser    User                   @relation("OrganisationPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status, publishedAt])
+  @@index([authorUserId, createdAt])
 }
 
 model OrganisationMembership {
@@ -1051,6 +1075,9 @@ model BackgroundTask {
   lastErrorMessage String?
   lastAttemptAt    DateTime?
   nextAttemptAt    DateTime?
+  leaseOwnerId     String?
+  leaseExpiresAt   DateTime?
+  lastHeartbeatAt  DateTime?
   createdByUserId  String?
   updatedByUserId  String?
   createdAt        DateTime             @default(now())
@@ -1063,6 +1090,32 @@ model BackgroundTask {
   @@index([organisationId, type, status])
   @@index([status, nextAttemptAt])
   @@index([entityType, entityId])
+  @@index([status, leaseExpiresAt])
+}
+
+enum WorkerHeartbeatStatus {
+  IDLE
+  PROCESSING
+  STOPPING
+  STOPPED
+}
+
+model WorkerHeartbeat {
+  id              String              @id @default(cuid())
+  workerId        String              @unique
+  workerType      String              @default("BACKGROUND_WORKER")
+  hostname        String?
+  processId       Int?
+  startedAt       DateTime
+  lastHeartbeatAt DateTime
+  status          WorkerHeartbeatStatus @default(IDLE)
+  currentTaskId   String?
+  parserVersion   String?
+  concurrency     Int                 @default(1)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([lastHeartbeatAt])
 }
 
 model OrganisationInvitation {
@@ -1143,8 +1196,8 @@ model CandidateProfile {
   totalExperience             Int                    @default(0)
   workplacePreferences        WorkplaceType[]        @default([])
   employmentPreferences       EmploymentType[]       @default([])
-  currentCtcLpa               Int?
-  expectedCtcLpa              Int?
+  currentCtcLpa               Float?
+  expectedCtcLpa              Float?
   availability                AvailabilityStatus     @default(IMMEDIATE)
   noticePeriodDays            Int?
   employmentStatus            CandidateEmploymentStatus?
@@ -1676,6 +1729,7 @@ model Job {
   responsibilities      String[]               @default([])
   requirements          String[]               @default([])
   benefits              String[]               @default([])
+  applicationNotificationEmail String?
   applicationDeadline   DateTime?
   applicationOpensAt    DateTime?
   applicationClosesAt   DateTime?

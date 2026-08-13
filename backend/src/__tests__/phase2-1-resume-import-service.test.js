@@ -76,6 +76,7 @@ function matchesWhere(row, where = {}) {
     }
     if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
       if ('in' in value) return value.in.includes(row[key]);
+      if ('notIn' in value) return !value.notIn.includes(row[key]);
       if ('not' in value) return row[key] !== value.not;
       if ('equals' in value) return String(row[key] || '').toLowerCase() === String(value.equals || '').toLowerCase();
       if ('contains' in value) return String(row[key] || '').toLowerCase().includes(String(value.contains || '').toLowerCase());
@@ -153,6 +154,11 @@ function installPrismaMocks() {
     applyData(item, clone(data));
     return clone(item);
   };
+  prisma.resumeImportItem.updateMany = async ({ where = {}, data }) => {
+    const matches = state.items.filter((item) => matchesWhere(item, where));
+    matches.forEach((item) => applyData(item, clone(data)));
+    return { count: matches.length };
+  };
   prisma.resumeImportItem.findUnique = async ({ where } = {}) => clone(state.items.find((item) => item.id === where.id) || null);
   prisma.resumeImportItem.findFirst = async ({ where = {} } = {}) => clone(state.items.find((item) => matchesWhere(item, where)) || null);
   prisma.resumeImportItem.findMany = async ({ where = {} } = {}) => state.items.filter((item) => matchesWhere(item, where)).map(clone);
@@ -165,13 +171,23 @@ function installPrismaMocks() {
       error.code = 'P2002';
       throw error;
     }
-    const task = { id: nextId('task'), createdAt: now(), updatedAt: now(), ...clone(data) };
+    const task = { id: nextId('task'), createdAt: now(), updatedAt: now(), attemptCount: 0, ...clone(data) };
     state.backgroundTasks.push(task);
     return clone(task);
   };
   prisma.backgroundTask.findUnique = async ({ where } = {}) => clone(
     state.backgroundTasks.find((item) => item.id === where.id || item.idempotencyKey === where.idempotencyKey) || null
   );
+  prisma.backgroundTask.findFirst = async ({ where = {}, orderBy } = {}) => {
+    const matches = state.backgroundTasks.filter((item) => matchesWhere(item, where));
+    if (orderBy?.createdAt === 'desc') matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return clone(matches[0] || null);
+  };
+  prisma.backgroundTask.updateMany = async ({ where = {}, data }) => {
+    const matches = state.backgroundTasks.filter((item) => matchesWhere(item, where));
+    matches.forEach((item) => applyData(item, clone(data)));
+    return { count: matches.length };
+  };
 
   prisma.auditLog.create = async ({ data }) => {
     const auditLog = { id: nextId('audit'), createdAt: now(), ...clone(data) };

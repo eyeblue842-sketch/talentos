@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { getDefaultIntelligenceBaseUrl } from '../intelligence/providers/providerDefaults.js';
 
 dotenv.config();
 
@@ -35,7 +36,7 @@ const envSchema = z.object({
   QUEUE_PROVIDER: z.enum(['database', 'sqs']).default('database'),
   AWS_SQS_RESUME_IMPORT_QUEUE_URL: z.string().url().optional(),
   AWS_SQS_RESUME_IMPORT_DLQ_URL: z.string().url().optional(),
-  RESUME_IMPORT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+  RESUME_IMPORT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(1),
   RESUME_IMPORT_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
   RESUME_IMPORT_MAX_FILES: z.coerce.number().int().min(1).max(1000).default(100),
   RESUME_MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(10),
@@ -73,7 +74,7 @@ const envSchema = z.object({
   INTELLIGENCE_MODEL: z.string().trim().min(1).max(200).optional(),
   INTELLIGENCE_API_KEY: z.string().trim().min(1).optional(),
   INTELLIGENCE_BASE_URL: z.string().url().optional(),
-  INTELLIGENCE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
+  INTELLIGENCE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   INTELLIGENCE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   INTELLIGENCE_MAX_INPUT_CHARS: z.coerce.number().int().min(500).max(200000).default(30000),
   INTELLIGENCE_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(8000).default(1200),
@@ -83,10 +84,43 @@ const envSchema = z.object({
   AWS_BEDROCK_MODEL_ID: z.string().optional(),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(1),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(30000),
   TASK_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  TASK_LEASE_DURATION_MS: z.coerce.number().int().min(30000).max(1800000).default(300000),
+  WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(2000).max(60000).default(10000),
+  WORKER_HEARTBEAT_STALE_MS: z.coerce.number().int().min(10000).max(300000).default(45000),
+
+  // Document-processing service (Track B, Step 3): disabled by default so
+  // existing Node-only resume-import behaviour is completely unaffected
+  // until an engine (Docling/PaddleOCR) actually lands and is explicitly
+  // wired into the import pipeline in a later step.
+  DOCUMENT_PROCESSOR_ENABLED: z.enum(['true', 'false']).default('false'),
+  DOCUMENT_PROCESSOR_URL: z.string().url().default('http://127.0.0.1:8081'),
+  DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(3000),
+  // Step 4.5: the Python service enforces its own hard per-job deadline
+  // OUTSIDE the worker process, so a stuck engine can no longer run
+  // unbounded -- this value must stay safely ABOVE the Python side's
+  // deadline(s) plus transport/queue-wait margin, or Node would abandon
+  // (AbortController) a request Python was about to cleanly resolve with
+  // its own 504 PROCESSING_TIMEOUT.
+  //
+  // Step 6 changed the worst case: a single /v1/documents/analyse
+  // request for a PDF can now invoke Docling (DOCLING_CONVERSION_TIMEOUT_SECONDS,
+  // default 45s) AND THEN, additively in the same request, OCR
+  // (OCR_CONVERSION_TIMEOUT_SECONDS, default 60s) when PADDLEOCR_ENABLED
+  // is on -- these are two SEQUENTIAL worker calls within one HTTP
+  // request, not alternatives, so the worst case is their SUM, not their
+  // max. Default here = 45s + 60s (both Python hard deadlines, worst
+  // case) + 15s margin = 120s. If DOCLING_CONVERSION_TIMEOUT_SECONDS,
+  // OCR_CONVERSION_TIMEOUT_SECONDS, or either QUEUE_CAPACITY change on
+  // the Python side, this must be revisited (see
+  // docs/document-processor.md's worked timeout math).
+  DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(180000).default(120000),
+  DOCUMENT_PROCESSOR_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
+  DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().min(1000).max(600000).default(30000),
 }).superRefine((data, context) => {
   if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
     context.addIssue({
@@ -115,7 +149,9 @@ const envSchema = z.object({
     });
   }
 
-  if (providerEnabled && !['MOCK', 'BEDROCK'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_BASE_URL) {
+  const hasDefaultIntelligenceBaseUrl = Boolean(getDefaultIntelligenceBaseUrl(data.INTELLIGENCE_PROVIDER));
+
+  if (providerEnabled && !['MOCK', 'BEDROCK'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_BASE_URL && !hasDefaultIntelligenceBaseUrl) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['INTELLIGENCE_BASE_URL'],
@@ -345,4 +381,14 @@ export const env = {
   workerPollIntervalMs: parsed.data.WORKER_POLL_INTERVAL_MS,
   workerSchedulerIntervalMs: parsed.data.WORKER_SCHEDULER_INTERVAL_MS,
   taskRetentionDays: parsed.data.TASK_RETENTION_DAYS,
+  taskLeaseDurationMs: parsed.data.TASK_LEASE_DURATION_MS,
+  workerHeartbeatIntervalMs: parsed.data.WORKER_HEARTBEAT_INTERVAL_MS,
+  workerHeartbeatStaleMs: parsed.data.WORKER_HEARTBEAT_STALE_MS,
+  documentProcessorEnabled: parsed.data.DOCUMENT_PROCESSOR_ENABLED === 'true',
+  documentProcessorUrl: parsed.data.DOCUMENT_PROCESSOR_URL,
+  documentProcessorConnectTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS,
+  documentProcessorResponseTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS,
+  documentProcessorMaxRetries: parsed.data.DOCUMENT_PROCESSOR_MAX_RETRIES,
+  documentProcessorCircuitBreakerThreshold: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD,
+  documentProcessorCircuitBreakerCooldownMs: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS,
 };

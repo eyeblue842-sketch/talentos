@@ -1,5 +1,5 @@
 import { prisma } from '../config/db.js';
-import { serializeApplication, serializeJob } from '../serializers/index.js';
+import { serializeApplication, serializeJob, serializePublicJob } from '../serializers/index.js';
 import { requireOrganisationContext } from './organisationAccessService.js';
 
 function missingRelationTable(error) {
@@ -153,8 +153,10 @@ export async function getCandidateDashboard(candidateId) {
     applicationsCount,
     resumeViews: profile?.profileViews || 0,
     recentApplications: applications.map((application) =>
-      serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true })
+      serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true, publicJob: true })
     ),
-    suggestedJobs: suggestedJobs.map((job) => serializeJob(job, { includeRequisition: true })),
+    // Candidate-facing: serializePublicJob, not serializeJob, so a hidden
+    // salary never leaks into a candidate's own dashboard.
+    suggestedJobs: suggestedJobs.map((job) => serializePublicJob(job)),
   };
 }

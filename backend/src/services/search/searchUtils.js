@@ -48,10 +48,13 @@ export function buildDbWhere(filters = {}) {
     );
   }
 
-  const location = normalizeString(filters.location);
+  const locations = normalizeStringArray(filters.locations || filters.location);
+  const locationVariants = locations.length === 1 ? locationSearchVariants(locations[0]) : [];
+  const location = locationVariants.length === 1 ? locationVariants[0] : '';
   const minExperience = normalizeNumber(filters.minExperience);
   const maxExperience = normalizeNumber(filters.maxExperience);
-  const currentSalary = normalizeNumber(filters.currentSalary);
+  const currentSalary = normalizeNumber(filters.currentSalary ?? filters.salaryMin);
+  const currentSalaryMax = normalizeNumber(filters.salaryMax);
   const expectedSalary = normalizeNumber(filters.expectedSalary);
   const source = normalizeString(filters.source);
   const profileStatus = normalizeString(filters.profileStatus);
@@ -61,6 +64,11 @@ export function buildDbWhere(filters = {}) {
     source: source || undefined,
     profileStatus: profileStatus || undefined,
     location: location ? { contains: location, mode: 'insensitive' } : undefined,
+    AND: locations.length > 1
+      ? [{ OR: locations.flatMap((item) => locationSearchVariants(item).map((variant) => ({ location: { contains: variant, mode: 'insensitive' } }))) }]
+      : locationVariants.length > 1
+        ? [{ OR: locationVariants.map((variant) => ({ location: { contains: variant, mode: 'insensitive' } })) }]
+        : undefined,
     totalExperience: minExperience != null || maxExperience != null
       ? {
           gte: minExperience != null ? minExperience : undefined,
@@ -73,7 +81,12 @@ export function buildDbWhere(filters = {}) {
       : normalizeString(filters.relocation).toLowerCase() === 'not open'
         ? false
         : undefined,
-    currentCtcLpa: currentSalary != null ? { gte: currentSalary } : undefined,
+    currentCtcLpa: currentSalary != null || currentSalaryMax != null
+      ? {
+          gte: currentSalary != null ? currentSalary : undefined,
+          lte: currentSalaryMax != null ? currentSalaryMax : undefined,
+        }
+      : undefined,
     expectedCtcLpa: expectedSalary != null ? { lte: expectedSalary } : undefined,
     workAuthorization: normalizeString(filters.workAuthorization)
       ? { contains: normalizeString(filters.workAuthorization), mode: 'insensitive' }
@@ -85,13 +98,15 @@ export function buildDbWhere(filters = {}) {
         : normalizeString(filters.resumeFreshness) === 'Last 90 days'
           ? { gte: daysAgo(90) }
           : undefined,
-    lastActiveAt: normalizeString(filters.lastActive) === 'Today'
-      ? { gte: daysAgo(1) }
-      : normalizeString(filters.lastActive) === 'Last 7 days'
-        ? { gte: daysAgo(7) }
-        : normalizeString(filters.lastActive) === 'Last 30 days'
-          ? { gte: daysAgo(30) }
-          : undefined,
+    lastActiveAt: filters.activeWithin != null
+      ? { gte: daysAgo(Number(filters.activeWithin)) }
+      : normalizeString(filters.lastActive) === 'Today'
+        ? { gte: daysAgo(1) }
+        : normalizeString(filters.lastActive) === 'Last 7 days'
+          ? { gte: daysAgo(7) }
+          : normalizeString(filters.lastActive) === 'Last 30 days'
+            ? { gte: daysAgo(30) }
+            : undefined,
     importedAt: normalizeString(filters.importedSince)
       ? { gte: new Date(filters.importedSince) }
       : undefined,
@@ -99,11 +114,81 @@ export function buildDbWhere(filters = {}) {
 }
 
 export function extractEducationEntries(candidate) {
-  return Array.isArray(candidate.resumeBuilder?.education) ? candidate.resumeBuilder.education : [];
+  const entries = Array.isArray(candidate.educationEntries)
+    ? candidate.educationEntries
+    : candidate.resumeBuilder?.education;
+  return Array.isArray(entries) ? entries : [];
 }
 
 export function extractExperienceEntries(candidate) {
-  return Array.isArray(candidate.resumeBuilder?.experience) ? candidate.resumeBuilder.experience : [];
+  const entries = Array.isArray(candidate.experienceEntries)
+    ? candidate.experienceEntries
+    : candidate.resumeBuilder?.experience;
+  return Array.isArray(entries) ? entries : [];
+}
+
+const LOCATION_ALIASES = new Map([
+  ['bangalore', 'bengaluru'],
+  ['bengaluru', 'bengaluru'],
+  ['bombay', 'mumbai'],
+  ['mumbai', 'mumbai'],
+  ['gurgaon', 'gurugram'],
+  ['gurugram', 'gurugram'],
+  ['calcutta', 'kolkata'],
+  ['cochin', 'kochi'],
+  ['vizag', 'visakhapatnam'],
+  ['baroda', 'vadodara'],
+  ['trivandrum', 'thiruvananthapuram'],
+]);
+
+const COUNTRY_ALIASES = new Map([
+  ['us', 'united states'],
+  ['usa', 'united states'],
+  ['uk', 'united kingdom'],
+  ['uae', 'united arab emirates'],
+]);
+
+export function normalizeLocation(value) {
+  const text = normalizeString(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!text) return '';
+  const city = text.split(',')[0].trim();
+  return LOCATION_ALIASES.get(city) || city;
+}
+
+export function locationSearchVariants(value) {
+  const normalizedValue = normalizeLocation(value);
+  const original = normalizeString(value);
+  if (!normalizedValue || original.includes(',')) return [original];
+  const aliases = [...LOCATION_ALIASES.entries()]
+    .filter(([, canonical]) => canonical === normalizedValue)
+    .map(([alias]) => alias);
+  return [...new Set([original, normalizedValue, ...aliases])];
+}
+
+export function locationMatches(value, requested) {
+  const candidate = normalizeLocation(value);
+  const query = normalizeLocation(requested);
+  return Boolean(candidate && query && (candidate === query || candidate.startsWith(query) || query.startsWith(candidate)));
+}
+
+export function normalizeCountry(value) {
+  const text = normalizeString(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return COUNTRY_ALIASES.get(text) || text;
+}
+
+export function countryMatches(value, requested) {
+  const candidate = normalizeCountry(value);
+  const query = normalizeCountry(requested);
+  return Boolean(candidate && query && candidate === query);
+}
+
+export function normalizeCompany(value) {
+  return normalizeString(value).toLowerCase()
+    .replace(/[.,]+/g, ' ')
+    .replace(/\b(private limited|pvt ltd|private ltd|limited|ltd|llp|incorporated|inc|corporation|corp)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function buildRecentSearchLabel(filters) {

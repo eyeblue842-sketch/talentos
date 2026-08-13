@@ -156,6 +156,33 @@ export async function sendRecruiterOutreachEmail(to, subject, text, options = {}
   await sendTransactionalEmail({ to, subject, text }, options);
 }
 
+export async function sendRecruiterApplicationNotificationEmail({
+  to,
+  recruiterName,
+  candidateName,
+  jobTitle,
+  appliedAt,
+  applicationUrl,
+}, options = {}) {
+  const safeCandidateName = String(candidateName || 'A candidate').trim() || 'A candidate';
+  const safeJobTitle = String(jobTitle || 'your job').trim() || 'your job';
+  const safeRecruiterName = String(recruiterName || 'Recruiter').trim() || 'Recruiter';
+  const subject = `New application: ${safeJobTitle} - ${safeCandidateName}`;
+  const appliedLabel = appliedAt ? dayjs(appliedAt).format('DD MMM YYYY, hh:mm A') : 'just now';
+  const text = [
+    `Hello ${safeRecruiterName},`,
+    '',
+    `A new candidate has applied for ${safeJobTitle}.`,
+    '',
+    `Candidate: ${safeCandidateName}`,
+    `Applied: ${appliedLabel}`,
+    '',
+    `View application: ${applicationUrl}`,
+  ].join('\n');
+
+  await sendTransactionalEmail({ to, subject, text }, options);
+}
+
 export async function sendQueuedEmailPayload(message) {
   await sendTransactionalEmail(message, { queueOnFailure: false });
 }

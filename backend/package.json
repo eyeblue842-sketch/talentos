@@ -8,6 +8,8 @@
     "worker:dev": "nodemon src/worker.js",
     "start": "node src/server.js",
     "worker": "node src/worker.js",
+    "ai:health": "node scripts/ai-health-check.js",
+    "ai:enable-local-features": "node scripts/enable-local-ai-features.js",
     "build": "node -e \"console.log('backend build ready')\"",
     "lint": "eslint .",
     "test": "node --import ./env-bootstrap.js --test",
