@@ -275,6 +275,7 @@ export async function getRecruiterCandidatePreview(actorUser, candidateId, organ
 
   return {
     id: candidate.id,
+    userId: candidate.userId,
     fullName: candidate.fullName,
     headline: candidate.headline,
     currentTitle: candidate.currentTitle,

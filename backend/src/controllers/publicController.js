@@ -31,7 +31,7 @@ export async function listPublicJobs(req, res, next) {
 
 export async function getPublicJob(req, res, next) {
   try {
-    const result = await getPublicJobDetail(req.params.slug, getCandidateId(req));
+    const result = await getPublicJobDetail(req.params.slug, req.user || null, getCandidateId(req));
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
@@ -40,7 +40,7 @@ export async function getPublicJob(req, res, next) {
 
 export async function getPublicOrganisation(req, res, next) {
   try {
-    const result = await getPublicOrganisationProfile(req.params.slug, req.query, getCandidateId(req));
+    const result = await getPublicOrganisationProfile(req.params.slug, req.query, req.user || null, getCandidateId(req));
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

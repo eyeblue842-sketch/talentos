@@ -1,5 +1,10 @@
 import { prisma } from '../config/db.js';
 import { serializePublicJob, serializePublicOrganisation } from '../serializers/index.js';
+import {
+  enrichJobWithNetworkContext,
+  getCompanyFollowStatus,
+  listOrganisationRecruitersForNetwork,
+} from './networkService.js';
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
@@ -306,7 +311,7 @@ export async function searchPublicJobs(filters = {}, candidateId = null) {
   };
 }
 
-export async function getPublicJobDetail(slug, candidateId = null) {
+export async function getPublicJobDetail(slug, actor = null, candidateId = null) {
   const job = await prisma.job.findFirst({
     where: {
       slug,
@@ -352,13 +357,15 @@ export async function getPublicJobDetail(slug, candidateId = null) {
     .slice(0, 6)
     .map((item) => serializePublicJob(item.row));
 
+  const enrichedJob = actor ? await enrichJobWithNetworkContext(job, actor) : job;
+
   return {
-    job: serializePublicJob(job, { saved: savedIds.has(job.id) }),
+    job: serializePublicJob(enrichedJob, { saved: savedIds.has(job.id) }),
     similarJobs,
   };
 }
 
-export async function getPublicOrganisationProfile(slug, filters = {}, candidateId = null) {
+export async function getPublicOrganisationProfile(slug, filters = {}, actor = null, candidateId = null) {
   const organisation = await prisma.organisation.findFirst({
     where: {
       slug,
@@ -374,11 +381,19 @@ export async function getPublicOrganisationProfile(slug, filters = {}, candidate
   }
 
   const scopedFilters = { ...filters, organisationSlug: slug };
-  const jobs = await searchPublicJobs(scopedFilters, candidateId);
+  const [jobs, recruitingTeam, following] = await Promise.all([
+    searchPublicJobs(scopedFilters, candidateId),
+    actor ? listOrganisationRecruitersForNetwork(actor, organisation.id, 8) : Promise.resolve([]),
+    actor ? getCompanyFollowStatus(actor.id, organisation.id) : Promise.resolve(false),
+  ]);
 
   return {
-    organisation: serializePublicOrganisation(organisation),
+    organisation: {
+      ...serializePublicOrganisation(organisation),
+      following,
+    },
     jobs,
+    recruitingTeam,
   };
 }
 

@@ -177,6 +177,171 @@ export async function getPublicOrganisations() {
   return response.data;
 }
 
+export async function getNetworkConnections(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/connections${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function getNetworkReceivedRequests(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/requests/received${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function getNetworkSentRequests(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/requests/sent${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function getNetworkSuggestions(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/suggestions${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function searchNetworkPeople(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/search${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function sendNetworkRequest(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/network/requests', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function acceptNetworkRequest(requestId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/requests/${requestId}/accept`, { method: 'POST' }, token);
+  return response.data;
+}
+
+export async function declineNetworkRequest(requestId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/requests/${requestId}/decline`, { method: 'POST' }, token);
+  return response.data;
+}
+
+export async function withdrawNetworkRequest(requestId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/requests/${requestId}`, { method: 'DELETE' }, token);
+  return response.data;
+}
+
+export async function removeNetworkConnection(connectionId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/connections/${connectionId}`, { method: 'DELETE' }, token);
+  return response.data;
+}
+
+export async function blockNetworkUser(userId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/users/${userId}/block`, { method: 'POST' }, token);
+  return response.data;
+}
+
+export async function unblockNetworkUser(userId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/users/${userId}/block`, { method: 'DELETE' }, token);
+  return response.data;
+}
+
+export async function getNetworkMutualConnections(userId, filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/users/${userId}/mutual${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function getProfessionalProfile(userId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/people/${userId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getNetworkPrivacy() {
+  const token = await requireToken();
+  const response = await requestBackend('/network/privacy', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function updateNetworkPrivacy(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/network/privacy', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function followCompany(organisationId) {
+  const token = await requireToken();
+  const response = await requestBackend('/network/company-follows', {
+    method: 'POST',
+    body: JSON.stringify({ organisationId }),
+  }, token);
+  return response.data;
+}
+
+export async function unfollowCompany(organisationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/company-follows/${organisationId}`, { method: 'DELETE' }, token);
+  return response.data;
+}
+
+export async function getCompanyFollowStatus(organisationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/network/company-follows/${organisationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getMessageConversations(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/messages/conversations${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function createMessageConversation(participantUserId) {
+  const token = await requireToken();
+  const response = await requestBackend('/messages/conversations', {
+    method: 'POST',
+    body: JSON.stringify({ participantUserId }),
+  }, token);
+  return response.data;
+}
+
+export async function getMessageConversation(conversationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/messages/conversations/${conversationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getConversationMessages(conversationId, filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/messages/conversations/${conversationId}/messages${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta };
+}
+
+export async function markConversationRead(conversationId, payload = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/messages/conversations/${conversationId}/read`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function getMessageUnreadCount() {
+  const token = await requireToken();
+  const response = await requestBackend('/messages/unread-count', { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function getCandidateDashboard() {
   const token = await requireToken();
   const response = await requestBackend('/candidate/dashboard', { method: 'GET' }, token);

@@ -591,6 +591,15 @@ export function serializePublicJob(job, options = {}) {
     requirements: job.requirements || [],
     benefits: job.benefits || [],
     organisation: serializePublicOrganisation(job.organisation),
+    recruiter: job.recruiter ? {
+      userId: job.recruiter.userId || job.recruiter.id,
+      fullName: job.recruiter.fullName || job.recruiter.name || null,
+      designation: job.recruiter.designation || null,
+      company: job.recruiter.company || null,
+      location: job.recruiter.location || null,
+      headline: job.recruiter.headline || null,
+      connectionStatus: job.recruiter.connectionStatus || null,
+    } : undefined,
     saved: options.saved ?? undefined,
     applyPath: `/jobs/${job.slug}#apply`,
   };

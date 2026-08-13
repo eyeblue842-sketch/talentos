@@ -5,6 +5,8 @@ const bulkResumeImportEnabled = isFeatureEnabled('bulkResumeImport');
 export const recruiterNav = [
   { label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard' },
   { label: 'Jobs', href: '/recruiter/jobs', icon: 'BriefcaseBusiness' },
+  { label: 'Network', href: '/recruiter/network', icon: 'Users' },
+  { label: 'Messages', href: '/recruiter/messages', icon: 'Mail' },
   { label: 'Requisitions', href: '/recruiter/requisitions', icon: 'ClipboardList' },
   { label: 'Resume Database', href: '/recruiter/database', icon: 'Database' },
   ...(bulkResumeImportEnabled ? [{ label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),
@@ -18,6 +20,8 @@ export const recruiterNav = [
 export const candidateNav = [
   { label: 'Dashboard', href: '/candidate/dashboard', icon: 'LayoutDashboard' },
   { label: 'Find Jobs', href: '/candidate/jobs', icon: 'Search' },
+  { label: 'Network', href: '/candidate/network', icon: 'Users' },
+  { label: 'Messages', href: '/candidate/messages', icon: 'Mail' },
   { label: 'Saved Jobs', href: '/candidate/saved-jobs', icon: 'BriefcaseBusiness' },
   { label: 'Applications', href: '/candidate/applications', icon: 'ClipboardList' },
   { label: 'Interviews', href: '/candidate/interviews', icon: 'CalendarDays' },

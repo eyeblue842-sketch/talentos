@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Download, Mail, ShieldCheck } from 'lucide-react';
+import { NetworkProfileActions } from '@/components/network/network-profile-actions';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { CandidateJobMatchPanel } from '@/components/sections/candidate-job-match-panel';
 import { CandidateInsightsPanel } from '@/components/sections/candidate-insights-panel';
@@ -14,6 +15,7 @@ import {
   getCandidateProfileIntelligence,
   getCandidateProfileIntelligenceStatus,
   getCurrentOrganisation,
+  getProfessionalProfile,
   getRecruiterCandidatePreview,
   getRecruiterJob,
 } from '@/lib/api';
@@ -37,6 +39,7 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
   let initialMatch = null;
   let initialMatchStatus = null;
   let selectedJob = null;
+  let networkProfile = null;
 
   const candidateIntelligenceEnabled = isFeatureEnabled('candidateIntelligence');
   const candidateMatchingEnabled = isFeatureEnabled('candidateMatching');
@@ -75,6 +78,10 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
     selectedJob = jobResult;
     initialMatch = matchResult;
     initialMatchStatus = matchStatus;
+  }
+
+  if (candidate?.userId) {
+    networkProfile = await getProfessionalProfile(candidate.userId).catch(() => null);
   }
 
   return (
@@ -168,6 +175,25 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
                     </Card>
 
                     <div className="space-y-6">
+                      {networkProfile?.profile ? (
+                        <Card>
+                          <h2 className="text-xl font-semibold text-[var(--color-text)]">Professional Network</h2>
+                          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                            {networkProfile.profile.mutualConnections.count
+                              ? `${networkProfile.profile.mutualConnections.count} mutual connection${networkProfile.profile.mutualConnections.count === 1 ? '' : 's'}`
+                              : 'Open this candidate’s networking profile when privacy allows.'}
+                          </p>
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <NetworkProfileActions
+                              profile={networkProfile.profile}
+                              redirectTo={`/recruiter/database/${candidate.id}`}
+                              source="PEOPLE_SEARCH"
+                              messageHref={`/recruiter/messages?user=${networkProfile.profile.userId}`}
+                            />
+                          </div>
+                        </Card>
+                      ) : null}
+
                       <Card>
                         <h2 className="text-xl font-semibold text-[var(--color-text)]">ATS Status</h2>
                         <div className="mt-4 space-y-3">

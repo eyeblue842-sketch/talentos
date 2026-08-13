@@ -4,6 +4,8 @@ import { Card } from '@/components/ui/card';
 import { PaginationNav } from '@/components/sections/pagination-nav';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobSearchForm } from '@/components/sections/public-job-search-form';
+import { CompanyFollowToggle } from '@/components/network/network-page-content';
+import { sendConnectionRequestAction } from '@/app/network/actions';
 import { getCurrentUser } from '@/lib/auth';
 import { getPublicOrganisation } from '@/lib/api';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
@@ -53,8 +55,54 @@ export default async function PublicOrganisationPage({ params, searchParams }) {
             <div><dt className="font-semibold text-[var(--text)]">Headquarters</dt><dd>{organisation.headquarters || 'Not disclosed'}</dd></div>
             <div><dt className="font-semibold text-[var(--text)]">Locations</dt><dd>{organisation.publicLocations.length ? organisation.publicLocations.join(', ') : 'Not disclosed'}</dd></div>
           </dl>
+          {user ? (
+            <div className="mt-6">
+              <CompanyFollowToggle organisationId={organisation.id} following={organisation.following} redirectTo={`/companies/${organisation.slug}`} />
+            </div>
+          ) : null}
           {organisation.cultureSummary ? <p className="mt-6 text-sm leading-7 text-[var(--muted)]">{organisation.cultureSummary}</p> : null}
           {organisation.benefitsSummary ? <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{organisation.benefitsSummary}</p> : null}
+          {data.recruitingTeam?.length ? (
+            <div className="mt-8">
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Recruiting team</h2>
+              <div className="mt-4 grid gap-3">
+                {data.recruitingTeam.map((member) => (
+                  <div key={member.userId} className="rounded-2xl border border-[var(--line)] p-4">
+                    <p className="font-semibold text-[var(--text)]">{member.fullName}</p>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {member.designation || member.headline || 'Recruiter'}
+                      {member.company ? ` • ${member.company}` : ''}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <a href={`/network/people/${member.userId}`} className="inline-flex min-h-10 items-center rounded-2xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--text)]">
+                        View profile
+                      </a>
+                      {user && member.connectionStatus === 'NONE' ? (
+                        <form action={sendConnectionRequestAction}>
+                          <input type="hidden" name="targetUserId" value={member.userId} />
+                          <input type="hidden" name="source" value="COMPANY" />
+                          <input type="hidden" name="redirectTo" value={`/companies/${organisation.slug}`} />
+                          <button type="submit" className="inline-flex min-h-10 items-center rounded-2xl bg-[var(--brand)] px-4 text-sm font-semibold text-white">
+                            Connect
+                          </button>
+                        </form>
+                      ) : null}
+                      {user && member.connectionStatus === 'PENDING' ? (
+                        <span className="inline-flex min-h-10 items-center rounded-2xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--muted)]">
+                          Pending
+                        </span>
+                      ) : null}
+                      {user && member.connectionStatus === 'ACCEPTED' ? (
+                        <span className="inline-flex min-h-10 items-center rounded-2xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--muted)]">
+                          Connected
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </Card>
         <div className="space-y-6">
           <PublicJobSearchForm action={`/companies/${organisation.slug}`} searchParams={queryParams} organisationLocked />

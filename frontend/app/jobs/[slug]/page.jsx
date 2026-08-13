@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobApplyAction } from '@/components/sections/public-job-apply-action';
 import { CandidateJobViewTracker } from '@/components/sections/candidate-job-view-tracker';
+import { sendConnectionRequestAction } from '@/app/network/actions';
 import { getCurrentUser } from '@/lib/auth';
 import { getPublicJob, getPublicJobApplyContext } from '@/lib/api';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
@@ -116,6 +117,38 @@ export default async function PublicJobDetailPage({ params }) {
               </Link>
             ) : null}
           </Card>
+          {job.recruiter?.userId ? (
+            <Card className="rounded-[32px] p-6">
+              <h2 className="font-[var(--font-display)] text-2xl font-semibold">Recruiting contact</h2>
+              <p className="mt-3 text-base font-semibold text-[var(--text)]">{job.recruiter.fullName}</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                {job.recruiter.designation || job.recruiter.headline || 'Recruiting team'}
+                {job.recruiter.company ? ` • ${job.recruiter.company}` : ''}
+              </p>
+              {job.recruiter.location ? <p className="mt-2 text-sm text-[var(--muted)]">{job.recruiter.location}</p> : null}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link href={`/network/people/${job.recruiter.userId}`} className="inline-flex min-h-11 items-center rounded-2xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--text)]">
+                  View profile
+                </Link>
+                {user ? (
+                  job.recruiter.connectionStatus === 'NONE' ? (
+                    <form action={sendConnectionRequestAction}>
+                      <input type="hidden" name="targetUserId" value={job.recruiter.userId} />
+                      <input type="hidden" name="source" value="JOB" />
+                      <input type="hidden" name="redirectTo" value={`/jobs/${job.slug}`} />
+                      <button type="submit" className="inline-flex min-h-11 items-center rounded-2xl bg-[var(--brand)] px-4 text-sm font-semibold text-white">
+                        Connect
+                      </button>
+                    </form>
+                  ) : (
+                    <span className="inline-flex min-h-11 items-center rounded-2xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--muted)]">
+                      {job.recruiter.connectionStatus === 'ACCEPTED' ? 'Connected' : 'Request pending'}
+                    </span>
+                  )
+                ) : null}
+              </div>
+            </Card>
+          ) : null}
           <Card className="rounded-[32px] p-6">
             <h2 className="font-[var(--font-display)] text-2xl font-semibold">Next steps</h2>
             <div className="mt-4 space-y-3">
