@@ -1,7 +1,7 @@
 import { prisma } from '../config/db.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
-import { sendOfferStatusEmail, sendQueuedEmailPayload } from './emailService.js';
+import { sendOfferStatusEmail, sendQueuedEmailPayload, sendSubscriptionRenewalReminderEmail, sendJobAutoClosedEmail } from './emailService.js';
 import { calculateProfileCompletion, requestCandidateDataExport } from './candidateService.js';
 import { getResumeIntelligence } from '../intelligence/services/resumeIntelligenceService.js';
 import { markCandidateIntelligenceStale, runCandidateIntelligenceGenerationTask } from '../intelligence/services/candidateIntelligenceService.js';
@@ -629,6 +629,112 @@ async function handleOfferExpiryTask(task) {
   return 'success';
 }
 
+// Section 8: T-15 renewal reminder. Re-validates the subscription is still
+// due (not already reminded, not cancelled, still expiring within the
+// window) before sending, so a task claimed twice after a crashed worker's
+// lease expired can never double-notify. Records success/failure timestamps
+// on the subscription itself (renewalReminderSentAt / renewalReminderFailedAt)
+// independent of the underlying BackgroundTask row's own retry bookkeeping.
+async function handleSubscriptionRenewalReminderTask(task) {
+  const subscription = await prisma.companySubscription.findUnique({
+    where: { id: task.payload?.subscriptionId || task.entityId || '' },
+    include: { organisation: true },
+  });
+  if (!subscription || subscription.renewalReminderSentAt) return 'cancelled';
+  if (!['ACTIVE', 'EXPIRING_SOON'].includes(subscription.status)) return 'cancelled';
+  if (new Date(subscription.expiresAt) <= new Date()) return 'cancelled';
+
+  const owners = await prisma.organisationMembership.findMany({
+    where: { organisationId: subscription.organisationId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+    include: { user: true },
+  });
+  const daysRemaining = Math.max(0, Math.ceil((new Date(subscription.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+
+  try {
+    await Promise.all(owners.map((membership) => createNotification({
+      organisationId: subscription.organisationId,
+      recipientUserId: membership.userId,
+      type: 'BILLING',
+      title: 'Your Careeriz plan is expiring soon',
+      message: `${subscription.productCode} expires in ${daysRemaining} days. Renew to keep ATS and resume-database access.`,
+      entityType: 'CompanySubscription',
+      entityId: subscription.id,
+      metadata: { daysRemaining },
+    })));
+
+    await Promise.all(owners
+      .filter((membership) => membership.user?.email)
+      .map((membership) => sendSubscriptionRenewalReminderEmail({
+        to: membership.user.email,
+        organisationName: subscription.organisation?.name || 'your company',
+        productName: subscription.productCode,
+        expiresAt: subscription.expiresAt,
+        daysRemaining,
+      }, { queueOnFailure: false })));
+
+    await prisma.companySubscription.update({
+      where: { id: subscription.id },
+      data: { renewalReminderSentAt: new Date() },
+    });
+  } catch (error) {
+    await prisma.companySubscription.update({
+      where: { id: subscription.id },
+      data: { renewalReminderFailedAt: new Date() },
+    });
+    throw error;
+  }
+
+  return 'success';
+}
+
+// Section 11: flips an expired job to CLOSED. Guarded on autoClosedAt IS
+// NULL so it is safe to run twice for the same job (idempotent), and the
+// state transition + audit log happen in one transaction so a partial
+// failure never leaves the job CLOSED without an audit trail or vice versa.
+async function handleJobAutoCloseTask(task) {
+  const job = await prisma.job.findUnique({
+    where: { id: task.payload?.jobId || task.entityId || '' },
+    include: { recruiter: true },
+  });
+  if (!job || job.status !== 'OPEN' || job.autoClosedAt) return 'cancelled';
+  if (!job.activeUntil || new Date(job.activeUntil) > new Date()) return 'cancelled';
+
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.job.update({
+      where: { id: job.id },
+      data: { status: 'CLOSED', autoClosedAt: now },
+    });
+    await tx.auditLog.create({
+      data: {
+        organisationId: job.organisationId,
+        actorUserId: null,
+        action: 'worker.job.autoClose',
+        entityType: 'Job',
+        entityId: job.id,
+        metadata: { activeUntil: job.activeUntil, taskId: task.id },
+      },
+    });
+  });
+
+  if (job.recruiterId) {
+    await createNotification({
+      organisationId: job.organisationId,
+      recipientUserId: job.recruiterId,
+      type: 'BILLING',
+      title: 'Job posting closed',
+      message: `${job.title} has closed after its 45-day active window ended.`,
+      entityType: 'Job',
+      entityId: job.id,
+    });
+  }
+  if (job.recruiter?.email) {
+    await sendJobAutoClosedEmail({ to: job.recruiter.email, jobTitle: job.title, activeUntil: job.activeUntil }, { queueOnFailure: false }).catch(() => {});
+  }
+
+  return 'success';
+}
+
 async function handleEmailRetryTask(task) {
   if (!task.payload?.message) return 'cancelled';
   await sendQueuedEmailPayload(task.payload.message);
@@ -738,6 +844,10 @@ export async function processBackgroundTask(task) {
       return handleOfferReminderTask(task);
     case 'OFFER_EXPIRY':
       return handleOfferExpiryTask(task);
+    case 'SUBSCRIPTION_RENEWAL_REMINDER':
+      return handleSubscriptionRenewalReminderTask(task);
+    case 'JOB_AUTO_CLOSE':
+      return handleJobAutoCloseTask(task);
     case 'EMAIL_RETRY':
       return handleEmailRetryTask(task);
     case 'NOTIFICATION_RETRY':

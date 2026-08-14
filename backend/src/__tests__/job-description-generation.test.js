@@ -208,6 +208,27 @@ function installPrismaMocks() {
       customRoleDefinition: null,
     }));
 
+  // Needed by jobService.ensureOrganisationMember (used whenever
+  // createJob/updateJob/updateJobStatus re-validates the assigned
+  // recruiter/hiring manager - including the status-transition path that
+  // applyJobDescriptionDraft now goes through instead of writing job.status
+  // directly, see B1 hardening section 4).
+  prisma.organisationMembership.findFirst = async ({ where = {}, include = {} } = {}) => {
+    const match = state.memberships.find((item) => item.organisationId === where.organisationId
+      && item.userId === where.userId
+      && item.status === where.status
+      && (!where.role?.in || where.role.in.includes(item.role)));
+    if (!match) return null;
+    return {
+      ...clone(match),
+      user: include.user ? clone(state.users.find((user) => user.id === match.userId) || null) : undefined,
+    };
+  };
+  // jobService.createJob/updateJob/updateJobStatus always run inside
+  // $transaction - pass the same mocked prisma through as `tx` rather than
+  // opening a real transaction against the shared test database.
+  prisma.$transaction = async (callback) => callback(prisma);
+
   prisma.featureFlag.findMany = async ({ where = {} } = {}) => state.featureFlags
     .filter((item) => item.organisationId === where.organisationId && (!where.key?.in || where.key.in.includes(item.key)))
     .map(clone);

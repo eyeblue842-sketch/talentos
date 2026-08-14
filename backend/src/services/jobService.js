@@ -4,6 +4,12 @@ import { serializeJob } from '../serializers/index.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
+import { consumeJobCredit, getAvailableJobCredits } from './entitlementService.js';
+import { isEntitlementEnforcementEnabled, shouldComputeShadowDecision, logEntitlementShadowDecision } from './billingRolloutService.js';
+import { runSerializableTransaction } from '../utils/serializableTransaction.js';
+import { addDays } from '../utils/dateUtils.js';
+
+const JOB_ACTIVE_DAYS = 45;
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -17,10 +23,10 @@ function buildJobWhere(organisationId, filters = {}) {
   };
 }
 
-async function ensureOrganisationMember(organisationId, userId, allowedRoles) {
+async function ensureOrganisationMember(client, organisationId, userId, allowedRoles) {
   if (!userId) return null;
 
-  const membership = await prisma.organisationMembership.findFirst({
+  const membership = await client.organisationMembership.findFirst({
     where: {
       organisationId,
       userId,
@@ -39,10 +45,10 @@ async function ensureOrganisationMember(organisationId, userId, allowedRoles) {
   return membership.user;
 }
 
-async function ensureApprovedRequisition(organisationId, requisitionId) {
+async function ensureApprovedRequisition(client, organisationId, requisitionId) {
   if (!requisitionId) return null;
 
-  const requisition = await prisma.jobRequisition.findFirst({
+  const requisition = await client.jobRequisition.findFirst({
     where: {
       id: requisitionId,
       organisationId,
@@ -59,9 +65,9 @@ async function ensureApprovedRequisition(organisationId, requisitionId) {
   return requisition;
 }
 
-async function ensureNoDuplicateRequisitionJob(organisationId, requisitionId) {
+async function ensureNoDuplicateRequisitionJob(client, organisationId, requisitionId) {
   if (!requisitionId) return;
-  const existing = await prisma.job.findFirst({
+  const existing = await client.job.findFirst({
     where: {
       organisationId,
       requisitionId,
@@ -76,13 +82,13 @@ async function ensureNoDuplicateRequisitionJob(organisationId, requisitionId) {
   }
 }
 
-async function buildUniqueJobSlug(title, existingJobId = null) {
+async function buildUniqueJobSlug(client, title, existingJobId = null) {
   const base = slugify(title, { lower: true, strict: true }) || `job-${Date.now()}`;
   let slug = base;
   let counter = 1;
 
   while (true) {
-    const existing = await prisma.job.findUnique({ where: { slug } });
+    const existing = await client.job.findUnique({ where: { slug } });
     if (!existing || existing.id === existingJobId) {
       return slug;
     }
@@ -185,48 +191,124 @@ function buildPaginatedMeta(total, page, pageSize) {
   };
 }
 
+const jobIncludes = {
+  requisition: true,
+  recruiter: true,
+  hiringManager: true,
+  screeningQuestions: { orderBy: { displayOrder: 'asc' } },
+  _count: { select: { applications: true } },
+};
+
+// Section 10/B1-hardening-section-4: publishing (activating a job into
+// OPEN) always converges on this one helper, called from inside the SAME
+// transaction as job creation or job field updates - never as a separate
+// step, and never reachable via any other code path. This is what makes
+// "no alternate endpoint can activate a job without consuming a valid
+// credit" true even though createJob/updateJob still accept `status` as an
+// ordinary field (matching the existing recruiter job form, which submits
+// status alongside every other field in one request).
+//
+// Respects the entitlement-enforcement rollout flag: when enforcement is
+// disabled for this organisation, the credit check/consumption is skipped
+// entirely (job activates exactly like the pre-billing codebase - no
+// ledger row is written, so nothing needs to be reconciled later when
+// enforcement is turned on), but the decision is still computed and logged
+// in shadow mode.
+async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId }) {
+  const enforced = isEntitlementEnforcementEnabled(organisationId);
+
+  if (enforced) {
+    const idempotencyKey = `job-publish:${jobId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    await consumeJobCredit(tx, { organisationId, jobId, actorUserId, idempotencyKey });
+  } else if (shouldComputeShadowDecision()) {
+    // Opt-in only (see billingRolloutService.shouldComputeShadowDecision) -
+    // when this is off (the default), a job publish with enforcement
+    // disabled performs no ledger/credit query at all, exactly matching
+    // pre-billing behaviour.
+    const availableCredits = await getAvailableJobCredits(organisationId, tx);
+    logEntitlementShadowDecision({
+      organisationId,
+      feature: 'job-publish',
+      jobId,
+      state: availableCredits > 0 ? 'ACTIVE' : 'SUBSCRIPTION_REQUIRED',
+      wouldBlock: availableCredits <= 0,
+    });
+  }
+
+  const now = new Date();
+  return { activatedAt: now, activeUntil: addDays(now, JOB_ACTIVE_DAYS), autoClosedAt: null };
+}
+
 export async function createJob(actorUser, payload, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, writableRoles, organisationId);
-  const recruiter = await ensureOrganisationMember(context.organisationId, payload.recruiterId || actorUser.id, assignableJobRoles);
-  const hiringManager = await ensureOrganisationMember(context.organisationId, payload.hiringManagerId || null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
-  const requisition = await ensureApprovedRequisition(context.organisationId, payload.requisitionId || null);
-  await ensureNoDuplicateRequisitionJob(context.organisationId, requisition?.id || null);
-  const status = payload.status || 'DRAFT';
+  const requestedStatus = payload.status || 'DRAFT';
+  const isPublishing = requestedStatus === 'OPEN';
 
-  const job = await prisma.job.create({
-    data: {
+  let capturedRequisition = null;
+
+  async function run(tx) {
+    const recruiter = await ensureOrganisationMember(tx, context.organisationId, payload.recruiterId || actorUser.id, assignableJobRoles);
+    const hiringManager = await ensureOrganisationMember(tx, context.organisationId, payload.hiringManagerId || null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
+    const requisition = await ensureApprovedRequisition(tx, context.organisationId, payload.requisitionId || null);
+    await ensureNoDuplicateRequisitionJob(tx, context.organisationId, requisition?.id || null);
+    capturedRequisition = requisition;
+
+    // Always created as DRAFT first, even when the form requested OPEN -
+    // publishing is then a second, credit-checked write inside this SAME
+    // transaction (see activateJobInTransaction), so a quota failure rolls
+    // the whole creation back rather than leaving a half-created job.
+    // recruiterId/hiringManagerId/requisitionId are re-asserted AFTER the
+    // normalizeJobPayload spread (not just set once before it) because
+    // normalizeJobPayload echoes back payload.recruiterId verbatim - if a
+    // caller omits recruiterId and relies on the actorUser-id fallback
+    // resolved above, the later spread would otherwise silently overwrite
+    // the resolved id with null. Same pattern as updateJob below.
+    const jobData = {
       organisationId: context.organisationId,
-      recruiterId: recruiter.id,
-      hiringManagerId: hiringManager?.id || null,
-      requisitionId: requisition?.id || null,
-      slug: await buildUniqueJobSlug(payload.title),
-      ...normalizeJobPayload({ ...payload, status }),
-    },
-    include: {
-      requisition: true,
-      recruiter: true,
-      hiringManager: true,
-      _count: { select: { applications: true } },
-    },
-  });
+      slug: await buildUniqueJobSlug(tx, payload.title),
+      ...normalizeJobPayload({ ...payload, status: 'DRAFT' }),
+    };
+    jobData.recruiterId = recruiter.id;
+    jobData.hiringManagerId = hiringManager?.id || null;
+    jobData.requisitionId = requisition?.id || null;
 
-  await recordAuditLog({
-    organisationId: context.organisationId,
-    actorUserId: actorUser.id,
-    action: 'job.create',
-    entityType: 'Job',
-    entityId: job.id,
-    afterData: job,
-    ...requestMeta,
-  });
+    const createdJob = await tx.job.create({ data: jobData, include: jobIncludes });
 
-  if (requisition?.createdById && requisition.createdById !== actorUser.id) {
+    let finalJob = createdJob;
+    if (isPublishing) {
+      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId: createdJob.id, actorUserId: actorUser.id });
+      finalJob = await tx.job.update({
+        where: { id: createdJob.id },
+        data: { status: 'OPEN', ...activation },
+        include: jobIncludes,
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: isPublishing ? 'job.create_and_publish' : 'job.create',
+        entityType: 'Job',
+        entityId: finalJob.id,
+        afterData: finalJob,
+        ipAddress: requestMeta.ipAddress || null,
+        userAgent: requestMeta.userAgent || null,
+      },
+    });
+
+    return finalJob;
+  }
+
+  const job = await (isPublishing ? runSerializableTransaction(prisma, run) : prisma.$transaction(run));
+
+  if (capturedRequisition?.createdById && capturedRequisition.createdById !== actorUser.id) {
     await createNotification({
       organisationId: context.organisationId,
-      recipientUserId: requisition.createdById,
+      recipientUserId: capturedRequisition.createdById,
       type: 'JOB',
       title: 'Job created from requisition',
-      message: `${job.title} was created from requisition ${requisition.requisitionCode}.`,
+      message: `${job.title} was created from requisition ${capturedRequisition.requisitionCode}.`,
       entityType: 'Job',
       entityId: job.id,
     });
@@ -254,13 +336,7 @@ export async function listRecruiterJobs(actorUser, filters = {}, organisationId 
       orderBy: { updatedAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: {
-        requisition: true,
-        recruiter: true,
-        hiringManager: true,
-        screeningQuestions: { orderBy: { displayOrder: 'asc' } },
-        _count: { select: { applications: true } },
-      },
+      include: jobIncludes,
     }),
   ]);
 
@@ -288,48 +364,58 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
     throw error;
   }
 
-  const recruiter = await ensureOrganisationMember(context.organisationId, payload.recruiterId || existing.recruiterId, assignableJobRoles);
-  const hiringManager = await ensureOrganisationMember(context.organisationId, payload.hiringManagerId ?? existing.hiringManagerId ?? null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
-  const requisition = await ensureApprovedRequisition(context.organisationId, payload.requisitionId ?? existing.requisitionId ?? null);
+  const isPublishing = payload.status === 'OPEN' && existing.status !== 'OPEN';
 
-  const data = normalizeJobPayload({
-    ...existing,
-    ...payload,
-    recruiterId: recruiter.id,
-    hiringManagerId: hiringManager?.id || null,
-    requisitionId: requisition?.id || null,
-    status: payload.status || existing.status,
-  });
+  async function run(tx) {
+    const recruiter = await ensureOrganisationMember(tx, context.organisationId, payload.recruiterId || existing.recruiterId, assignableJobRoles);
+    const hiringManager = await ensureOrganisationMember(tx, context.organisationId, payload.hiringManagerId ?? existing.hiringManagerId ?? null, ['OWNER', 'ADMIN', 'HIRING_MANAGER', 'RECRUITER']);
+    const requisition = await ensureApprovedRequisition(tx, context.organisationId, payload.requisitionId ?? existing.requisitionId ?? null);
 
-  if (payload.title && payload.title !== existing.title) {
-    data.slug = await buildUniqueJobSlug(payload.title, existing.id);
+    const data = normalizeJobPayload({
+      ...existing,
+      ...payload,
+      recruiterId: recruiter.id,
+      hiringManagerId: hiringManager?.id || null,
+      requisitionId: requisition?.id || null,
+      status: payload.status || existing.status,
+    });
+
+    if (payload.title && payload.title !== existing.title) {
+      data.slug = await buildUniqueJobSlug(tx, payload.title, existing.id);
+    }
+    data.recruiterId = recruiter.id;
+    data.hiringManagerId = hiringManager?.id || null;
+    data.requisitionId = requisition?.id || null;
+
+    if (isPublishing) {
+      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId, actorUserId: actorUser.id });
+      Object.assign(data, activation);
+    }
+
+    const updatedJob = await tx.job.update({
+      where: { id: jobId },
+      data,
+      include: jobIncludes,
+    });
+
+    await tx.auditLog.create({
+      data: {
+        organisationId: context.organisationId,
+        actorUserId: actorUser.id,
+        action: isPublishing ? 'job.publish' : 'job.update',
+        entityType: 'Job',
+        entityId: jobId,
+        beforeData: existing,
+        afterData: updatedJob,
+        ipAddress: requestMeta.ipAddress || null,
+        userAgent: requestMeta.userAgent || null,
+      },
+    });
+
+    return updatedJob;
   }
-  data.recruiterId = recruiter.id;
-  data.hiringManagerId = hiringManager?.id || null;
-  data.requisitionId = requisition?.id || null;
 
-  const job = await prisma.job.update({
-    where: { id: jobId },
-    data,
-    include: {
-      requisition: true,
-      recruiter: true,
-      hiringManager: true,
-      screeningQuestions: { orderBy: { displayOrder: 'asc' } },
-      _count: { select: { applications: true } },
-    },
-  });
-
-  await recordAuditLog({
-    organisationId: context.organisationId,
-    actorUserId: actorUser.id,
-    action: 'job.update',
-    entityType: 'Job',
-    entityId: jobId,
-    beforeData: existing,
-    afterData: job,
-    ...requestMeta,
-  });
+  const job = isPublishing ? await runSerializableTransaction(prisma, run) : await prisma.$transaction(run);
 
   return serializeJob(job, { includeRequisition: true });
 }
