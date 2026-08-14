@@ -33,3 +33,6 @@ document-processor/**/model-cache
 # tests/test_preprocessing.py locally) -- never real fixture content.
 document-processor/tests/fixtures/preprocessing/_out
 document-processor/tests/fixtures/preprocessing/_measure
+document-processor/.phasep1-paddlex-cache/
+document-processor/tests/fixtures/ocr_validation/_out_*/
+frontend/test-results/
