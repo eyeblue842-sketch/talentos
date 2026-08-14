@@ -20,6 +20,7 @@ export const recruiterNav = [
     ],
   },
   { label: 'Members', href: '/recruiter/members', icon: 'Users' },
+  { label: 'Billing', href: '/recruiter/billing', icon: 'WalletCards' },
   { label: 'Notifications', href: '/recruiter/notifications', icon: 'Bell' },
   { label: 'Settings', href: '/recruiter/settings', icon: 'Settings2' },
 ];
