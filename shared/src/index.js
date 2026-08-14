@@ -7,3 +7,4 @@ export * from './setup.js';
 export * from './resume-import.js';
 export * from './network.js';
 export * from './messaging.js';
+export * from './billing.js';

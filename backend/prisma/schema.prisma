@@ -112,6 +112,8 @@ enum BackgroundTaskType {
   JOB_CANDIDATE_RANKING_GENERATION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
+  SUBSCRIPTION_RENEWAL_REMINDER
+  JOB_AUTO_CLOSE
 }
 
 enum CandidateIntelligenceKind {
@@ -423,6 +425,7 @@ enum NotificationType {
   SYSTEM
   NETWORK
   MESSAGE
+  BILLING
 }
 
 enum ConnectionStatus {
@@ -777,6 +780,10 @@ model User {
   directConversationsB                  DirectConversation[]            @relation("DirectConversationParticipantB")
   directMessagesSent                    DirectMessage[]                 @relation("DirectMessageSender")
   organisationPosts                     OrganisationPost[]              @relation("OrganisationPostAuthor")
+  purchasesMade                         Purchase[]                      @relation("PurchasePurchaser")
+  billingProfilesUpdated                CompanyBillingProfile[]         @relation("BillingProfileUpdatedBy")
+  jobCreditLedgerEntriesCreated         JobPostingCreditLedger[]        @relation("JobCreditLedgerCreatedBy")
+  jobAutoCloseOverrides                 Job[]                           @relation("JobAutoCloseOverrideBy")
 }
 
 model Organisation {
@@ -854,22 +861,27 @@ model Organisation {
   savedCandidateSearches      SavedCandidateSearch[]
   followers                   CompanyFollow[]
   posts                       OrganisationPost[]
+  billingProfile              CompanyBillingProfile?
+  purchases                   Purchase[]
+  subscriptions               CompanySubscription[]
+  jobCreditLedgerEntries      JobPostingCreditLedger[]
+  invoices                    Invoice[]
 
   @@index([status])
 }
 
 model OrganisationPost {
-  id            String                 @id @default(cuid())
+  id             String                 @id @default(cuid())
   organisationId String
-  authorUserId  String
-  content       String
-  imageUrl      String?
-  status        OrganisationPostStatus @default(PUBLISHED)
-  publishedAt   DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  organisation  Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  authorUser    User                   @relation("OrganisationPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  authorUserId   String
+  content        String
+  imageUrl       String?
+  status         OrganisationPostStatus @default(PUBLISHED)
+  publishedAt    DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organisation   Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  authorUser     User                   @relation("OrganisationPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
 
   @@index([organisationId, status, publishedAt])
   @@index([authorUserId, createdAt])
@@ -1248,9 +1260,9 @@ enum WorkerHeartbeatStatus {
 }
 
 model WorkerHeartbeat {
-  id              String              @id @default(cuid())
-  workerId        String              @unique
-  workerType      String              @default("BACKGROUND_WORKER")
+  id              String                @id @default(cuid())
+  workerId        String                @unique
+  workerType      String                @default("BACKGROUND_WORKER")
   hostname        String?
   processId       Int?
   startedAt       DateTime
@@ -1258,9 +1270,9 @@ model WorkerHeartbeat {
   status          WorkerHeartbeatStatus @default(IDLE)
   currentTaskId   String?
   parserVersion   String?
-  concurrency     Int                 @default(1)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  concurrency     Int                   @default(1)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([lastHeartbeatAt])
 }
@@ -1885,12 +1897,24 @@ model Job {
   autoCloseOnTargetHire            Boolean                    @default(false)
   status                           JobStatus                  @default(OPEN)
   archivedAt                       DateTime?
+  // Billing/job-credit entitlement fields (feature/subscriptions-billing-entitlements):
+  // activatedAt/activeUntil are stamped only when a job is published through the
+  // credit-consuming publish flow (jobService.publishJobWithEntitlement), never on
+  // plain field edits, so scheduler auto-close can rely on activeUntil alone.
+  activatedAt                      DateTime?
+  activeUntil                      DateTime?
+  autoClosedAt                     DateTime?
+  autoCloseOverrideByUserId        String?
+  autoCloseOverrideReason          String?
+  autoCloseOverrideAt              DateTime?
   createdAt                        DateTime                   @default(now())
   updatedAt                        DateTime                   @updatedAt
   organisation                     Organisation?              @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   recruiter                        User                       @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
   hiringManager                    User?                      @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
   requisition                      JobRequisition?            @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  autoCloseOverrideByUser          User?                      @relation("JobAutoCloseOverrideBy", fields: [autoCloseOverrideByUserId], references: [id], onDelete: SetNull)
+  creditLedgerEntries              JobPostingCreditLedger[]
   jobDescriptionStates             JobDescriptionState[]
   candidateJobMatchStates          CandidateJobMatchState[]
   candidateRankingSnapshots        CandidateRankingSnapshot[]
@@ -1916,6 +1940,7 @@ model Job {
   @@index([hiringManagerId])
   @@index([applicationDeadline])
   @@index([status, visibility, applicationOpensAt, applicationClosesAt])
+  @@index([status, activeUntil])
 }
 
 model SavedJob {
@@ -3012,4 +3037,314 @@ model AuthToken {
   user       User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
+}
+
+// =====================================================================
+// Subscriptions, Billing, Job Credits and Payment Gateway
+// (feature/subscriptions-billing-entitlements)
+//
+// All monetary fields on these models are integer paise (never floats).
+// This is a deliberate departure from Job.salaryMin/Max (whole-rupee Int)
+// and Offer.*Compensation (Decimal(14,2)) elsewhere in this schema -
+// Razorpay's API is paise-native and money math here must stay exact
+// integer arithmetic, so the convention is scoped to this module only.
+//
+// SubscriptionAuditLog from the spec is intentionally NOT a separate
+// model: every billing mutation is written through the existing
+// AuditLog model (see auditLogService.recordAuditLog) with
+// entityType in {'Purchase','CompanySubscription','JobPostingCreditLedger',
+// 'ProductPlan','CompanyBillingProfile'}, reusing the org/actor-scoped
+// audit trail and admin UI that already exists rather than duplicating it.
+// =====================================================================
+
+enum BillingProductCode {
+  JOB_POST_45D
+  ATS_DB_1M
+  ATS_DB_6M
+  ATS_DB_12M
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  CANCELLED
+  PAYMENT_FAILED
+  REFUNDED
+  SUSPENDED
+}
+
+enum JobCreditSource {
+  SUBSCRIPTION_GRANT
+  PURCHASED_CREDIT
+  ADMIN_ADJUSTMENT
+}
+
+enum JobCreditLedgerEntryType {
+  GRANT
+  CONSUME
+  REVERSAL
+  EXPIRY
+  ADMIN_ADJUSTMENT
+}
+
+enum PaymentWebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum GstSupplyType {
+  INTRA_STATE
+  INTER_STATE
+  // Seller and/or customer state code was not configured at invoice time -
+  // the CGST/SGST-vs-IGST split cannot be determined. totalTaxPaise is
+  // still always correct (18%); only the split is withheld. Pairs with
+  // InvoiceStatus.REVIEW_REQUIRED (B1 hardening, section 9: "do not issue/
+  // finalise an invoice with an assumed CGST/SGST or IGST split").
+  UNKNOWN
+}
+
+enum InvoiceStatus {
+  FINAL
+  REVIEW_REQUIRED
+}
+
+// Server-authoritative product catalogue (section 3). Prices/GST/duration/
+// credits are only ever read from here - never trusted from the client.
+// A new price or benefit change is a NEW row (code + version bump), so
+// historical Purchases can keep an immutable snapshot of what was actually
+// bought without this table's current price retroactively changing history.
+model ProductPlan {
+  id                 String             @id @default(cuid())
+  code               BillingProductCode
+  version            Int                @default(1)
+  name               String
+  description        String?
+  currency           String             @default("INR")
+  baseAmountPaise    Int
+  gstRatePercent     Int                @default(18)
+  gstAmountPaise     Int
+  totalAmountPaise   Int
+  durationMonths     Int?
+  includedJobCredits Int                @default(0)
+  jobActiveDays      Int                @default(45)
+  isActive           Boolean            @default(true)
+  razorpayButtonId   String?
+  effectiveFrom      DateTime           @default(now())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  purchases          Purchase[]
+
+  @@unique([code, version])
+  @@index([code, isActive])
+}
+
+// One purchase attempt/payment per row. Created PENDING before the Razorpay
+// Order exists on the customer's device, so entitlement can never be
+// activated from client-only state (section 5/6).
+model Purchase {
+  id                   String                   @id @default(cuid())
+  organisationId       String
+  purchaserUserId      String
+  productPlanId        String
+  productCode          BillingProductCode
+  productVersion       Int
+  productSnapshot      Json
+  provider             String                   @default("RAZORPAY")
+  providerOrderId      String?                  @unique
+  providerPaymentId    String?                  @unique
+  status               PurchaseStatus           @default(PENDING)
+  currency             String                   @default("INR")
+  amountPaise          Int
+  idempotencyKey       String                   @unique
+  notesSnapshot        Json?
+  paidAt               DateTime?
+  failedAt             DateTime?
+  refundedAt           DateTime?
+  cancelledAt          DateTime?
+  failureReason        String?
+  disputeStatus        String?
+  requiresManualReview Boolean                  @default(false)
+  manualReviewReason   String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  organisation         Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchaserUser        User                     @relation("PurchasePurchaser", fields: [purchaserUserId], references: [id], onDelete: Restrict)
+  productPlan          ProductPlan              @relation(fields: [productPlanId], references: [id], onDelete: Restrict)
+  subscription         CompanySubscription?
+  invoice              Invoice?
+  creditLedgerEntries  JobPostingCreditLedger[]
+  webhookEvents        PaymentWebhookEvent[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([purchaserUserId, createdAt])
+  @@index([productCode, status])
+}
+
+// Company-level (tenant-level) subscription record. One immutable row per
+// paid subscription purchase - renewals create a new row rather than
+// mutating the old one, preserving purchase history (section 4/7).
+model CompanySubscription {
+  id                      String                   @id @default(cuid())
+  organisationId          String
+  purchaseId              String                   @unique
+  productCode             BillingProductCode
+  productVersion          Int
+  planSnapshot            Json
+  status                  SubscriptionStatus       @default(PENDING_PAYMENT)
+  startsAt                DateTime
+  expiresAt               DateTime
+  atsAccess               Boolean                  @default(false)
+  resumeDatabaseAccess    Boolean                  @default(false)
+  includedJobCredits      Int                      @default(0)
+  renewalReminderSentAt   DateTime?
+  renewalReminderFailedAt DateTime?
+  cancelledAt             DateTime?
+  cancellationReason      String?
+  suspendedAt             DateTime?
+  suspensionReason        String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  organisation            Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase                Purchase                 @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  creditLedgerEntries     JobPostingCreditLedger[]
+
+  @@index([organisationId, status])
+  @@index([status, expiresAt])
+}
+
+// Immutable, append-only ledger. Available credits are ALWAYS derived by
+// summing rows live (see entitlementService.getAvailableJobCredits) - there
+// is deliberately no mutable "availableCredits" counter column anywhere,
+// per section 7. GRANT rows with an expired expiresAt stop counting toward
+// the live sum automatically (real-time server-clock comparison), which is
+// also what makes scheduler-delay-proof expiry (section 8/11) fall out for
+// free on the read path, independent of the EXPIRY sweep's timing.
+model JobPostingCreditLedger {
+  id              String                   @id @default(cuid())
+  organisationId  String
+  entryType       JobCreditLedgerEntryType
+  source          JobCreditSource?
+  amount          Int
+  purchaseId      String?
+  subscriptionId  String?
+  jobId           String?
+  // GRANT rows only. NULL = usable immediately. Set to a future date for a
+  // subscription-included-credit grant issued by an early renewal, so the
+  // new term's credits do not become usable (or stack with still-valid
+  // credits from the prior term) before the prior term's expiresAt -
+  // "early renewal begins after the current paid term ends" (B1 hardening,
+  // section 5). getAvailableJobCredits excludes GRANT rows where
+  // validFrom is in the future, exactly mirroring how it already excludes
+  // GRANT rows past expiresAt.
+  validFrom       DateTime?
+  expiresAt       DateTime?
+  reason          String?
+  idempotencyKey  String                   @unique
+  createdByUserId String?
+  createdAt       DateTime                 @default(now())
+  organisation    Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase        Purchase?                @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  subscription    CompanySubscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  job             Job?                     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdByUser   User?                    @relation("JobCreditLedgerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([organisationId, entryType, expiresAt])
+  @@index([jobId])
+}
+
+// One row per received Razorpay webhook delivery, keyed by a dedupe key
+// (the x-razorpay-event-id header when present, else a hash of the raw
+// body) so replay/out-of-order delivery can never double-apply an event
+// (section 6/14).
+model PaymentWebhookEvent {
+  id                String                    @id @default(cuid())
+  provider          String                    @default("RAZORPAY")
+  eventType         String
+  dedupeKey         String                    @unique
+  status            PaymentWebhookEventStatus @default(RECEIVED)
+  relatedPurchaseId String?
+  summary           Json?
+  processingError   String?
+  receivedAt        DateTime                  @default(now())
+  processedAt       DateTime?
+  relatedPurchase   Purchase?                 @relation(fields: [relatedPurchaseId], references: [id], onDelete: SetNull)
+
+  @@index([provider, eventType, receivedAt])
+  @@index([relatedPurchaseId])
+}
+
+// Invoice-ready billing/GST details for a company (section 13). Optional -
+// checkout is not blocked on this being filled in, but invoices generated
+// before it exists cannot allocate CGST/SGST vs IGST correctly (see
+// Invoice.placeOfSupplyAssumed).
+model CompanyBillingProfile {
+  id               String       @id @default(cuid())
+  organisationId   String       @unique
+  legalCompanyName String
+  billingEmail     String
+  billingPhone     String?
+  addressLine1     String
+  addressLine2     String?
+  city             String
+  state            String
+  stateCode        String
+  postalCode       String
+  country          String       @default("IN")
+  gstin            String?
+  updatedByUserId  String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organisation     Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedByUser    User?        @relation("BillingProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+}
+
+// One invoice per paid purchase, with an immutable snapshot of the billing
+// profile and product at invoice time (section 13). Total GST is always
+// 18%, but the CGST/SGST vs IGST split depends on place-of-supply and is
+// NOT statutory-review-complete (see CAREERIZ_BILLING_MODULE.md in this
+// worktree for the explicit disclaimer).
+model Invoice {
+  id                     String        @id @default(cuid())
+  organisationId         String
+  purchaseId             String        @unique
+  invoiceNumber          String        @unique
+  invoiceDate            DateTime      @default(now())
+  billingProfileSnapshot Json?
+  productSnapshot        Json
+  supplyType             GstSupplyType
+  // FINAL only when both the seller's and the customer's GST state codes
+  // were known at invoice time, so the CGST/SGST-vs-IGST split is real, not
+  // guessed. REVIEW_REQUIRED invoices still have a correct totalTaxPaise
+  // (18%) and totalPayablePaise, but cgst/sgst/igst are all 0 pending an
+  // operator supplying the missing jurisdiction data and regenerating the
+  // split (B1 hardening, section 9).
+  status                 InvoiceStatus @default(FINAL)
+  taxableValuePaise      Int
+  gstRatePercent         Int
+  cgstPaise              Int           @default(0)
+  sgstPaise              Int           @default(0)
+  igstPaise              Int           @default(0)
+  totalTaxPaise          Int
+  totalPayablePaise      Int
+  providerReference      String?
+  createdAt              DateTime      @default(now())
+  organisation           Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase               Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, invoiceDate])
+  @@index([organisationId, status])
 }

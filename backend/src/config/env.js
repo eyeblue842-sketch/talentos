@@ -121,6 +121,56 @@ const envSchema = z.object({
   DOCUMENT_PROCESSOR_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().min(1000).max(600000).default(30000),
+
+  // Subscriptions/Billing/Payment Gateway (feature/subscriptions-billing-entitlements).
+  // Razorpay Test Mode only during development - RAZORPAY_ENABLED gates the whole
+  // module so it stays inert (checkout disabled, webhook signature checks reject
+  // everything) until real key material is supplied. The four *_BUTTON_ID vars are
+  // the public Razorpay Payment Button ids from the brief - stored for display/
+  // reference only; they do NOT grant entitlements (see billingService/razorpayService
+  // and the Stage 1 design report for why Payment Buttons can't be securely
+  // correlated to a company/purchase, and why Orders API + Standard Checkout is the
+  // actual entitlement-granting path).
+  RAZORPAY_ENABLED: z.enum(['true', 'false']).default('false'),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  RAZORPAY_BUTTON_JOB_POST_45D: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_1M: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_6M: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_12M: z.string().optional(),
+  // Careeriz's own registered GST home state code (2 digits), used to decide
+  // CGST+SGST (intra-state) vs IGST (inter-state) on generated invoices.
+  BILLING_SELLER_STATE_CODE: z.string().regex(/^[0-9]{2}$/).optional(),
+  BILLING_SELLER_LEGAL_NAME: z.string().optional(),
+  BILLING_SELLER_GSTIN: z.string().optional(),
+  // How long an unused, separately-purchased job credit (the extra Rs.1,770
+  // top-up) stays valid before it is swept as expired. Configurable per
+  // section 10's explicit instruction; subscription-included credits instead
+  // expire with their subscription and are not affected by this value.
+  BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS: z.coerce.number().int().min(1).max(60).default(12),
+  // Separately purchased job-posting credits do not expire for now (binding
+  // product decision - the unconfirmed 12-month assumption was removed).
+  // This flag exists purely so that policy can change later without another
+  // schema/code change: BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS above stays
+  // configurable and is only actually applied when this is 'true'.
+  BILLING_PURCHASED_CREDIT_EXPIRY_ENABLED: z.enum(['true', 'false']).default('false'),
+  BILLING_RENEWAL_REMINDER_DAYS_BEFORE: z.coerce.number().int().min(1).max(60).default(15),
+  // Rollout kill-switch (B1 hardening, section 2): the entitlement
+  // middleware and job-credit consumption are fully implemented and always
+  // COMPUTED, but only actually BLOCK/CONSUME when this is 'true' (or the
+  // organisation is in the rollout allowlist below). Defaults to 'false' so
+  // deploying this migration/code never locks out an existing paying
+  // organisation with zero billing history. Server-side only - no request
+  // header, query param, or client value can influence this.
+  BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false'),
+  BILLING_ENTITLEMENT_ROLLOUT_ORG_IDS: z.string().optional(),
+  // Opt-in only. When both this and the enforcement flag are false (the
+  // default), the entitlement gates perform ZERO additional queries and are
+  // a true no-op - existing behaviour is bit-for-bit unchanged, not just
+  // "unblocked". Turn this on temporarily during rollout planning to see
+  // shadow.wouldBlock decisions in logs before flipping enforcement on.
+  BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED: z.enum(['true', 'false']).default('false'),
 }).superRefine((data, context) => {
   if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
     context.addIssue({
@@ -277,6 +327,26 @@ const envSchema = z.object({
       message: 'AI_PROVIDER=mock is not allowed in production.',
     });
   }
+
+  if (data.RAZORPAY_ENABLED === 'true') {
+    for (const field of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) {
+      if (!data[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required when RAZORPAY_ENABLED=true.`,
+        });
+      }
+    }
+  }
+
+  if (data.NODE_ENV === 'production' && data.RAZORPAY_ENABLED === 'true' && data.RAZORPAY_KEY_ID?.startsWith('rzp_test_')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['RAZORPAY_KEY_ID'],
+      message: 'A Razorpay Test Mode key (rzp_test_...) must not be used when NODE_ENV=production.',
+    });
+  }
 });
 
 export function parseEnv(rawEnv) {
@@ -391,4 +461,26 @@ export const env = {
   documentProcessorMaxRetries: parsed.data.DOCUMENT_PROCESSOR_MAX_RETRIES,
   documentProcessorCircuitBreakerThreshold: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD,
   documentProcessorCircuitBreakerCooldownMs: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS,
+  razorpayEnabled: parsed.data.RAZORPAY_ENABLED === 'true',
+  razorpayKeyId: parsed.data.RAZORPAY_KEY_ID,
+  razorpayKeySecret: parsed.data.RAZORPAY_KEY_SECRET,
+  razorpayWebhookSecret: parsed.data.RAZORPAY_WEBHOOK_SECRET,
+  razorpayButtonIds: {
+    JOB_POST_45D: parsed.data.RAZORPAY_BUTTON_JOB_POST_45D || null,
+    ATS_DB_1M: parsed.data.RAZORPAY_BUTTON_ATS_DB_1M || null,
+    ATS_DB_6M: parsed.data.RAZORPAY_BUTTON_ATS_DB_6M || null,
+    ATS_DB_12M: parsed.data.RAZORPAY_BUTTON_ATS_DB_12M || null,
+  },
+  billingSellerStateCode: parsed.data.BILLING_SELLER_STATE_CODE || null,
+  billingSellerLegalName: parsed.data.BILLING_SELLER_LEGAL_NAME || 'Careeriz',
+  billingSellerGstin: parsed.data.BILLING_SELLER_GSTIN || null,
+  billingPurchasedCreditValidityMonths: parsed.data.BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS,
+  billingPurchasedCreditExpiryEnabled: parsed.data.BILLING_PURCHASED_CREDIT_EXPIRY_ENABLED === 'true',
+  billingRenewalReminderDaysBefore: parsed.data.BILLING_RENEWAL_REMINDER_DAYS_BEFORE,
+  billingEntitlementEnforcementEnabled: parsed.data.BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED === 'true',
+  billingEntitlementRolloutOrgIds: (parsed.data.BILLING_ENTITLEMENT_ROLLOUT_ORG_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  billingEntitlementShadowLoggingEnabled: parsed.data.BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED === 'true',
 };

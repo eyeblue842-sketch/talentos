@@ -65,6 +65,9 @@ export const enterprisePermissionSchema = z.enum([
   'intelligence.analytics.use',
   'intelligence.governance.read',
   'intelligence.governance.manage',
+  'organisation.billing.read',
+  'organisation.billing.manage',
+  'organisation.billing.summary.read',
 ]);
 
 const stringArray = (maxItems = 100, maxLength = 120) => z.preprocess((value) => {
