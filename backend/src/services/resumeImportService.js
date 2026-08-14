@@ -28,12 +28,19 @@ const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'VIEWER'];
 const RETRYABLE_ITEM_STATUSES = new Set(['FAILED', 'REVIEW_REQUIRED', 'DUPLICATE']);
 const TERMINAL_ITEM_STATUSES = new Set(['REVIEW_REQUIRED', 'DUPLICATE', 'READY', 'IMPORTED', 'FAILED', 'CANCELLED']);
-
 function buildError(message, statusCode = 422, code = 'RESUME_IMPORT_ERROR') {
   const error = new Error(message);
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+export function isResumeImportBatchBlocked(batchId) {
+  return Boolean(batchId) && env.resumeImportBlockedBatchIds.includes(batchId);
+}
+
+export function buildBlockedResumeImportBatchReason(batchId) {
+  return `Resume import processing skipped because batch ${batchId} is blocked by configuration.`;
 }
 
 async function streamToBuffer(stream) {
@@ -1102,6 +1109,9 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
   const item = await prisma.resumeImportItem.findUnique({ where: { id: itemId } });
   if (!item) return 'cancelled';
   if (item.status === 'IMPORTED' || item.status === 'CANCELLED') return 'cancelled';
+  if (isResumeImportBatchBlocked(item.batchId)) {
+    return 'cancelled';
+  }
 
   // Atomic (not read-then-write) claim of the item itself: closes the gap
   // between the findUnique above and the write below, so two near-simultaneous

@@ -43,6 +43,7 @@ const envSchema = z.object({
   RESUME_IMPORT_MAX_ZIP_SIZE_MB: z.coerce.number().int().min(1).max(1000).default(100),
   RESUME_IMPORT_MAX_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(5000).default(500),
   RESUME_IMPORT_MAX_TEXT_CHARS: z.coerce.number().int().min(1000).max(1000000).default(120000),
+  RESUME_IMPORT_BLOCKED_BATCH_IDS: z.string().default(''),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
@@ -336,6 +337,10 @@ export const env = {
   resumeImportMaxZipSizeMb: parsed.data.RESUME_IMPORT_MAX_ZIP_SIZE_MB,
   resumeImportMaxUncompressedMb: parsed.data.RESUME_IMPORT_MAX_UNCOMPRESSED_MB,
   resumeImportMaxTextChars: parsed.data.RESUME_IMPORT_MAX_TEXT_CHARS,
+  resumeImportBlockedBatchIds: parsed.data.RESUME_IMPORT_BLOCKED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   smtpHost: parsed.data.SMTP_HOST,
   smtpPort: parsed.data.SMTP_PORT,
   smtpUser: parsed.data.SMTP_USER,

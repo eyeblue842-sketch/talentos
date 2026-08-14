@@ -12,6 +12,7 @@ let confirmResumeImportItem;
 let retryResumeImportItem;
 let rejectResumeImportItem;
 let getResumeImportFailureReport;
+let processBackgroundTask;
 
 let state;
 let idCounter = 1;
@@ -183,6 +184,11 @@ function installPrismaMocks() {
     if (orderBy?.createdAt === 'desc') matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     return clone(matches[0] || null);
   };
+  prisma.backgroundTask.update = async ({ where, data }) => {
+    const task = state.backgroundTasks.find((item) => item.id === where.id);
+    applyData(task, clone(data));
+    return clone(task);
+  };
   prisma.backgroundTask.updateMany = async ({ where = {}, data }) => {
     const matches = state.backgroundTasks.filter((item) => matchesWhere(item, where));
     matches.forEach((item) => applyData(item, clone(data)));
@@ -233,6 +239,7 @@ before(async () => {
     rejectResumeImportItem,
     getResumeImportFailureReport,
   } = await import('../services/resumeImportService.js'));
+  ({ processBackgroundTask } = await import('../services/backgroundTaskHandlers.js'));
 });
 
 beforeEach(() => {
@@ -249,6 +256,7 @@ beforeEach(() => {
   env.resumeImportMaxUncompressedMb = 500;
   env.resumeImportMaxTextChars = 120000;
   env.resumeImportMaxRetries = 3;
+  env.resumeImportBlockedBatchIds = [];
   const fullPath = path.resolve(process.cwd(), env.localStoragePath);
   fs.rmSync(fullPath, { recursive: true, force: true });
 });
@@ -298,6 +306,57 @@ test('processing a successful resume item extracts text and leaves the item read
   assert.match(updated.extractedText, /ready@example.com/);
   assert.equal(updated.requiresManualReview, false);
   assert.equal(state.batches.find((entry) => entry.id === batch.id).processedCount, 1);
+});
+
+test('processResumeImportItem skips blocked batches before any processing state changes', async () => {
+  const file = {
+    originalname: 'blocked.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Blocked Candidate\nblocked@example.com\n+1 555 999 0002'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  const originalStatus = item.status;
+  env.resumeImportBlockedBatchIds = [item.batchId];
+
+  const result = await processResumeImportItem(item.id, 'worker-guard');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(result, 'cancelled');
+  assert.equal(updated.status, originalStatus);
+  assert.equal(updated.processingStartedAt ?? null, null);
+  assert.equal(updated.processingCompletedAt ?? null, null);
+  assert.equal(updated.extractedText ?? null, null);
+});
+
+test('resume import background task is cancelled for a blocked batch before processResumeImportItem runs', async () => {
+  const file = {
+    originalname: 'guarded.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Guarded Candidate\nguarded@example.com\n+1 555 999 0003'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  const originalStatus = item.status;
+  env.resumeImportBlockedBatchIds = [item.batchId];
+  const task = state.backgroundTasks[0];
+  task.status = 'RUNNING';
+  task.leaseOwnerId = 'worker-guard';
+  task.entityId = item.id;
+  task.payload = { itemId: item.id };
+
+  const result = await processBackgroundTask(task);
+  const updatedItem = state.items.find((entry) => entry.id === item.id);
+  const updatedTask = state.backgroundTasks.find((entry) => entry.id === task.id);
+
+  assert.equal(result, 'cancelled');
+  assert.equal(updatedItem.status, originalStatus);
+  assert.equal(updatedTask.status, 'CANCELLED');
+  assert.match(updatedTask.lastErrorMessage, /blocked by configuration/i);
 });
 
 test('confirmation creates an imported candidate, while duplicate email detection requires review', async () => {

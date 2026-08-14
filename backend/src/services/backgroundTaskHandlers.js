@@ -13,7 +13,12 @@ import { getJobIntelligence } from '../intelligence/services/jobIntelligenceServ
 import { getInterviewIntelligence } from '../intelligence/services/interviewIntelligenceService.js';
 import { getAnalyticsInsight } from '../intelligence/services/analyticsInsightService.js';
 import { parseTalentSearchQuery } from '../intelligence/services/talentSearchService.js';
-import { processResumeImportItem } from './resumeImportService.js';
+import { markBackgroundTaskCancelled } from './backgroundTaskService.js';
+import {
+  buildBlockedResumeImportBatchReason,
+  isResumeImportBatchBlocked,
+  processResumeImportItem,
+} from './resumeImportService.js';
 import { readPrivateFileNodeStream } from '../config/storage.js';
 import {
   assessResumeTextQuality,
@@ -463,6 +468,26 @@ async function handleResumeParsingTask(task) {
 async function handleResumeImportProcessingTask(task) {
   const itemId = task.payload?.itemId || task.entityId || '';
   if (!itemId) return 'cancelled';
+  const item = await prisma.resumeImportItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, batchId: true, status: true },
+  });
+  if (!item) {
+    if (task.id) {
+      await markBackgroundTaskCancelled(task.id, task.leaseOwnerId || null, 'Resume import item not found.');
+    }
+    return 'cancelled';
+  }
+  if (isResumeImportBatchBlocked(item.batchId)) {
+    if (task.id) {
+      await markBackgroundTaskCancelled(
+        task.id,
+        task.leaseOwnerId || null,
+        buildBlockedResumeImportBatchReason(item.batchId),
+      );
+    }
+    return 'cancelled';
+  }
   // leaseOwnerId (not updatedByUserId, which is only populated for
   // human-triggered updates) holds the actual worker instance ID that
   // claimed this task — used both for observability (recorded on the item's
