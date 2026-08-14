@@ -16,19 +16,15 @@ straight to PaddleOCR within this one worker-process function call, never
 round-tripped through the parent process or exposed as a path in any
 HTTP response.
 
-VERIFICATION STATUS -- read before trusting this in production: the
-exact PaddleOCR 3.x / `PaddleOCR.predict()` result shape this module
-parses (`_parse_ocr_result`, `_parse_orientation_result`) was NOT
-verified by a real execution in this development environment.
-paddlepaddle only publishes wheels for cp39-cp313; this machine's local
-interpreter is newer than that, and no Docker/Linux 3.11 environment is
-available here (see the Step 6 dependency-gate report in
-docs/document-processor.md). This is production code, not a scaffold --
-but its first real run must happen in the Python 3.11 Linux container
-(the document-processor CI job) before being trusted. If the real result
-shape differs from what is assumed here, parsing is written to raise
-`OcrResultParseError` loudly (failing warm-up -> DEGRADED) rather than
-silently return wrong or empty data.
+VERIFICATION STATUS -- read before trusting this in production: the real
+PaddleOCR 3.x / `PaddleOCR.predict()` result shape parsed here
+(`_parse_ocr_result`, `_parse_orientation_result`) was verified during
+Phase P1 in the Python 3.11 Linux/AMD64 container runtime this service
+targets. That same validation also established that paddlepaddle 3.3.1
+fails CPU OCR inference at runtime for this stack, while 3.2.2 succeeds.
+If the real result shape changes again in a future Paddle release,
+parsing is written to raise `OcrResultParseError` loudly (failing
+warm-up -> DEGRADED) rather than silently return wrong or empty data.
 """
 from __future__ import annotations
 
@@ -109,6 +105,8 @@ def _parse_orientation_result(raw) -> dict | None:
     confidence = inner_getter("score")
     if confidence is None:
         confidence = inner_getter("confidence")
+    output_img = inner_getter("output_img")
+    rot_img = inner_getter("rot_img")
 
     if degrees is None:
         return None
@@ -116,7 +114,14 @@ def _parse_orientation_result(raw) -> dict | None:
         degrees = int(_to_plain(degrees))
     except (TypeError, ValueError):
         return None
-    return {"degrees": degrees, "confidence": float(_to_plain(confidence)) if confidence is not None else None}
+    correction_degrees = orientation_policy.correction_degrees_for_detected(degrees)
+    internally_corrected = correction_degrees != 0 and (output_img is not None or rot_img is not None)
+    return {
+        "degrees": degrees,
+        "confidence": float(_to_plain(confidence)) if confidence is not None else None,
+        "correctionDegrees": correction_degrees,
+        "internallyCorrected": internally_corrected,
+    }
 
 
 class PaddleOCREngine:
@@ -225,7 +230,7 @@ class PaddleOCREngine:
 
         final_image = cleaned_image
         rerun = False
-        if not decision.uncertain and decision.applied_degrees != 0:
+        if decision.correction_source == "careeriz_manual_postprocess" and decision.applied_degrees != 0:
             final_image = orientation_policy.rotate_degrees_cv(cleaned_image, decision.applied_degrees)
             rerun = True
         if rerun:
@@ -265,7 +270,12 @@ class PaddleOCREngine:
             warnings.append("OCR produced no readable text for this page.")
         elif low_confidence:
             warnings.append("OCR confidence is below the minimum threshold for this page; review recommended.")
-        if decision.uncertain:
+        if decision.correction_source == "paddle_internal_doc_preprocessor" and decision.uncertain:
+            warnings.append(
+                "Page orientation was corrected internally by PaddleOCR, but classifier confidence was not exposed "
+                "or did not clear the configured threshold."
+            )
+        elif decision.uncertain:
             warnings.append("Page orientation could not be confidently determined; original orientation was preserved.")
 
         preprocessing_public = {k: v for k, v in preprocessing_page.items() if not k.startswith("_")}
@@ -302,6 +312,21 @@ class PaddleOCREngine:
             )
         ]
 
+    @staticmethod
+    def _build_failed_page_result(*, page_number: int, extraction_route: str, warning: str, started_at: float) -> dict:
+        return {
+            "pageNumber": page_number,
+            "sourceType": "PDF_RENDERED",
+            "extractionRoute": extraction_route,
+            "textBlocks": [],
+            "orientation": None,
+            "meanConfidence": None,
+            "lowConfidence": True,
+            "emptyOutput": True,
+            "warnings": [warning],
+            "processingDurationMs": int((time.monotonic() - started_at) * 1000),
+        }
+
     def _ocr_pdf(self, file_path: str, job_temp_dir: str) -> list[dict]:
         validate_pdf_for_preprocessing(file_path)
         assessments = pdf_routing.assess_pdf_pages(
@@ -314,22 +339,42 @@ class PaddleOCREngine:
             ocr_candidates = ocr_candidates[: settings.ocr_max_pages_per_document]
 
         pages: list[dict] = []
+        failed_pages: list[dict] = []
+        first_error: Exception | None = None
         for index, assessment in enumerate(ocr_candidates):
             started_at = time.monotonic()
             extraction_route = "OCR_RENDERED_PDF_PAGE" if assessment["plannedRoute"] == "RENDER_FOR_OCR" else "OCR_LOW_QUALITY_FALLBACK"
-            image_bgr = pdf_routing.render_pdf_page_to_bgr(file_path, assessment["pageNumber"], settings.preprocessing_render_dpi)
-            cleaned, preprocessing_page = self._preprocessed_array(
-                image_bgr, page_number=assessment["pageNumber"], source_type="PDF_RENDERED",
-                job_temp_dir=job_temp_dir, apply_geometry_correction=False,
-            )
-            page_result = self._build_page_result(
-                page_number=assessment["pageNumber"], source_type="PDF_RENDERED", extraction_route=extraction_route,
-                cleaned_image=cleaned, preprocessing_page=preprocessing_page, started_at=started_at,
-            )
+            try:
+                image_bgr = pdf_routing.render_pdf_page_to_bgr(file_path, assessment["pageNumber"], settings.preprocessing_render_dpi)
+                cleaned, preprocessing_page = self._preprocessed_array(
+                    image_bgr, page_number=assessment["pageNumber"], source_type="PDF_RENDERED",
+                    job_temp_dir=job_temp_dir, apply_geometry_correction=False,
+                )
+                page_result = self._build_page_result(
+                    page_number=assessment["pageNumber"], source_type="PDF_RENDERED", extraction_route=extraction_route,
+                    cleaned_image=cleaned, preprocessing_page=preprocessing_page, started_at=started_at,
+                )
+                pages.append(page_result)
+            except Exception as error:
+                if first_error is None:
+                    first_error = error
+                failed_pages.append(
+                    self._build_failed_page_result(
+                        page_number=assessment["pageNumber"],
+                        extraction_route=extraction_route,
+                        warning=(
+                            f"OCR processing failed for page {assessment['pageNumber']} "
+                            f"({type(error).__name__}); other successfully processed pages were preserved."
+                        ),
+                        started_at=started_at,
+                    )
+                )
+                continue
             if truncated and index == len(ocr_candidates) - 1:
                 page_result["warnings"].append(
                     f"Document exceeded the {settings.ocr_max_pages_per_document}-page OCR budget; "
                     "remaining OCR-eligible pages were not processed."
                 )
-            pages.append(page_result)
-        return pages
+        if not pages and failed_pages and first_error is not None:
+            raise first_error
+        return sorted([*pages, *failed_pages], key=lambda page: page["pageNumber"])

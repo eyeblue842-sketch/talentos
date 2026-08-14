@@ -37,6 +37,9 @@ opencv-python==5.0.0.93
 pillow==12.3.0
 pypdfium2==5.12.1
 
-paddlepaddle==3.3.1
+# Phase P1 verified: 3.3.1 fails real CPU OCR inference in the Python 3.11
+# Linux/AMD64 container (oneDNN PIR attribute conversion error), while 3.2.2
+# succeeds with the current PaddleOCR/PaddleX stack and contract.
+paddlepaddle==3.2.2
 paddlex==3.7.2
 paddleocr==3.7.0

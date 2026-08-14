@@ -142,17 +142,13 @@ class Settings:
     # Step 6: OCR worker pool. A SEPARATE process pool from Docling's (see
     # app/worker/instance.py: docling_supervisor vs ocr_supervisor) -- a
     # hung/killed/recycled OCR worker must never affect Docling and vice
-    # versa, per the Step 6 architecture requirement. Timeout/RSS defaults
-    # below are provisional, not measured: PaddleOCR could not actually be
-    # run in this dev sandbox (paddlepaddle publishes wheels for cp39-cp313
-    # only; the local interpreter here is 3.14, and no Docker/Linux 3.11
-    # environment is available -- see the Step 6 dependency-gate report).
-    # They are order-of-magnitude estimates from PaddleOCR's own published
-    # CPU-latency claims (PP-OCRv5 mobile: low-second-range per page) with
-    # generous headroom, and MUST be re-validated against real measurement
-    # in the Python 3.11 Linux container before being treated as final --
-    # exactly the same caveat Step 4 originally carried for Docling's own
-    # timeout before Step 4 closure's real measurement corrected it.
+    # versa, per the Step 6 architecture requirement. Phase P1 verified the
+    # real runtime path in the Python 3.11 Linux/AMD64 container and
+    # established the currently compatible CPU stack (paddlepaddle 3.2.2 +
+    # paddleocr 3.7.0 + paddlex 3.7.2). The defaults below remain
+    # conservative operational headroom rather than throughput-tuned values;
+    # they should be revisited only with further production-like measurement,
+    # not during feature work.
     ocr_conversion_timeout_seconds: float = field(default_factory=lambda: _int_env("OCR_CONVERSION_TIMEOUT_SECONDS", 60))
     ocr_queue_capacity: int = field(default_factory=lambda: _int_env("OCR_QUEUE_CAPACITY", 1))
     ocr_worker_max_documents: int = field(default_factory=lambda: _int_env("OCR_WORKER_MAX_DOCUMENTS", 50))

@@ -22,19 +22,33 @@ _VALID_DEGREES = {0, 90, 180, 270}
 @dataclass(frozen=True)
 class OrientationDecision:
     detected_degrees: int
+    correction_degrees: int
     applied_degrees: int
-    confidence: float | None
+    classifier_confidence: float | None
     uncertain: bool
+    correction_source: str = "none"
     method: str = "paddleocr_doc_orientation_classifier"
 
     def as_dict(self) -> dict:
         return {
             "detectedDegrees": self.detected_degrees,
+            "correctionDegrees": self.correction_degrees,
             "appliedDegrees": self.applied_degrees,
-            "confidence": self.confidence,
+            "classifierConfidence": self.classifier_confidence,
             "uncertain": self.uncertain,
+            "correctionSource": self.correction_source,
             "method": self.method,
         }
+
+
+def correction_degrees_for_detected(degrees: int) -> int:
+    """Returns the clockwise rotation Careeriz would apply to make a page
+    upright for a given detected orientation class. Example: a page
+    detected as 90 degrees requires a 270-degree clockwise correction
+    (equivalent to a 90-degree counter-clockwise rotation)."""
+    if degrees not in _VALID_DEGREES:
+        raise ValueError(f"unsupported detected orientation degrees: {degrees}")
+    return (360 - degrees) % 360
 
 
 def decide_orientation(raw_result: dict | None, confidence_threshold: float) -> OrientationDecision:
@@ -46,20 +60,61 @@ def decide_orientation(raw_result: dict | None, confidence_threshold: float) -> 
     the exact same SAFE path: never fabricate a result, never apply an
     untrusted rotation -- preserve the original image, report uncertainty."""
     if raw_result is None:
-        return OrientationDecision(detected_degrees=0, applied_degrees=0, confidence=None, uncertain=True)
+        return OrientationDecision(
+            detected_degrees=0,
+            correction_degrees=0,
+            applied_degrees=0,
+            classifier_confidence=None,
+            uncertain=True,
+            correction_source="none",
+        )
 
     degrees = raw_result.get("degrees")
     confidence = raw_result.get("confidence")
+    internally_corrected = bool(raw_result.get("internallyCorrected"))
 
     if degrees not in _VALID_DEGREES:
-        return OrientationDecision(detected_degrees=0, applied_degrees=0, confidence=confidence, uncertain=True)
+        return OrientationDecision(
+            detected_degrees=0,
+            correction_degrees=0,
+            applied_degrees=0,
+            classifier_confidence=confidence,
+            uncertain=True,
+            correction_source="none",
+        )
+
+    correction_degrees = correction_degrees_for_detected(degrees)
+
+    if internally_corrected and correction_degrees != 0:
+        return OrientationDecision(
+            detected_degrees=degrees,
+            correction_degrees=correction_degrees,
+            applied_degrees=correction_degrees,
+            classifier_confidence=confidence,
+            uncertain=confidence is None or confidence < confidence_threshold,
+            correction_source="paddle_internal_doc_preprocessor",
+        )
 
     if confidence is None or confidence < confidence_threshold:
         # Detected but not trusted enough to act on: still report what was
         # detected (a useful signal for a human reviewer) without rotating.
-        return OrientationDecision(detected_degrees=degrees, applied_degrees=0, confidence=confidence, uncertain=True)
+        return OrientationDecision(
+            detected_degrees=degrees,
+            correction_degrees=correction_degrees,
+            applied_degrees=0,
+            classifier_confidence=confidence,
+            uncertain=True,
+            correction_source="none",
+        )
 
-    return OrientationDecision(detected_degrees=degrees, applied_degrees=degrees, confidence=confidence, uncertain=False)
+    return OrientationDecision(
+        detected_degrees=degrees,
+        correction_degrees=correction_degrees,
+        applied_degrees=correction_degrees,
+        classifier_confidence=confidence,
+        uncertain=False,
+        correction_source="careeriz_manual_postprocess",
+    )
 
 
 def rotate_degrees_cv(image_bgr, degrees: int):

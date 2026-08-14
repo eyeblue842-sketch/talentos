@@ -140,7 +140,15 @@ class FakeEngine(ExtractionEngine):
                         "preprocessingApplied": [],
                     }
                 ],
-                "orientation": {"detectedDegrees": 0, "appliedDegrees": 0, "confidence": 0.99, "uncertain": False, "method": "fake"},
+                "orientation": {
+                    "detectedDegrees": 0,
+                    "correctionDegrees": 0,
+                    "appliedDegrees": 0,
+                    "classifierConfidence": 0.99,
+                    "uncertain": False,
+                    "correctionSource": "fake",
+                    "method": "fake",
+                },
                 "meanConfidence": 0.95,
                 "lowConfidence": False,
                 "emptyOutput": False,

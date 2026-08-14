@@ -1,7 +1,5 @@
-"""Step 6B: REAL PaddleOCR validation -- prepared here, not executable in
-the dev sandbox this was written in (no Python 3.11/Docker locally; see
-docs/document-processor.md's Step 6 dependency-gate section and the Step
-6B closure report for the exact runtime-availability finding).
+"""Step 6B / Phase P1: REAL PaddleOCR validation in the Python 3.11
+Linux container runtime this service targets.
 
 Every test in this file is gated the same way DoclingEngine's real smoke
 test (test_worker_lifecycle.py) was gated in Step 4.5: skipped unless the
@@ -12,7 +10,7 @@ use FakeEngine anywhere; every assertion here is against the actual
 PaddleOCR constructor/inference API, because that is precisely the gap
 Step 6's own report identified as unverified.
 
-Run (once a real runtime exists):
+Run:
     PADDLEOCR_ENABLED=true DOCLING_ENABLED=true PREPROCESSING_ENABLED=true \\
         pytest tests/test_ocr_real_engine.py -v -s
 """
@@ -228,13 +226,18 @@ async def test_orientation_accuracy_across_rotations():
     correct = 0
     for fixture_name in ("01-clean-scanned-resume.png", "04-rotated-90.jpg", "05-rotated-180.jpg", "06-rotated-270.jpg"):
         expected_degrees = ground_truth[fixture_name]["orientationDegrees"]
+        expected_correction = (360 - expected_degrees) % 360
         mime = "image/jpeg" if fixture_name.endswith(".jpg") else "image/png"
         job_dir = os.path.join(FIXTURES_DIR, f"_out_orient_{fixture_name}")
         pages = engine.ocr(_fixture(fixture_name), mime, job_dir)
         checked += 1
         detected = pages[0]["orientation"] if pages else None
-        print(f"{fixture_name}: expected={expected_degrees} detected={detected}")
-        if detected and not detected["uncertain"] and detected["appliedDegrees"] == expected_degrees:
+        print(f"{fixture_name}: expected_detected={expected_degrees} expected_correction={expected_correction} detected={detected}")
+        if (
+            detected
+            and detected["detectedDegrees"] == expected_degrees
+            and detected["appliedDegrees"] == expected_correction
+        ):
             correct += 1
 
     print(f"Orientation accuracy: {correct}/{checked}")

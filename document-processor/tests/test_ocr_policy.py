@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.engines.paddleocr_engine import OcrResultParseError, _parse_ocr_result, _parse_orientation_result
+from app.engines.paddleocr_engine import PaddleOCREngine, OcrResultParseError, _parse_ocr_result, _parse_orientation_result
 from app.ocr import orientation as orientation_policy
 from app.ocr import quality_policy, reconciliation
 from app.ocr.reading_order import deduplicate_overlapping_lines, reconstruct_reading_order
@@ -21,13 +21,16 @@ from app.ocr.reading_order import deduplicate_overlapping_lines, reconstruct_rea
 def test_orientation_confident_result_is_applied():
     decision = orientation_policy.decide_orientation({"degrees": 90, "confidence": 0.95}, confidence_threshold=0.85)
     assert decision.detected_degrees == 90
-    assert decision.applied_degrees == 90
+    assert decision.correction_degrees == 270
+    assert decision.applied_degrees == 270
     assert decision.uncertain is False
+    assert decision.correction_source == "careeriz_manual_postprocess"
 
 
 def test_orientation_low_confidence_is_not_applied_but_reported():
     decision = orientation_policy.decide_orientation({"degrees": 180, "confidence": 0.4}, confidence_threshold=0.85)
     assert decision.detected_degrees == 180
+    assert decision.correction_degrees == 180
     assert decision.applied_degrees == 0, "an untrusted rotation must never be applied"
     assert decision.uncertain is True
 
@@ -35,8 +38,9 @@ def test_orientation_low_confidence_is_not_applied_but_reported():
 def test_orientation_missing_result_is_uncertain_never_fabricated():
     decision = orientation_policy.decide_orientation(None, confidence_threshold=0.85)
     assert decision.detected_degrees == 0
+    assert decision.correction_degrees == 0
     assert decision.applied_degrees == 0
-    assert decision.confidence is None
+    assert decision.classifier_confidence is None
     assert decision.uncertain is True
 
 
@@ -48,8 +52,22 @@ def test_orientation_invalid_degrees_value_is_uncertain():
 
 def test_orientation_zero_degrees_confident_applies_cleanly():
     decision = orientation_policy.decide_orientation({"degrees": 0, "confidence": 0.99}, confidence_threshold=0.85)
+    assert decision.correction_degrees == 0
     assert decision.applied_degrees == 0
     assert decision.uncertain is False
+
+
+def test_orientation_internal_paddle_correction_is_recorded_even_without_exposed_confidence():
+    decision = orientation_policy.decide_orientation(
+        {"degrees": 90, "confidence": None, "internallyCorrected": True},
+        confidence_threshold=0.85,
+    )
+    assert decision.detected_degrees == 90
+    assert decision.correction_degrees == 270
+    assert decision.applied_degrees == 270
+    assert decision.classifier_confidence is None
+    assert decision.uncertain is True
+    assert decision.correction_source == "paddle_internal_doc_preprocessor"
 
 
 def test_rotate_degrees_cv_rejects_unsupported_value():
@@ -244,7 +262,23 @@ def test_parse_ocr_result_raises_on_mismatched_lengths():
 def test_parse_orientation_result_extracts_angle_and_confidence():
     raw = {"doc_preprocessor_res": {"angle": 90, "score": 0.92}}
     result = _parse_orientation_result(raw)
-    assert result == {"degrees": 90, "confidence": pytest.approx(0.92)}
+    assert result == {
+        "degrees": 90,
+        "confidence": pytest.approx(0.92),
+        "correctionDegrees": 270,
+        "internallyCorrected": False,
+    }
+
+
+def test_parse_orientation_result_detects_internal_correction_from_output_image():
+    raw = {"doc_preprocessor_res": {"angle": 270, "output_img": [[1]]}}
+    result = _parse_orientation_result(raw)
+    assert result == {
+        "degrees": 270,
+        "confidence": None,
+        "correctionDegrees": 90,
+        "internallyCorrected": True,
+    }
 
 
 def test_parse_orientation_result_none_when_submodule_absent():
@@ -253,3 +287,83 @@ def test_parse_orientation_result_none_when_submodule_absent():
 
 def test_parse_orientation_result_none_when_angle_missing():
     assert _parse_orientation_result({"doc_preprocessor_res": {"score": 0.9}}) is None
+
+
+def test_ocr_pdf_preserves_successful_pages_when_a_later_page_fails(monkeypatch, tmp_path):
+    engine = object.__new__(PaddleOCREngine)
+    pdf_path = str(tmp_path / "fixture.pdf")
+    job_temp_dir = str(tmp_path / "job-temp")
+
+    monkeypatch.setattr("app.engines.paddleocr_engine.validate_pdf_for_preprocessing", lambda path: None)
+    monkeypatch.setattr(
+        "app.engines.paddleocr_engine.pdf_routing.assess_pdf_pages",
+        lambda *args, **kwargs: [
+            {"pageNumber": 1, "plannedRoute": "RENDER_FOR_OCR"},
+            {"pageNumber": 2, "plannedRoute": "RENDER_FOR_OCR"},
+        ],
+    )
+    monkeypatch.setattr(
+        "app.engines.paddleocr_engine.pdf_routing.render_pdf_page_to_bgr",
+        lambda *args, **kwargs: "image-bgr",
+    )
+    monkeypatch.setattr(
+        engine,
+        "_preprocessed_array",
+        lambda image_bgr, **kwargs: ("cleaned", {"pageNumber": kwargs["page_number"]}),
+    )
+
+    def build_page_result(**kwargs):
+        if kwargs["page_number"] == 2:
+            raise RuntimeError("simulated page failure")
+        return {
+            "pageNumber": kwargs["page_number"],
+            "sourceType": "PDF_RENDERED",
+            "extractionRoute": kwargs["extraction_route"],
+            "textBlocks": [{"text": "ok"}],
+            "orientation": None,
+            "meanConfidence": 0.99,
+            "lowConfidence": False,
+            "emptyOutput": False,
+            "warnings": [],
+            "processingDurationMs": 1,
+        }
+
+    monkeypatch.setattr(engine, "_build_page_result", build_page_result)
+
+    pages = engine._ocr_pdf(pdf_path, job_temp_dir)
+
+    assert [page["pageNumber"] for page in pages] == [1, 2]
+    assert pages[0]["textBlocks"] == [{"text": "ok"}]
+    assert pages[0]["emptyOutput"] is False
+    assert pages[1]["textBlocks"] == []
+    assert pages[1]["emptyOutput"] is True
+    assert any("page 2" in warning for warning in pages[1]["warnings"])
+
+
+def test_ocr_pdf_raises_when_no_usable_page_remains(monkeypatch, tmp_path):
+    engine = object.__new__(PaddleOCREngine)
+    pdf_path = str(tmp_path / "fixture.pdf")
+    job_temp_dir = str(tmp_path / "job-temp")
+
+    monkeypatch.setattr("app.engines.paddleocr_engine.validate_pdf_for_preprocessing", lambda path: None)
+    monkeypatch.setattr(
+        "app.engines.paddleocr_engine.pdf_routing.assess_pdf_pages",
+        lambda *args, **kwargs: [{"pageNumber": 1, "plannedRoute": "RENDER_FOR_OCR"}],
+    )
+    monkeypatch.setattr(
+        "app.engines.paddleocr_engine.pdf_routing.render_pdf_page_to_bgr",
+        lambda *args, **kwargs: "image-bgr",
+    )
+    monkeypatch.setattr(
+        engine,
+        "_preprocessed_array",
+        lambda image_bgr, **kwargs: ("cleaned", {"pageNumber": kwargs["page_number"]}),
+    )
+    monkeypatch.setattr(
+        engine,
+        "_build_page_result",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("simulated page failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="simulated page failure"):
+        engine._ocr_pdf(pdf_path, job_temp_dir)

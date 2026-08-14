@@ -143,13 +143,17 @@ class OrientationAssessment(BaseModel):
     model, not a "rotate and see if OCR finds more text" heuristic --
     that comparison method was explicitly rejected: it would rotate an
     image because OCR produced slightly more text, not because the
-    orientation is actually known). `appliedDegrees` is 0 whenever
-    `uncertain` is true -- an uncertain page is left in its original
-    orientation, never guessed."""
+    orientation is actually known). `correctionDegrees` is the clockwise
+    rotation required to make the page upright. `appliedDegrees` records
+    the correction actually applied, either by PaddleOCR's internal
+    document preprocessor or by Careeriz's own explicit post-processing
+    path."""
     detectedDegrees: int = Field(..., ge=0, le=270)
+    correctionDegrees: int = Field(..., ge=0, le=270)
     appliedDegrees: int = Field(..., ge=0, le=270)
-    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    classifierConfidence: float | None = Field(default=None, ge=0.0, le=1.0)
     uncertain: bool = False
+    correctionSource: str = "none"
     method: str = "paddleocr_doc_orientation_classifier"
 
 
