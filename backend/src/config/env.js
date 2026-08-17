@@ -21,6 +21,16 @@ const envSchema = z.object({
   ELASTICSEARCH_ENABLED: z.enum(['true', 'false']).default('false'),
   ELASTICSEARCH_URL: z.string().url().optional(),
   ELASTICSEARCH_INDEX: z.string().default('resumes'),
+  RESUME_SEARCH_V2_ENABLED: z.enum(['true', 'false']).default('false'),
+  RESUME_INDEXING_ENABLED: z.enum(['true', 'false']).default('false'),
+  RESUME_SEARCH_ENGINE_PROVIDER: z.enum(['opensearch']).default('opensearch'),
+  OPENSEARCH_NODE: z.string().url().optional(),
+  OPENSEARCH_USERNAME: z.string().optional(),
+  OPENSEARCH_PASSWORD: z.string().optional(),
+  OPENSEARCH_INDEX_PREFIX: z.string().trim().min(1).default('careeriz-resume-search'),
+  OPENSEARCH_CURSOR_SECRET: z.string().optional(),
+  RESUME_INDEXING_ALLOWED_ORG_IDS: z.string().default(''),
+  RESUME_INDEXING_ALLOWED_BATCH_IDS: z.string().default(''),
   REDIS_ENABLED: z.enum(['true', 'false']).default('false'),
   REDIS_URL: z.string().url().optional(),
   REDIS_KEY_PREFIX: z.string().default('careeriz'),
@@ -131,6 +141,22 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['ELASTICSEARCH_URL'],
       message: 'ELASTICSEARCH_URL is required when ELASTICSEARCH_ENABLED=true.',
+    });
+  }
+
+  if ((data.RESUME_SEARCH_V2_ENABLED === 'true' || data.RESUME_INDEXING_ENABLED === 'true') && !data.OPENSEARCH_NODE) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPENSEARCH_NODE'],
+      message: 'OPENSEARCH_NODE is required when resume search v2 or resume indexing is enabled.',
+    });
+  }
+
+  if (data.RESUME_SEARCH_V2_ENABLED === 'true' && !data.OPENSEARCH_CURSOR_SECRET) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPENSEARCH_CURSOR_SECRET'],
+      message: 'OPENSEARCH_CURSOR_SECRET is required when RESUME_SEARCH_V2_ENABLED=true.',
     });
   }
 
@@ -318,6 +344,22 @@ export const env = {
   elasticsearchEnabled: parsed.data.ELASTICSEARCH_ENABLED === 'true',
   elasticsearchUrl: parsed.data.ELASTICSEARCH_URL,
   elasticsearchIndex: parsed.data.ELASTICSEARCH_INDEX,
+  resumeSearchV2Enabled: parsed.data.RESUME_SEARCH_V2_ENABLED === 'true',
+  resumeIndexingEnabled: parsed.data.RESUME_INDEXING_ENABLED === 'true',
+  resumeSearchEngineProvider: parsed.data.RESUME_SEARCH_ENGINE_PROVIDER,
+  openSearchNode: parsed.data.OPENSEARCH_NODE,
+  openSearchUsername: parsed.data.OPENSEARCH_USERNAME,
+  openSearchPassword: parsed.data.OPENSEARCH_PASSWORD,
+  openSearchIndexPrefix: parsed.data.OPENSEARCH_INDEX_PREFIX,
+  openSearchCursorSecret: parsed.data.OPENSEARCH_CURSOR_SECRET,
+  resumeIndexingAllowedOrgIds: parsed.data.RESUME_INDEXING_ALLOWED_ORG_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  resumeIndexingAllowedBatchIds: parsed.data.RESUME_INDEXING_ALLOWED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   redisEnabled: parsed.data.REDIS_ENABLED === 'true',
   redisUrl: parsed.data.REDIS_URL,
   redisKeyPrefix: parsed.data.REDIS_KEY_PREFIX,

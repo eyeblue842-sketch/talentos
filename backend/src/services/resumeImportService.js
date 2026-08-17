@@ -23,6 +23,7 @@ import {
 import { parseResumeText } from './ai/resume-parser.js';
 import { env } from '../config/env.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import { enqueueResumeSearchIndexUpsert } from './resumeSearchV2/indexingService.js';
 import {
   buildResumeImportDocumentProcessorResult,
   shouldUseDocumentProcessorForImportItem,
@@ -49,6 +50,11 @@ export function buildBlockedResumeImportBatchReason(batchId) {
 
 export function isResumeImportDocumentProcessorAllowed(item) {
   return shouldUseDocumentProcessorForImportItem(item);
+}
+
+async function enqueueResumeSearchIndexUpsertBestEffort(candidateId, options = {}) {
+  if (!candidateId) return;
+  await enqueueResumeSearchIndexUpsert(candidateId, options).catch(() => {});
 }
 
 async function streamToBuffer(stream) {
@@ -811,10 +817,6 @@ export async function retryFailedResumeImportBatchItems(actorUser, batchId, { in
     ...requestMeta,
   });
 
-  if (result.candidate?.id || result.item.candidateId) {
-    await markCandidateIntelligenceStale(result.candidate?.id || result.item.candidateId, 'RESUME_IMPORT_CONFIRMED');
-  }
-
   return {
     batchId,
     retriedCount: items.length,
@@ -907,13 +909,20 @@ export async function confirmResumeImportItem(actorUser, batchId, itemId, payloa
     ...requestMeta,
   });
 
-  if (result.candidateId) {
-    await markCandidateIntelligenceStale(result.candidateId, 'RESUME_IMPORT_DUPLICATE_RESOLVED');
+  const confirmedCandidateId = result.candidate?.id || result.item.candidateId || null;
+  if (confirmedCandidateId) {
+    await Promise.allSettled([
+      markCandidateIntelligenceStale(confirmedCandidateId, 'RESUME_IMPORT_CONFIRMED'),
+      enqueueResumeSearchIndexUpsertBestEffort(confirmedCandidateId, {
+        correlationId: item.id,
+        createdByUserId: actorUser.id,
+      }),
+    ]);
   }
 
   return {
     item: serializeItem(result.item),
-    candidateId: result.candidate?.id || result.item.candidateId || null,
+    candidateId: confirmedCandidateId,
     duplicate: Boolean(result.duplicate),
   };
 }
@@ -1037,6 +1046,16 @@ export async function resolveResumeImportDuplicate(actorUser, batchId, itemId, p
     metadata: { batchId, resolution: payload.resolution, candidateId: result.candidateId },
     ...requestMeta,
   });
+
+  if (result.candidateId) {
+    await Promise.allSettled([
+      markCandidateIntelligenceStale(result.candidateId, 'RESUME_IMPORT_DUPLICATE_RESOLVED'),
+      enqueueResumeSearchIndexUpsertBestEffort(result.candidateId, {
+        correlationId: item.id,
+        createdByUserId: actorUser.id,
+      }),
+    ]);
+  }
 
   return {
     item: serializeItem(result.item),

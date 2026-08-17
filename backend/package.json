@@ -21,7 +21,9 @@
     "db:test:migrate": "node ./scripts/run-with-test-db.js npx prisma migrate deploy --schema prisma/schema.prisma",
     "db:test:reset": "node ./scripts/run-with-test-db.js npx prisma migrate reset --force --skip-generate --skip-seed --schema prisma/schema.prisma",
     "seed": "node prisma/seed.js",
-    "seed:test-admin": "node scripts/seed-test-admin.js"
+    "seed:test-admin": "node scripts/seed-test-admin.js",
+    "resume-search:backfill": "node scripts/resume-search-backfill.js",
+    "resume-search:reindex": "node scripts/resume-search-reindex.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1094.0",
@@ -30,6 +32,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@careeriz/shared": "file:../shared",
     "@elastic/elasticsearch": "^8.15.0",
+    "@opensearch-project/opensearch": "3.0.0",
     "@prisma/client": "^6.5.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",

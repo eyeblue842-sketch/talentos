@@ -34,6 +34,7 @@ import {
 import { getResumeAiProviderSelection } from './ai/ai-provider.js';
 import { parseResumeText, RESUME_PARSER_VERSION } from './ai/resume-parser.js';
 import { indexCandidateResume } from './searchService.js';
+import { enqueueResumeSearchIndexUpsert, processResumeSearchIndexTask } from './resumeSearchV2/indexingService.js';
 import {
   normalizeCandidateProfileForPresentation,
   sanitizeStructuredCandidateField,
@@ -427,6 +428,9 @@ async function handleResumeParsingTask(task) {
 
     await Promise.allSettled([
       indexCandidateResume(updatedCandidate),
+      enqueueResumeSearchIndexUpsert(updatedCandidate.id, {
+        correlationId: task.id,
+      }),
       markCandidateIntelligenceStale(asset.candidateId, 'RESUME_PARSED'),
     ]);
 
@@ -757,6 +761,8 @@ export async function processBackgroundTask(task) {
       return handleResumeParsingTask(task);
     case 'RESUME_IMPORT_PROCESSING':
       return handleResumeImportProcessingTask(task);
+    case 'RESUME_SEARCH_INDEX_SYNC':
+      return processResumeSearchIndexTask(task);
     case 'INTERVIEW_REMINDER':
       return handleInterviewReminderTask(task);
     case 'OFFER_REMINDER':

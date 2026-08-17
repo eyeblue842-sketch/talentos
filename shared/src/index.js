@@ -5,5 +5,7 @@ export * from './admin.js';
 export * from './intelligence.js';
 export * from './setup.js';
 export * from './resume-import.js';
+export * from './resume-search-v2.js';
+export * from './resume-search-indexing.js';
 export * from './network.js';
 export * from './messaging.js';

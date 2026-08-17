@@ -112,6 +112,16 @@ enum BackgroundTaskType {
   JOB_CANDIDATE_RANKING_GENERATION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
+  RESUME_SEARCH_INDEX_SYNC
+}
+
+enum ResumeSearchIndexStatus {
+  PENDING
+  INDEXED
+  RETRY_SCHEDULED
+  FAILED
+  DELETED
+  SKIPPED
 }
 
 enum CandidateIntelligenceKind {
@@ -1438,6 +1448,7 @@ model CandidateProfile {
   meetingParticipants            MeetingParticipant[]
   rescheduleRequests             InterviewRescheduleRequest[]
   duplicateImportItems           ResumeImportItem[]           @relation("ResumeImportDuplicateCandidate")
+  resumeSearchIndexStates        ResumeSearchIndexState[]
   importedFromItems              ResumeImportItem[]           @relation("ResumeImportCreatedCandidate")
   intelligenceStates             CandidateIntelligenceState[]
   candidateJobMatchStates        CandidateJobMatchState[]
@@ -2050,12 +2061,37 @@ model ResumeAsset {
   latestForCandidate          CandidateProfile[]           @relation("CandidateLatestResumeAsset")
   candidateIntelligenceStates CandidateIntelligenceState[]
   candidateJobMatchStates     CandidateJobMatchState[]     @relation("CandidateJobMatchLatestResumeAsset")
+  resumeSearchIndexStates     ResumeSearchIndexState[]
 
   @@index([candidateId, kind, createdAt])
   @@index([candidateId, kind, status, createdAt])
   @@index([candidateId, isPrimary, kind])
   @@index([ownerUserId, createdAt])
   @@index([source, parsingStatus, createdAt])
+}
+
+model ResumeSearchIndexState {
+  id                    String                  @id @default(cuid())
+  candidateId           String
+  resumeId              String?
+  sourceVersion         String
+  indexSchemaVersion    String
+  status                ResumeSearchIndexStatus @default(PENDING)
+  attemptCount          Int                     @default(0)
+  lastAttemptAt         DateTime?
+  indexedAt             DateTime?
+  lastErrorCode         String?
+  lastErrorAt           DateTime?
+  engineDocumentVersion String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  candidate             CandidateProfile        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  resume                ResumeAsset?            @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, indexSchemaVersion])
+  @@index([status, updatedAt])
+  @@index([resumeId])
+  @@index([lastErrorAt])
 }
 
 model ResumeImportBatch {

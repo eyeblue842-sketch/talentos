@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   searchResumeDatabase,
+  searchResumeDatabaseV2,
   getCandidateDetail,
   getCandidatePreview,
   updateCandidateProfile,
@@ -23,6 +24,7 @@ import { upload } from '../middleware/upload.js';
 import { validateSchema } from '../middleware/schema.js';
 import {
   recruiterResumeSearchSaveSchema,
+  resumeSearchV2RequestSchema,
   recruiterTalentPoolCandidateSchema,
   recruiterTalentPoolCreateSchema,
 } from '@careeriz/shared';
@@ -30,6 +32,7 @@ import {
 export const resumeRouter = Router();
 
 resumeRouter.get('/search', auth(['RECRUITER']), searchResumeDatabase);
+resumeRouter.post('/search/v2', auth(['RECRUITER', 'ADMIN']), validateSchema(resumeSearchV2RequestSchema), searchResumeDatabaseV2);
 resumeRouter.get('/search/:candidateId', auth(['RECRUITER']), getCandidateDetail);
 resumeRouter.get('/preview/:candidateId', auth(['RECRUITER']), getCandidatePreview);
 resumeRouter.get('/saved', auth(['RECRUITER']), listSavedCandidates);
