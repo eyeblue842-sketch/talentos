@@ -2,11 +2,14 @@ import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { RecruiterSemanticSearchWorkspace } from '@/components/sections/recruiter-semantic-search-workspace';
+import { RecruiterResumeSearchV2Page } from '@/components/sections/recruiter-resume-search-v2-page';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getRecruiterJobs } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
 import { hasUserPermission } from '@/lib/enterprise-permissions';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { buildInitialResumeSearchV2State } from '@/lib/recruiter-resume-search-v2';
+import { isResumeSearchV2RolloutEnabledForServer } from '@/lib/resume-search-v2-rollout.server';
 import { buildInitialSemanticSearchState } from '@/lib/semantic-search';
 
 export default async function RecruiterDatabaseResultsPage({ searchParams }) {
@@ -23,6 +26,7 @@ export default async function RecruiterDatabaseResultsPage({ searchParams }) {
 
   const featureFlags = {
     semanticSearchEnabled: isFeatureEnabled('semanticSearch'),
+    resumeSearchV2Enabled: isFeatureEnabled('resumeSearchV2'),
     semanticSearchHistoryEnabled: isFeatureEnabled('searchHistory'),
     semanticSearchSavedEnabled: isFeatureEnabled('savedSearches'),
     semanticSearchSuggestionsEnabled: isFeatureEnabled('searchSuggestions'),
@@ -51,6 +55,8 @@ export default async function RecruiterDatabaseResultsPage({ searchParams }) {
     canReadCandidateIntelligence: hasUserPermission(currentUser, 'intelligence.candidate.read'),
     canReadCandidateMatch: hasUserPermission(currentUser, 'intelligence.match.read'),
   };
+  const canUseSalaryFilters = hasUserPermission(currentUser, 'intelligence.search.salary.filter');
+  const resumeSearchV2RolloutEnabled = isResumeSearchV2RolloutEnabledForServer({ user: currentUser, organisation });
 
   return (
     <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
@@ -68,27 +74,38 @@ export default async function RecruiterDatabaseResultsPage({ searchParams }) {
           <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{errorMessage}</p>
         </Card>
       ) : (
-        <RecruiterSemanticSearchWorkspace
-          initialState={initialState}
-          view="results"
-          organisationName={organisation?.name || 'Careeriz Hire'}
-          jobs={jobs}
-          featureEnabled={featureFlags.semanticSearchEnabled}
-          canRead={permissions.canReadSemanticSearch}
-          canExecute={permissions.canExecuteSemanticSearch}
-          canReadHistory={permissions.canReadSearchHistory}
-          canReadSavedSearches={permissions.canReadSavedSearches}
-          canManageSavedSearches={permissions.canManageSavedSearches}
-          canReadCandidateIntelligence={permissions.canReadCandidateIntelligence}
-          canReadCandidateMatch={permissions.canReadCandidateMatch}
-          candidateIntelligenceEnabled={featureFlags.candidateIntelligenceEnabled}
-          candidateMatchingEnabled={featureFlags.candidateMatchingEnabled}
-          searchSuggestionsEnabled={featureFlags.semanticSearchSuggestionsEnabled}
-          savedSearchesEnabled={featureFlags.semanticSearchSavedEnabled}
-          searchHistoryEnabled={featureFlags.semanticSearchHistoryEnabled}
-          similarCandidateSearchEnabled={featureFlags.similarCandidateSearchEnabled}
-          similarJobSearchEnabled={featureFlags.similarJobSearchEnabled}
-        />
+        resumeSearchV2RolloutEnabled ? (
+          <RecruiterResumeSearchV2Page
+            initialState={buildInitialResumeSearchV2State(rawParams || {})}
+            featureEnabled={featureFlags.resumeSearchV2Enabled}
+            canRead={permissions.canReadSemanticSearch}
+            canExecute={permissions.canExecuteSemanticSearch}
+            canUseSalaryFilters={canUseSalaryFilters}
+            view="results"
+          />
+        ) : (
+          <RecruiterSemanticSearchWorkspace
+            initialState={initialState}
+            view="results"
+            organisationName={organisation?.name || 'Careeriz Hire'}
+            jobs={jobs}
+            featureEnabled={featureFlags.semanticSearchEnabled}
+            canRead={permissions.canReadSemanticSearch}
+            canExecute={permissions.canExecuteSemanticSearch}
+            canReadHistory={permissions.canReadSearchHistory}
+            canReadSavedSearches={permissions.canReadSavedSearches}
+            canManageSavedSearches={permissions.canManageSavedSearches}
+            canReadCandidateIntelligence={permissions.canReadCandidateIntelligence}
+            canReadCandidateMatch={permissions.canReadCandidateMatch}
+            candidateIntelligenceEnabled={featureFlags.candidateIntelligenceEnabled}
+            candidateMatchingEnabled={featureFlags.candidateMatchingEnabled}
+            searchSuggestionsEnabled={featureFlags.semanticSearchSuggestionsEnabled}
+            savedSearchesEnabled={featureFlags.semanticSearchSavedEnabled}
+            searchHistoryEnabled={featureFlags.semanticSearchHistoryEnabled}
+            similarCandidateSearchEnabled={featureFlags.similarCandidateSearchEnabled}
+            similarJobSearchEnabled={featureFlags.similarJobSearchEnabled}
+          />
+        )
       )}
     </WorkspaceShell>
   );
