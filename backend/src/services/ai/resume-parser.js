@@ -25,7 +25,7 @@ function sanitizeAiFieldValue(field, value) {
   return value;
 }
 
-function mergeValue(field, primary, fallback) {
+export function mergeResumeFieldValue(field, primary, fallback) {
   const safePrimaryValue = sanitizeAiFieldValue(field, primary?.value);
   const primaryConfidence = Number(primary?.confidence || 0);
   const fallbackConfidence = Number(fallback?.confidence || 0);
@@ -48,7 +48,7 @@ function mergeValue(field, primary, fallback) {
   };
 }
 
-export async function parseResumeText(text, { originalFilename } = {}) {
+export async function parseResumeTextDetailed(text, { originalFilename } = {}) {
   const sanitizedText = sanitizeResumeString(text);
   const deterministic = sanitizeResumeData(buildDeterministicResumeParse(sanitizedText, originalFilename || 'resume'));
   const aiSelection = getResumeAiProviderSelection();
@@ -68,7 +68,9 @@ export async function parseResumeText(text, { originalFilename } = {}) {
 
   if (!aiParsed?.candidate) {
     return {
-      candidate: deterministic.candidate,
+      deterministicCandidate: deterministic.candidate,
+      aiCandidate: null,
+      mergedCandidate: deterministic.candidate,
       metadata: sanitizeResumeData({
         ...(deterministic.metadata || {}),
         parserVersion: RESUME_PARSER_VERSION,
@@ -90,11 +92,13 @@ export async function parseResumeText(text, { originalFilename } = {}) {
   const mergedCandidate = { ...deterministic.candidate };
   for (const [field, deterministicField] of Object.entries(deterministic.candidate)) {
     const aiField = aiParsed.candidate[field];
-    mergedCandidate[field] = mergeValue(field, aiField, deterministicField);
+    mergedCandidate[field] = mergeResumeFieldValue(field, aiField, deterministicField);
   }
 
   return {
-    candidate: sanitizeResumeData(mergedCandidate),
+    deterministicCandidate: deterministic.candidate,
+    aiCandidate: aiParsed.candidate,
+    mergedCandidate: sanitizeResumeData(mergedCandidate),
     metadata: sanitizeResumeData({
       ...(deterministic.metadata || {}),
       ...(aiParsed.metadata || {}),
@@ -109,5 +113,13 @@ export async function parseResumeText(text, { originalFilename } = {}) {
       aiRequested: true,
       aiFallbackReason: null,
     }),
+  };
+}
+
+export async function parseResumeText(text, { originalFilename } = {}) {
+  const result = await parseResumeTextDetailed(text, { originalFilename });
+  return {
+    candidate: result.mergedCandidate,
+    metadata: result.metadata,
   };
 }

@@ -98,6 +98,9 @@ const envSchema = z.object({
   // until an engine (Docling/PaddleOCR) actually lands and is explicitly
   // wired into the import pipeline in a later step.
   DOCUMENT_PROCESSOR_ENABLED: z.enum(['true', 'false']).default('false'),
+  DOCUMENT_PROCESSOR_INTEGRATION_ENABLED: z.enum(['true', 'false']).default('false'),
+  DOCUMENT_PROCESSOR_ALLOWED_COMPANY_IDS: z.string().default(''),
+  DOCUMENT_PROCESSOR_ALLOWED_BATCH_IDS: z.string().default(''),
   DOCUMENT_PROCESSOR_URL: z.string().url().default('http://127.0.0.1:8081'),
   DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(3000),
   // Step 4.5: the Python service enforces its own hard per-job deadline
@@ -390,6 +393,15 @@ export const env = {
   workerHeartbeatIntervalMs: parsed.data.WORKER_HEARTBEAT_INTERVAL_MS,
   workerHeartbeatStaleMs: parsed.data.WORKER_HEARTBEAT_STALE_MS,
   documentProcessorEnabled: parsed.data.DOCUMENT_PROCESSOR_ENABLED === 'true',
+  documentProcessorIntegrationEnabled: parsed.data.DOCUMENT_PROCESSOR_INTEGRATION_ENABLED === 'true',
+  documentProcessorAllowedCompanyIds: parsed.data.DOCUMENT_PROCESSOR_ALLOWED_COMPANY_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  documentProcessorAllowedBatchIds: parsed.data.DOCUMENT_PROCESSOR_ALLOWED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   documentProcessorUrl: parsed.data.DOCUMENT_PROCESSOR_URL,
   documentProcessorConnectTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS,
   documentProcessorResponseTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS,

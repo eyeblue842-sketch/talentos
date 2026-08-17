@@ -23,6 +23,10 @@ import {
 import { parseResumeText } from './ai/resume-parser.js';
 import { env } from '../config/env.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import {
+  buildResumeImportDocumentProcessorResult,
+  shouldUseDocumentProcessorForImportItem,
+} from './documentProcessor/resumeImportDocumentProcessorIntegration.js';
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'VIEWER'];
@@ -41,6 +45,10 @@ export function isResumeImportBatchBlocked(batchId) {
 
 export function buildBlockedResumeImportBatchReason(batchId) {
   return `Resume import processing skipped because batch ${batchId} is blocked by configuration.`;
+}
+
+export function isResumeImportDocumentProcessorAllowed(item) {
+  return shouldUseDocumentProcessorForImportItem(item);
 }
 
 async function streamToBuffer(stream) {
@@ -1108,7 +1116,7 @@ export async function streamResumeImportItemFile(actorUser, batchId, itemId, org
 export async function processResumeImportItem(itemId, workerId = null, taskId = null) {
   const item = await prisma.resumeImportItem.findUnique({ where: { id: itemId } });
   if (!item) return 'cancelled';
-  if (item.status === 'IMPORTED' || item.status === 'CANCELLED') return 'cancelled';
+  if (!['QUEUED', 'UPLOADED'].includes(item.status)) return 'cancelled';
   if (isResumeImportBatchBlocked(item.batchId)) {
     return 'cancelled';
   }
@@ -1118,7 +1126,7 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
   // calls for the same item (e.g. from a lingering duplicate task) can't both
   // proceed past this point.
   const claim = await prisma.resumeImportItem.updateMany({
-    where: { id: item.id, status: { notIn: ['IMPORTED', 'CANCELLED'] } },
+    where: { id: item.id, status: { in: ['QUEUED', 'UPLOADED'] } },
     data: {
       status: 'EXTRACTING',
       processingStartedAt: new Date(),
@@ -1143,22 +1151,74 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
     let parserVersion = null;
     let errorCode = extracted.errorCode;
     let errorMessage = null;
+    let processingMetadata = sanitizeResumeData({
+      workerId,
+      aiEnabled: env.aiResumeParsingEnabled,
+      aiProvider: env.aiProvider,
+      extraction: {
+        totalPages: extracted.totalPages || null,
+        strategy: extracted.strategy || null,
+      },
+      documentProcessor: {
+        enabled: env.documentProcessorEnabled,
+        integrationEnabled: env.documentProcessorIntegrationEnabled,
+        rolloutMatched: false,
+        attempted: false,
+        used: false,
+      },
+    });
 
     await renewLease();
 
-    if (trimmedText) {
+    const canUseDocumentProcessor = isResumeImportDocumentProcessorAllowed(item);
+    let documentProcessorOutcome = null;
+
+    if (canUseDocumentProcessor) {
+      documentProcessorOutcome = await buildResumeImportDocumentProcessorResult({
+        item,
+        fileBuffer,
+        legacyExtractedText: trimmedText,
+      });
+
+      processingMetadata.documentProcessor = sanitizeResumeData({
+        enabled: env.documentProcessorEnabled,
+        integrationEnabled: env.documentProcessorIntegrationEnabled,
+        ...documentProcessorOutcome.metadata,
+      });
+    }
+
+    const activeText = sanitizeResumeString(documentProcessorOutcome?.used
+      ? documentProcessorOutcome.extractedText
+      : trimmedText || '').slice(0, env.resumeImportMaxTextChars);
+
+    if (activeText) {
       await prisma.resumeImportItem.update({
         where: { id: item.id },
         data: {
           status: 'PARSING',
         },
       });
-      try {
-        parsedData = sanitizeResumeData(await parseResumeText(trimmedText, { originalFilename: item.originalFilename }));
-        parserVersion = parsedData?.metadata?.parser || parsedData?.metadata?.provider || null;
-      } catch (error) {
-        errorCode = error.code || 'AI_PARSING_FAILED';
-        errorMessage = String(error.message || 'AI parsing failed.').slice(0, 1000);
+
+      if (documentProcessorOutcome?.used && documentProcessorOutcome?.parsedData) {
+        parsedData = sanitizeResumeData(documentProcessorOutcome.parsedData);
+        parserVersion = documentProcessorOutcome.parserVersion || parsedData?.metadata?.parser || null;
+      } else {
+        try {
+          parsedData = sanitizeResumeData(await parseResumeText(activeText, { originalFilename: item.originalFilename }));
+          parserVersion = parsedData?.metadata?.parser || parsedData?.metadata?.provider || null;
+        } catch (error) {
+          errorCode = error.code || 'AI_PARSING_FAILED';
+          errorMessage = String(error.message || 'AI parsing failed.').slice(0, 1000);
+        }
+      }
+
+      if (!documentProcessorOutcome?.used && documentProcessorOutcome?.attempted) {
+        processingMetadata.documentProcessor = sanitizeResumeData({
+          ...processingMetadata.documentProcessor,
+          fallbackReason: documentProcessorOutcome.fallbackReason || null,
+          fallbackMessage: documentProcessorOutcome.fallbackMessage || null,
+          retryable: Boolean(documentProcessorOutcome.retryable),
+        });
       }
     }
 
@@ -1169,7 +1229,10 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
     let duplicateCandidateId = null;
     let duplicateReason = null;
     let duplicateMatchFields = null;
-    let requiresManualReview = extracted.requiresManualReview || !parsedData || !hasMinimumIdentity(parsedData);
+    let requiresManualReview = extracted.requiresManualReview
+      || documentProcessorOutcome?.requiresManualReview
+      || !parsedData
+      || !hasMinimumIdentity(parsedData);
 
     if (duplicate && !duplicate.suggestedOnly) {
       status = 'DUPLICATE';
@@ -1191,7 +1254,7 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
       where: { id: item.id },
       data: {
         status,
-        extractedText: sanitizeResumeString(trimmedText || null),
+        extractedText: sanitizeResumeString(activeText || null),
         parsedData: sanitizeResumeData(parsedData || null),
         parserVersion,
         parsingConfidence: sanitizeResumeData(parsedData?.candidate || Prisma.JsonNull),
@@ -1202,15 +1265,7 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
         errorCode,
         errorMessage,
         processingCompletedAt: new Date(),
-        metadata: sanitizeResumeData({
-          workerId,
-          aiEnabled: env.aiResumeParsingEnabled,
-          aiProvider: env.aiProvider,
-          extraction: {
-            totalPages: extracted.totalPages || null,
-            strategy: extracted.strategy || null,
-          },
-        }),
+        metadata: processingMetadata,
       },
     });
     await refreshBatchCounts(item.batchId);
