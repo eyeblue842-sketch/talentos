@@ -1,4 +1,11 @@
 import '../src/__tests__/setup/node-test-globals.js';
+import { resolveE2eDatabaseConfig } from './resolveE2eDatabaseConfig.js';
+
+// Resolved before any other setup, and before the env-clearing loop below,
+// so a missing TEST_DATABASE_URL fails fast with a clear error instead of
+// partially clearing process.env and then failing deeper inside server
+// startup.
+const { databaseUrl, directUrl } = resolveE2eDatabaseConfig();
 
 for (const key of [
   'NODE_ENV',
@@ -27,8 +34,8 @@ Object.assign(process.env, {
   FRONTEND_URL: 'http://127.0.0.1:3001',
   BACKEND_URL: 'http://127.0.0.1:5001',
   CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3001',
-  DATABASE_URL: 'postgresql://postgres.qhjwwomponhjjnhvufiz:s9cXwn9J1tv52OcH@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&schema=careeriz_test',
-  DIRECT_URL: 'postgresql://postgres.qhjwwomponhjjnhvufiz:s9cXwn9J1tv52OcH@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?schema=careeriz_test',
+  DATABASE_URL: databaseUrl,
+  DIRECT_URL: directUrl,
   JWT_SECRET: 'careeriz-messaging-phase1-e2e-secret-123456',
   STORAGE_PROVIDER: 'local',
   LOCAL_STORAGE_PATH: './storage/resumes',

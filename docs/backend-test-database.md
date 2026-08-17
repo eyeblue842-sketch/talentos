@@ -45,3 +45,7 @@ Reset only an isolated test target:
 ```bash
 npm run db:test:reset
 ```
+
+## E2E server (Playwright)
+
+`backend/scripts/start-e2e-server.mjs` (invoked by `frontend/playwright.config.mjs`) resolves `TEST_DATABASE_URL`/`TEST_DIRECT_URL` **only** from the process environment already present when it runs - it does not load `.env.test`, `.env.test.local`, or any other file itself. Export both (or just `TEST_DATABASE_URL`; `TEST_DIRECT_URL` falls back to it) in your shell, or as a CI secret, before starting Playwright. It fails fast with a clear error before the server starts if `TEST_DATABASE_URL` is missing - it never falls back to a shared, production, or hardcoded credential.
