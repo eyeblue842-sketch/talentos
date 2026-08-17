@@ -240,3 +240,33 @@ export async function sendOfferReleasedEmail({ to, candidateName, jobTitle, orga
 export async function sendOfferStatusEmail(to, subject, text, options = {}) {
   await sendTransactionalEmail({ to, subject, text }, options);
 }
+
+export async function sendPaymentReceiptEmail({ to, productName, amountPaise, invoiceNumber }, options = {}) {
+  const amountRupees = (amountPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const subject = `Payment received: ${productName}`;
+  const text = [
+    `Your payment of Rs. ${amountRupees} for ${productName} was successful.`,
+    invoiceNumber ? `Invoice: ${invoiceNumber}` : null,
+    '',
+    'View your billing dashboard for full details.',
+  ].filter(Boolean).join('\n');
+
+  await sendTransactionalEmail({ to, subject, text }, options);
+}
+
+export async function sendSubscriptionRenewalReminderEmail({ to, organisationName, productName, expiresAt, daysRemaining }, options = {}) {
+  const subject = `${organisationName}: your Careeriz plan expires in ${daysRemaining} days`;
+  const text = [
+    `Your ${productName} subscription for ${organisationName} expires on ${dayjs(expiresAt).format('DD MMM YYYY')}.`,
+    'Renew before it lapses to keep ATS and resume-database access, and to keep any remaining job-posting credits usable.',
+  ].join('\n');
+
+  await sendTransactionalEmail({ to, subject, text }, options);
+}
+
+export async function sendJobAutoClosedEmail({ to, jobTitle, activeUntil }, options = {}) {
+  const subject = `Job posting closed: ${jobTitle}`;
+  const text = `${jobTitle} has automatically closed after its 45-day active window ended on ${dayjs(activeUntil).format('DD MMM YYYY')}. Purchase another job-posting credit to republish it.`;
+
+  await sendTransactionalEmail({ to, subject, text }, options);
+}

@@ -1411,3 +1411,64 @@ export async function refreshCandidateRanking(jobId, payload = {}) {
   }, token);
   return response.data;
 }
+
+// Subscriptions, Billing, Job Credits and Payment Gateway
+// (feature/subscriptions-billing-entitlements)
+
+export async function getBillingCatalogue() {
+  const token = await getSessionToken();
+  const response = await requestBackend('/billing/catalogue', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getBillingDashboard() {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/dashboard', { method: 'GET' }, token);
+  return response.data;
+}
+
+// Minimal, non-financial entitlement view for RECRUITER/HIRING_MANAGER
+// (B2 hardening, section 1) - no GSTIN/address/invoices/payment
+// references/purchase history reach this call.
+export async function getBillingEntitlementSummary() {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/entitlement-summary', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function createBillingPurchaseIntent(productCode, idempotencyKey) {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/purchases', {
+    method: 'POST',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    body: JSON.stringify({ productCode }),
+  }, token);
+  return response.data;
+}
+
+export async function verifyBillingCheckoutPayment(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/purchases/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function upsertBillingProfile(payload) {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }, token);
+  return response.data;
+}
+
+export async function cancelBillingSubscription(reason) {
+  const token = await requireToken();
+  const response = await requestBackend('/billing/subscription/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }, token);
+  return response.data;
+}

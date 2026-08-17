@@ -18,7 +18,6 @@ import {
 import { auth } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { validateSchema } from '../middleware/schema.js';
-import { isPersonalEmail } from '../utils/email.js';
 import {
   changePasswordSchema,
   loginSchema,
@@ -35,9 +34,13 @@ authRouter.post(
   '/signup',
   createRateLimiter({ keyPrefix: 'auth:signup', limit: 5 }),
   validateSchema(
+    // The actual email/domain decision is server-authoritative and lives in
+    // domainPolicyService.js (via authService.registerUser) - this refine
+    // only enforces that a recruiter always states which employer-access
+    // card they used, since that selection determines which policy runs.
     signupSchema.superRefine((value, ctx) => {
-      if (value.role === 'RECRUITER' && isPersonalEmail(value.email)) {
-        ctx.addIssue({ code: 'custom', path: ['email'], message: 'Recruiters must use a company email address.' });
+      if (value.role === 'RECRUITER' && !value.employerType) {
+        ctx.addIssue({ code: 'custom', path: ['employerType'], message: 'Select Consultancy Recruiter or Company Recruiter.' });
       }
     })
   ),

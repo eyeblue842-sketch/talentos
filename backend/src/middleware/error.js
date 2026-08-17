@@ -27,5 +27,6 @@ export function errorHandler(error, req, res, next) {
   res.status(status).json({
     success: false,
     message: safeMessage,
+    ...(status < 500 && error.code ? { code: error.code } : {}),
   });
 }

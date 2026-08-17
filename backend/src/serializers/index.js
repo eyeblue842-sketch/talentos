@@ -17,6 +17,12 @@ export function serializeOrganisation(organisation) {
     name: organisation.name,
     slug: organisation.slug,
     status: organisation.status,
+    // Employer-access identity classification (CONSULTANCY/COMPANY) - never
+    // an entitlement signal, see the OrganisationType schema doc comment.
+    // Null for organisations created before this feature shipped.
+    type: organisation.type ?? null,
+    verifiedDomain: organisation.verifiedDomain ?? null,
+    domainVerificationStatus: organisation.domainVerificationStatus || 'NOT_APPLICABLE',
     website: organisation.website,
     logoUrl: organisation.logoUrl,
     industry: organisation.industry,
@@ -556,6 +562,9 @@ export function serializeJob(job, options = {}) {
     autoCloseOnTargetHire: job.autoCloseOnTargetHire,
     status: job.status,
     archivedAt: iso(job.archivedAt),
+    activatedAt: iso(job.activatedAt),
+    activeUntil: iso(job.activeUntil),
+    autoClosedAt: iso(job.autoClosedAt),
     createdAt: iso(job.createdAt),
     updatedAt: iso(job.updatedAt),
     applicationsCount: job._count?.applications,

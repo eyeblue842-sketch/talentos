@@ -50,11 +50,11 @@ export default async function AuthCompatibilityPage({ searchParams }) {
             Access recruiter sign in, employer account creation, and invitation-based workspace entry.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button as="a" href={buildPathWithParams(employerAuthRoutes.login, params || {})}>
+            <Button as="a" href={buildPathWithParams(employerAuthRoutes.landing, params || {})}>
               Employer sign in
               <ChevronRight size={18} aria-hidden="true" />
             </Button>
-            <Button as="a" href={buildPathWithParams(employerAuthRoutes.register, params || {})} variant="outline">
+            <Button as="a" href={buildPathWithParams(employerAuthRoutes.landing, params || {})} variant="outline">
               Create employer account
             </Button>
           </div>

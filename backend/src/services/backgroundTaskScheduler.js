@@ -1,8 +1,13 @@
 import { prisma } from '../config/db.js';
+import { env } from '../config/env.js';
 import { enqueueBackgroundTask, recoverExpiredLeaseTasks } from './backgroundTaskService.js';
 
 function hoursFromNow(hours) {
   return new Date(Date.now() + (hours * 60 * 60 * 1000));
+}
+
+function daysFromNow(days) {
+  return new Date(Date.now() + (days * 24 * 60 * 60 * 1000));
 }
 
 export async function scheduleProductionBackgroundTasks() {
@@ -11,6 +16,8 @@ export async function scheduleProductionBackgroundTasks() {
     scheduleInterviewReminderTasks(),
     scheduleOfferReminderTasks(),
     scheduleOfferExpiryTasks(),
+    scheduleSubscriptionRenewalReminderTasks(),
+    scheduleJobAutoCloseTasks(),
     scheduleCleanupTasks(),
     recoverStuckTasks(),
   ]);
@@ -156,6 +163,63 @@ export async function scheduleOfferExpiryTasks() {
     idempotencyKey: `offer-expiry:${offer.id}:${offer.updatedAt.toISOString()}`,
     payload: { offerId: offer.id },
     nextAttemptAt: new Date(offer.expiryAt),
+  })));
+}
+
+// Section 8: T-15 (configurable) renewal reminder. Gated on
+// renewalReminderSentAt IS NULL so a subscription is only ever scheduled
+// once - the idempotencyKey (keyed on updatedAt) is a second, independent
+// safety net against duplicate enqueue if the gate is ever raced.
+export async function scheduleSubscriptionRenewalReminderTasks() {
+  const now = new Date();
+  const reminderWindowEnd = daysFromNow(env.billingRenewalReminderDaysBefore);
+
+  const subscriptions = await prisma.companySubscription.findMany({
+    where: {
+      status: { in: ['ACTIVE', 'EXPIRING_SOON'] },
+      renewalReminderSentAt: null,
+      expiresAt: { gt: now, lte: reminderWindowEnd },
+    },
+    select: { id: true, organisationId: true, expiresAt: true, updatedAt: true },
+    take: 200,
+  });
+
+  await Promise.all(subscriptions.map((subscription) => enqueueBackgroundTask({
+    organisationId: subscription.organisationId,
+    type: 'SUBSCRIPTION_RENEWAL_REMINDER',
+    entityType: 'CompanySubscription',
+    entityId: subscription.id,
+    idempotencyKey: `sub-renewal-reminder:${subscription.id}:${subscription.updatedAt.toISOString()}`,
+    payload: { subscriptionId: subscription.id },
+    nextAttemptAt: now,
+  })));
+}
+
+// Section 11: entitlement reads already treat a job as inactive the instant
+// server time passes activeUntil (see entitlementService/jobService), so
+// this sweep only needs to be idempotent and eventually-consistent, not
+// fast - it exists to flip status to CLOSED and notify the recruiter, not
+// to enforce the cutoff itself.
+export async function scheduleJobAutoCloseTasks() {
+  const now = new Date();
+  const jobs = await prisma.job.findMany({
+    where: {
+      status: 'OPEN',
+      activeUntil: { lte: now },
+      autoClosedAt: null,
+    },
+    select: { id: true, organisationId: true, activeUntil: true, updatedAt: true },
+    take: 200,
+  });
+
+  await Promise.all(jobs.map((job) => enqueueBackgroundTask({
+    organisationId: job.organisationId,
+    type: 'JOB_AUTO_CLOSE',
+    entityType: 'Job',
+    entityId: job.id,
+    idempotencyKey: `job-auto-close:${job.id}:${job.updatedAt.toISOString()}`,
+    payload: { jobId: job.id },
+    nextAttemptAt: new Date(job.activeUntil),
   })));
 }
 
