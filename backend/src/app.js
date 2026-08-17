@@ -25,6 +25,7 @@ import { networkRouter } from './routes/networkRoutes.js';
 import { messagingRouter } from './routes/messagingRoutes.js';
 import { billingRouter } from './routes/billingRoutes.js';
 import { adminBillingRouter } from './routes/adminBillingRoutes.js';
+import { organisationVerificationRouter } from './routes/organisationVerificationRoutes.js';
 import { postRazorpayWebhook } from './controllers/billingController.js';
 import { createRateLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
@@ -117,5 +118,6 @@ app.use('/api/network', networkRouter);
 app.use('/api/messages', messagingRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/admin/billing', adminBillingRouter);
+app.use('/api/admin/organisation-verification', organisationVerificationRouter);
 
 app.use(errorHandler);

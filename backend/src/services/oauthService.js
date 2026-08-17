@@ -1,12 +1,18 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
-import { isPersonalEmail } from '../utils/email.js';
 import { consumeAuthToken, issueAuthToken } from './authTokenService.js';
 import { serializeAuthSession, serializeUser } from '../serializers/index.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
+import {
+  assertEmailAllowedForEmployerType,
+  buildRecruiterOrganisationCreateData,
+  createRecruiterOrganisation,
+  normalizeEmployerType,
+} from './employerOnboardingService.js';
 
 const providerConfigs = {
   google: {
@@ -69,9 +75,14 @@ function normalizeNext(next) {
 
 async function buildAuthorizationUrl(provider, options = {}) {
   const config = getProviderConfig(provider);
+  const role = normalizeRole(options.role);
   const stateContext = {
     provider,
-    role: normalizeRole(options.role),
+    role,
+    // Only meaningful when role === RECRUITER. Defaults to CONSULTANCY (the
+    // more permissive policy) rather than silently granting COMPANY status
+    // - a caller must explicitly request COMPANY.
+    employerType: role === 'RECRUITER' ? (normalizeEmployerType(options.employerType) || 'CONSULTANCY') : null,
     mode: normalizeMode(options.mode),
     next: normalizeNext(options.next),
   };
@@ -133,6 +144,10 @@ async function fetchUserProfile(provider, accessToken) {
   const profile = await response.json();
   return {
     email: profile.email,
+    // Company Recruiter OAuth requires the provider to assert the email is
+    // verified (spec: "Google reports the email as verified"). Missing the
+    // field entirely is treated as unverified rather than assumed true.
+    emailVerified: profile.email_verified === true || profile.email_verified === 'true',
     name: profile.name || [profile.given_name, profile.family_name].filter(Boolean).join(' ').trim(),
   };
 }
@@ -184,14 +199,14 @@ function logOAuthRepair(event, payload) {
   }));
 }
 
-async function findOrCreateOAuthUser({ email, name, role }) {
+async function findOrCreateOAuthUser({ email, name, role, employerType, emailVerified }) {
   const normalizedEmail = email.toLowerCase().trim();
-  if (role === 'RECRUITER' && isPersonalEmail(normalizedEmail)) {
-    const error = new Error('Recruiters must register with a company email address.');
-    error.statusCode = 422;
-    throw error;
-  }
 
+  // Session rotation / re-authentication for an EXISTING account must never
+  // re-derive or change which organisation/type the account belongs to -
+  // that would let a stored membership be reclassified just by picking a
+  // different employer-access card on a later login. The employerType
+  // domain policy therefore only runs below, in the new-user branch.
   let user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     include: { recruiterProfile: true, candidateProfile: true },
@@ -302,26 +317,63 @@ async function findOrCreateOAuthUser({ email, name, role }) {
     return { user, isNewUser: false };
   }
 
+  // Google/LinkedIn OAuth is only trusted to create a new RECRUITER account
+  // when the provider itself asserts the email is verified - never assumed.
+  if (role === 'RECRUITER' && !emailVerified) {
+    const error = new Error('Sign-in requires a verified email address from your identity provider.');
+    error.statusCode = 422;
+    error.code = 'OAUTH_EMAIL_NOT_VERIFIED';
+    throw error;
+  }
+
+  const classification = role === 'RECRUITER'
+    ? await assertEmailAllowedForEmployerType(normalizedEmail, employerType)
+    : null;
+
   const passwordHash = await createPasswordHash();
 
-  user = await prisma.user.create({
-    data: {
-      email: normalizedEmail,
-      passwordHash,
-      role,
-      emailVerifiedAt: new Date(),
-      recruiterProfile: role === 'RECRUITER'
-        ? {
-            create: buildRecruiterProfileDefaults(normalizedEmail),
-          }
-        : undefined,
-      candidateProfile: role === 'CANDIDATE'
-        ? {
-            create: buildCandidateProfileDefaults({ email: normalizedEmail, name }),
-          }
-        : undefined,
-    },
-    include: { recruiterProfile: true, candidateProfile: true },
+  user = await prisma.$transaction(async (tx) => {
+    const organisation = role === 'RECRUITER'
+      ? await createRecruiterOrganisation(tx, await buildRecruiterOrganisationCreateData({ email: normalizedEmail }, classification, tx))
+      : null;
+
+    const createdUser = await tx.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        role,
+        emailVerifiedAt: new Date(),
+        recruiterProfile: role === 'RECRUITER'
+          ? {
+              create: {
+                organisationId: organisation.id,
+                companyEmailDomain: classification.domain,
+                officeLocations: [],
+                profileCompleted: false,
+              },
+            }
+          : undefined,
+        candidateProfile: role === 'CANDIDATE'
+          ? {
+              create: buildCandidateProfileDefaults({ email: normalizedEmail, name }),
+            }
+          : undefined,
+      },
+      include: { recruiterProfile: true, candidateProfile: true },
+    });
+
+    if (organisation) {
+      await tx.organisationMembership.create({
+        data: {
+          organisationId: organisation.id,
+          userId: createdUser.id,
+          role: 'OWNER',
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    return createdUser;
   });
 
   return { user, isNewUser: true };
@@ -355,31 +407,46 @@ async function finalizeOAuthCallback(provider, code, stateValue) {
   }
 
   const role = normalizeRole(state.role);
-  const tokens = await exchangeCodeForToken(provider, code);
-  const profile = await fetchUserProfile(provider, tokens.access_token);
 
-  if (!profile.email) {
-    const error = new Error(`${provider} did not return an email address.`);
-    error.statusCode = 422;
+  try {
+    const tokens = await exchangeCodeForToken(provider, code);
+    const profile = await fetchUserProfile(provider, tokens.access_token);
+
+    if (!profile.email) {
+      const error = new Error(`${provider} did not return an email address.`);
+      error.statusCode = 422;
+      throw error;
+    }
+
+    const { user, isNewUser } = await findOrCreateOAuthUser({
+      email: profile.email,
+      name: profile.name,
+      role,
+      employerType: state.employerType,
+      emailVerified: profile.emailVerified,
+    });
+
+    if (user.candidateProfile) {
+      await touchCandidateLastActive(user.candidateProfile.id);
+    }
+
+    return {
+      user,
+      state,
+      isNewUser,
+      nextPath: resolvePostAuthPath(user, state.next, isNewUser),
+    };
+  } catch (error) {
+    // Tag the role (and, for employer flows, the employerType the user
+    // originally selected) onto the error so the controller can redirect
+    // back to the correct portal/card even though the OAuth state has
+    // already been consumed by this point. This is read-only forwarding of
+    // a value ALREADY validated at /start time - it does not reopen any
+    // state-integrity gap (nothing here is re-trusted as input).
+    error.oauthRole = role;
+    error.oauthEmployerType = state.employerType || null;
     throw error;
   }
-
-  const { user, isNewUser } = await findOrCreateOAuthUser({
-    email: profile.email,
-    name: profile.name,
-    role,
-  });
-
-  if (user.candidateProfile) {
-    await touchCandidateLastActive(user.candidateProfile.id);
-  }
-
-  return {
-    user,
-    state,
-    isNewUser,
-    nextPath: resolvePostAuthPath(user, state.next, isNewUser),
-  };
 }
 
 export async function handleOAuthCallbackRedirect(provider, code, stateValue) {
@@ -424,6 +491,14 @@ export async function completeOAuthSignIn(provider, code, stateValue) {
   };
 }
 
-export function buildOAuthErrorRedirect(message) {
-  return buildFrontendRedirect('/auth/candidate/login', { oauthError: message });
+export function buildOAuthErrorRedirect(message, role, employerType) {
+  const destination = normalizeRole(role) === 'RECRUITER' ? '/hire/login' : '/auth/candidate/login';
+  const params = { oauthError: message };
+  if (destination === '/hire/login') {
+    const normalizedEmployerType = normalizeEmployerType(employerType);
+    if (normalizedEmployerType) {
+      params.employerType = normalizedEmployerType;
+    }
+  }
+  return buildFrontendRedirect(destination, params);
 }

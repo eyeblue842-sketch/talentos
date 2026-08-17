@@ -18,6 +18,7 @@ import {
 } from '@careeriz/shared';
 import { auth } from '../middleware/auth.js';
 import { validateSchema } from '../middleware/schema.js';
+import { requireVerifiedOrganisation } from '../middleware/organisationVerification.js';
 import {
   getAdminAnalytics,
   getAdminAudit,
@@ -50,6 +51,12 @@ import {
 export const adminRouter = Router();
 
 adminRouter.use(auth(['RECRUITER', 'ADMIN']));
+// The org-scoped admin console is entirely "company-admin actions" (users,
+// roles, settings, workflow, feature flags, lookups) - blocked wholesale
+// for a COMPANY/PENDING organisation (domain-ownership closure section 1).
+// A platform-wide ADMIN without their own membership in the target
+// organisation is unaffected (no activeMembership -> gate no-ops).
+adminRouter.use(requireVerifiedOrganisation());
 adminRouter.get('/overview', getAdminOverview);
 adminRouter.get('/organisation', getAdminOrganisation);
 adminRouter.patch('/organisation', validateSchema(adminOrganisationProfileUpdateSchema), patchAdminOrganisation);

@@ -8,6 +8,15 @@ import {
   notificationTypeSchema,
 } from './ats.js';
 
+export const adminOrganisationTypeReclassifySchema = z.object({
+  type: z.enum(['CONSULTANCY', 'COMPANY']),
+  // Required when reclassifying into COMPANY for an organisation that has
+  // no existing verifiedDomain (e.g. a legacy type=null org). Ignored for
+  // CONSULTANCY. Independently re-validated server-side - never trusted.
+  verifiedDomain: z.string().trim().min(3).max(255).optional(),
+  reason: z.string().trim().min(5).max(500).optional(),
+});
+
 export const organisationUnitTypeSchema = z.enum([
   'BUSINESS_UNIT',
   'DEPARTMENT',

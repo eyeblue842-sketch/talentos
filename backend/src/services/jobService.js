@@ -8,6 +8,7 @@ import { consumeJobCredit, getAvailableJobCredits } from './entitlementService.j
 import { isEntitlementEnforcementEnabled, shouldComputeShadowDecision, logEntitlementShadowDecision } from './billingRolloutService.js';
 import { runSerializableTransaction } from '../utils/serializableTransaction.js';
 import { addDays } from '../utils/dateUtils.js';
+import { assertOrganisationVerifiedForAction } from './organisationVerificationGate.js';
 
 const JOB_ACTIVE_DAYS = 45;
 
@@ -214,7 +215,19 @@ const jobIncludes = {
 // ledger row is written, so nothing needs to be reconciled later when
 // enforcement is turned on), but the decision is still computed and logged
 // in shadow mode.
-async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId }) {
+// CAREERIZ EMPLOYER ACCESS, final publication-bypass closure section 1:
+// the domain-verification check happens FIRST, before any entitlement
+// query or credit consumption - a rejected publish must never consume a
+// job credit or leave a partial write, and since this runs inside the
+// SAME transaction as the caller's job create/update, throwing here rolls
+// the whole thing back automatically. This is the converged boundary EVERY
+// activation path goes through (createJob with status=OPEN, updateJob/
+// updateJobStatus transitioning to OPEN, and job-description-draft
+// publish, which itself calls updateJobStatus) - closing it here closes
+// all of them at once, regardless of which route/payload shape reached it.
+async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId, organisation }) {
+  assertOrganisationVerifiedForAction(organisation, organisationId);
+
   const enforced = isEntitlementEnforcementEnabled(organisationId);
 
   if (enforced) {
@@ -276,7 +289,7 @@ export async function createJob(actorUser, payload, organisationId = null, reque
 
     let finalJob = createdJob;
     if (isPublishing) {
-      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId: createdJob.id, actorUserId: actorUser.id });
+      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId: createdJob.id, actorUserId: actorUser.id, organisation: context.activeMembership.organisation });
       finalJob = await tx.job.update({
         where: { id: createdJob.id },
         data: { status: 'OPEN', ...activation },
@@ -388,7 +401,7 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
     data.requisitionId = requisition?.id || null;
 
     if (isPublishing) {
-      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId, actorUserId: actorUser.id });
+      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId, actorUserId: actorUser.id, organisation: context.activeMembership.organisation });
       Object.assign(data, activation);
     }
 

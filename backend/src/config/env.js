@@ -171,6 +171,16 @@ const envSchema = z.object({
   // "unblocked". Turn this on temporarily during rollout planning to see
   // shadow.wouldBlock decisions in logs before flipping enforcement on.
   BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED: z.enum(['true', 'false']).default('false'),
+  // CAREERIZ EMPLOYER ACCESS, domain-ownership closure section 1: same
+  // kill-switch pattern as BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED above -
+  // fully implemented and always computable, but only actually blocks
+  // COMPANY organisations stuck in domainVerificationStatus=PENDING when
+  // this is 'true' (or the organisation is in the allowlist below).
+  // Defaults to 'false' so deploying this code never locks out an existing
+  // organisation created before this feature existed (type=null) or any
+  // organisation created before enforcement is deliberately turned on.
+  EMPLOYER_ORGANISATION_VERIFICATION_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false'),
+  EMPLOYER_ORGANISATION_VERIFICATION_ROLLOUT_ORG_IDS: z.string().optional(),
 }).superRefine((data, context) => {
   if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
     context.addIssue({
@@ -483,4 +493,9 @@ export const env = {
     .map((value) => value.trim())
     .filter(Boolean),
   billingEntitlementShadowLoggingEnabled: parsed.data.BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED === 'true',
+  employerOrganisationVerificationEnforcementEnabled: parsed.data.EMPLOYER_ORGANISATION_VERIFICATION_ENFORCEMENT_ENABLED === 'true',
+  employerOrganisationVerificationRolloutOrgIds: (parsed.data.EMPLOYER_ORGANISATION_VERIFICATION_ROLLOUT_ORG_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 };

@@ -6,6 +6,7 @@ import { requireOrganisationContext, requireOrganisationRole } from './organisat
 import { createNotification } from './notificationService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { sendOrganisationInvitationEmail } from './emailService.js';
+import { assertOrganisationVerifiedForAction } from './organisationVerificationGate.js';
 
 const invitationManagingRoles = ['OWNER', 'ADMIN'];
 const invitationTtlMs = 1000 * 60 * 60 * 24 * 7;
@@ -142,6 +143,14 @@ export async function listOrganisationInvitations(actorUser, organisationId = nu
 
 export async function createOrganisationInvitation(actorUser, payload, organisationId = null, requestMeta = {}) {
   const context = await requireOrganisationRole(actorUser, invitationManagingRoles, organisationId);
+  // Final publication-bypass closure section 2: this function has two
+  // converging entry points (the direct /organisations/invitations route
+  // and adminService.bulkInviteEnterpriseUsers via the org-scoped admin
+  // console) - both already carry route-level requireVerifiedOrganisation(),
+  // but the assertion is repeated here too so "inviting additional
+  // recruiter members" stays closed even if a future route forgets the
+  // middleware.
+  assertOrganisationVerifiedForAction(context.activeMembership.organisation, context.organisationId);
   const email = normalizeEmail(payload.email);
 
   const existingMembership = await prisma.user.findUnique({

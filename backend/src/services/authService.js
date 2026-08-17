@@ -2,13 +2,14 @@ import bcrypt from 'bcryptjs';
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
 import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
-import { getEmailDomain, isPersonalEmail, normalizeOfficeLocations } from '../utils/email.js';
+import { normalizeOfficeLocations } from '../utils/email.js';
 import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '../serializers/index.js';
 import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
 import { resolveMembershipForRequest } from './organisationAccessService.js';
 import { assertInitialSetupCompleted } from './setupService.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
+import { assertEmailAllowedForEmployerType, buildRecruiterOrganisationCreateData, createRecruiterOrganisation } from './employerOnboardingService.js';
 
 function buildCandidateProfileData(payload) {
   const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
@@ -31,29 +32,6 @@ async function getUserByEmail(email) {
   });
 }
 
-async function buildUniqueOrganisationSlug(baseValue) {
-  const base = slugify(baseValue, { lower: true, strict: true }) || `org-${Date.now()}`;
-  let slug = base;
-  let counter = 1;
-
-  while (await prisma.organisation.findUnique({ where: { slug } })) {
-    counter += 1;
-    slug = `${base}-${counter}`;
-  }
-
-  return slug;
-}
-
-async function buildRecruiterOrganisationData(payload) {
-  const emailDomain = getEmailDomain(payload.email);
-  const inferredName = payload.companyName?.trim() || emailDomain.split('.')[0];
-  return {
-    name: inferredName,
-    slug: await buildUniqueOrganisationSlug(inferredName),
-    website: payload.website || null,
-  };
-}
-
 function ensureVerifiedUser(user) {
   if (!user.emailVerifiedAt) {
     const error = new Error('Please verify your email before logging in.');
@@ -67,11 +45,13 @@ export async function registerUser(payload) {
 
   const role = payload.role === 'RECRUITER' ? 'RECRUITER' : 'CANDIDATE';
 
-  if (role === 'RECRUITER' && isPersonalEmail(payload.email)) {
-    const error = new Error('Recruiters must register with a company email address.');
-    error.statusCode = 422;
-    throw error;
-  }
+  // The employer-type domain check happens BEFORE the duplicate-email check
+  // so registration attempts are rejected on the same footing regardless of
+  // whether the email already exists - avoids leaking "this email exists"
+  // information through a different error path per employer type.
+  const classification = role === 'RECRUITER'
+    ? await assertEmailAllowedForEmployerType(payload.email, payload.employerType)
+    : null;
 
   const normalizedEmail = payload.email.toLowerCase().trim();
   const existingUser = await getUserByEmail(normalizedEmail);
@@ -86,7 +66,7 @@ export async function registerUser(payload) {
 
   const user = await prisma.$transaction(async (tx) => {
     const organisation = role === 'RECRUITER'
-      ? await tx.organisation.create({ data: await buildRecruiterOrganisationData(payload) })
+      ? await createRecruiterOrganisation(tx, await buildRecruiterOrganisationCreateData(payload, classification, tx))
       : null;
 
     const createdUser = await tx.user.create({
@@ -98,7 +78,7 @@ export async function registerUser(payload) {
           ? {
               create: {
                 organisationId: organisation.id,
-                companyEmailDomain: getEmailDomain(payload.email),
+                companyEmailDomain: classification.domain,
                 officeLocations: [],
                 profileCompleted: false,
               },

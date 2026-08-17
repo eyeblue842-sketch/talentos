@@ -8,6 +8,7 @@ import {
 import { auth } from '../middleware/auth.js';
 import { validateSchema } from '../middleware/schema.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
+import { requireVerifiedOrganisation } from '../middleware/organisationVerification.js';
 import {
   getCatalogue,
   postPurchaseIntent,
@@ -34,13 +35,30 @@ billingRouter.get('/catalogue', getCatalogue);
 // Full dashboard (invoices, payment references, purchase history, billing
 // profile/GSTIN) - OWNER/ADMIN/platform-admin only, enforced inside
 // getBillingDashboard via 'organisation.billing.read' (B2 hardening,
-// section 1). A plain RECRUITER/HIRING_MANAGER gets 403 here and must use
-// /entitlement-summary instead.
-billingRouter.get('/dashboard', auth(['RECRUITER']), getDashboard);
+// section 1). Also gated on domain verification (closure section 1):
+// "access billing/invoices/payment administration" is explicitly listed as
+// unavailable to a COMPANY/PENDING organisation.
+billingRouter.get('/dashboard', auth(['RECRUITER']), requireVerifiedOrganisation(), getDashboard);
 // Minimal, non-financial entitlement awareness for any org member with
 // 'organisation.billing.summary.read' (RECRUITER/HIRING_MANAGER included).
+// Deliberately NOT gated - this is exactly the "view/update limited safe
+// account information" a PENDING organisation's user is allowed to see.
 billingRouter.get('/entitlement-summary', auth(['RECRUITER']), getEntitlementSummaryRoute);
-billingRouter.put('/profile', auth(['RECRUITER']), validateSchema(companyBillingProfileSchema), putBillingProfile);
-billingRouter.post('/purchases', auth(['RECRUITER']), checkoutRateLimiter, validateSchema(createPurchaseIntentSchema), postPurchaseIntent);
+billingRouter.put('/profile', auth(['RECRUITER']), requireVerifiedOrganisation(), validateSchema(companyBillingProfileSchema), putBillingProfile);
+billingRouter.post('/purchases', auth(['RECRUITER']), requireVerifiedOrganisation(), checkoutRateLimiter, validateSchema(createPurchaseIntentSchema), postPurchaseIntent);
+// /purchases/verify is deliberately NOT gated here (corrected from the
+// prior closure round - final publication-bypass closure section 2). By
+// the time this endpoint is called, verifyCheckoutPayment requires
+// Razorpay to already report the payment as `captured` - real money has
+// already moved. Blocking here would strand an already-paid customer
+// with no subscription and no way to retry, which is a worse outcome than
+// the narrow edge case it would close (an organisation that created its
+// purchase intent before becoming PENDING/before enforcement was turned
+// on, then completes payment afterward). The actual growth-prevention
+// gate is on /purchases above, which blocks BEFORE any payment can be
+// initiated - this is a genuine, deliberate exception, not an oversight.
 billingRouter.post('/purchases/verify', auth(['RECRUITER']), checkoutRateLimiter, validateSchema(verifyCheckoutPaymentSchema), postVerifyPurchase);
+// Cancellation is deliberately NOT gated - it is a protective/no-growth
+// action, and a PENDING organisation cannot have an active subscription to
+// cancel in the first place (purchase itself is blocked above).
 billingRouter.post('/subscription/cancel', auth(['RECRUITER']), validateSchema(cancelSubscriptionSchema), postCancelSubscription);

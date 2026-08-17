@@ -1,35 +1,23 @@
 import { PublicFooter } from '@/components/public/public-footer';
 import { PublicHeader } from '@/components/public/public-header';
-import { AccessEntryCard } from '@/components/sections/access-entry-card';
+import { EmployerAccessCards } from '@/components/sections/employer-access-cards';
 import { redirectIfAuthenticated } from '@/lib/auth';
-import { employerAuthRoutes } from '@/lib/auth-experience';
 import { redirectToSetupIfRequired } from '@/lib/setup';
 
-export default async function HireEntryPage() {
+// The "Employer Login" entry point across the app (marketing nav, /auth
+// chooser) lands here. This is the CAREERIZ EMPLOYER ACCESS selection page:
+// Consultancy Recruiter vs Company Recruiter. Both card actions carry the
+// selection into /hire/login and /hire/register via ?employerType=.
+export default async function HireEntryPage({ searchParams }) {
   await redirectToSetupIfRequired();
   await redirectIfAuthenticated();
+  const params = await searchParams;
 
   return (
     <>
       <PublicHeader />
       <main className="mx-auto flex min-h-screen max-w-[88rem] flex-col px-5 py-6 sm:px-6 lg:px-10">
-        <AccessEntryCard
-          eyebrow="Careeriz Hire"
-          title="Access your hiring workspace."
-          description="Sign in to manage your recruitment workflow, or create a workspace to start hiring."
-          primaryLabel="Employer Sign In"
-          primaryHref={employerAuthRoutes.login}
-          secondaryLabel="Create Workspace"
-          secondaryHref={employerAuthRoutes.register}
-          bullets={[
-            'Publish and manage jobs',
-            'Track candidates',
-            'Coordinate interviews',
-            'Manage hiring decisions',
-          ]}
-          accentClassName="text-[var(--color-info)]"
-          surfaceClassName="bg-[linear-gradient(180deg,#ffffff_0%,#eef5ff_100%)]"
-        />
+        <EmployerAccessCards searchParams={params || {}} />
       </main>
       <PublicFooter />
     </>

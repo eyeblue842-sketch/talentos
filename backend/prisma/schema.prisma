@@ -28,6 +28,29 @@ enum OrganisationStatus {
   INACTIVE
 }
 
+// CAREERIZ EMPLOYER ACCESS: identity classification, not an entitlement
+// tier - CONSULTANCY and COMPANY organisations receive identical
+// subscriptions/credits/entitlements (see billingService/entitlementService,
+// which are entirely unaware of this field). Nullable and never defaulted so
+// existing (pre-employer-access) organisations stay unclassified until an
+// authorized admin workflow reviews and sets them explicitly.
+enum OrganisationType {
+  CONSULTANCY
+  COMPANY
+}
+
+// Only meaningful when type = COMPANY. A COMPANY organisation's
+// verifiedDomain starts PENDING at self-registration (the domain didn't
+// match any already-verified COMPANY organisation) and is promoted to
+// VERIFIED only through the platform-admin review workflow
+// (organisationVerificationService.js). CONSULTANCY organisations and
+// legacy organisations stay NOT_APPLICABLE.
+enum DomainVerificationStatus {
+  NOT_APPLICABLE
+  PENDING
+  VERIFIED
+}
+
 enum OrganisationPostStatus {
   DRAFT
   PUBLISHED
@@ -791,6 +814,20 @@ model Organisation {
   name                        String
   slug                        String                       @unique
   status                      OrganisationStatus           @default(ACTIVE)
+  // Employer-access identity classification (see OrganisationType doc
+  // comment above). Nullable/unset for organisations created before this
+  // feature and never auto-backfilled.
+  type                        OrganisationType?
+  // COMPANY-only: the business email domain this organisation registered
+  // or was verified for. Null for CONSULTANCY and legacy organisations.
+  // A hand-written partial unique index (migration
+  // 20260817150000_employer_domain_uniqueness) enforces at most one
+  // COMPANY organisation per normalized domain at the database level -
+  // Prisma's schema DSL has no filtered/partial @@unique, so that
+  // constraint is not representable here and will not appear on
+  // introspection, but IS live and concurrency-safe in Postgres.
+  verifiedDomain              String?
+  domainVerificationStatus    DomainVerificationStatus     @default(NOT_APPLICABLE)
   website                     String?
   logoUrl                     String?
   publicDescription           String?
@@ -868,6 +905,7 @@ model Organisation {
   invoices                    Invoice[]
 
   @@index([status])
+  @@index([type, verifiedDomain])
 }
 
 model OrganisationPost {

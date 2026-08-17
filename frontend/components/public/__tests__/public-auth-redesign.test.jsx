@@ -127,9 +127,12 @@ describe('public landing and authentication redesign', () => {
   });
 
   test('legacy auth compatibility routes recruiter hints and ambiguous callback states safely', () => {
+    // Employer-bound legacy links now land on the employer-access chooser
+    // (Consultancy Recruiter vs Company Recruiter) instead of jumping
+    // straight to the login form, per the employer-access feature.
     expect(getLegacyAuthDestination({ next: '/recruiter/jobs' })).toEqual({
       type: 'redirect',
-      href: '/hire/login?next=%2Frecruiter%2Fjobs',
+      href: '/hire?next=%2Frecruiter%2Fjobs',
     });
 
     expect(getLegacyAuthDestination({ authStatus: 'password-reset-ready' })).toEqual({

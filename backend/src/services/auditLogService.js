@@ -28,8 +28,11 @@ function scrub(value) {
   );
 }
 
-export async function recordAuditLog(payload) {
-  const log = await prisma.auditLog.create({
+// `client` defaults to the shared prisma singleton but may be a
+// transaction handle (`tx`) so the audit write commits atomically with the
+// state change it records (domain-ownership closure section 4).
+export async function recordAuditLog(payload, client = prisma) {
+  const log = await client.auditLog.create({
     data: {
       organisationId: payload.organisationId || null,
       actorUserId: payload.actorUserId || null,
