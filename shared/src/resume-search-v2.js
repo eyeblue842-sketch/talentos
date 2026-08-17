@@ -1,7 +1,13 @@
 import { z } from 'zod';
 
 export const resumeSearchV2KeywordModeSchema = z.enum(['MUST', 'SHOULD', 'MUST_NOT']);
-export const resumeSearchV2SortSchema = z.enum(['RELEVANCE', 'PROFILE_UPDATED_AT_DESC', 'RESUME_UPDATED_AT_DESC']);
+export const resumeSearchV2SortSchema = z.enum([
+  'RELEVANCE',
+  'PROFILE_UPDATED_AT_DESC',
+  'RESUME_UPDATED_AT_DESC',
+  'EXPERIENCE_DESC',
+  'EXPERIENCE_ASC',
+]);
 
 const controlCharacterPattern = /[\u0000-\u001f\u007f]/;
 
@@ -18,6 +24,11 @@ export const resumeSearchV2KeywordSchema = z.object({
   mode: resumeSearchV2KeywordModeSchema,
 });
 
+export const resumeSearchV2PhraseSchema = z.object({
+  term: safeTermSchema(240),
+  mode: resumeSearchV2KeywordModeSchema,
+});
+
 export const resumeSearchV2FiltersSchema = z.object({
   minExperienceMonths: z.coerce.number().int().min(0).max(960).optional(),
   maxExperienceMonths: z.coerce.number().int().min(0).max(960).optional(),
@@ -27,6 +38,8 @@ export const resumeSearchV2FiltersSchema = z.object({
   excludedCompanies: z.array(safeTermSchema(160)).max(20).default([]),
   industry: z.array(safeTermSchema(120)).max(20).default([]),
   currentTitle: z.array(safeTermSchema(160)).max(20).default([]),
+  previousTitles: z.array(safeTermSchema(160)).max(20).default([]),
+  previousTitlesMatchMode: z.enum(['ANY', 'ALL']).default('ANY'),
   skills: z.array(safeTermSchema(120)).max(50).default([]),
   education: z.array(safeTermSchema(160)).max(20).default([]),
   noticePeriodDaysMax: z.coerce.number().int().min(0).max(365).optional(),
@@ -34,6 +47,8 @@ export const resumeSearchV2FiltersSchema = z.object({
   salaryMax: z.coerce.number().int().min(0).max(100000000).optional(),
   lastUpdatedFrom: z.string().datetime().optional(),
   lastUpdatedTo: z.string().datetime().optional(),
+  profileCompletenessMin: z.coerce.number().int().min(0).max(100).optional(),
+  profileCompletenessMax: z.coerce.number().int().min(0).max(100).optional(),
   availability: z.array(safeTermSchema(80)).max(10).default([]),
   parsingReviewStatus: z.array(z.enum(['READY', 'REVIEW_REQUIRED'])).max(2).default([]),
   resumeSource: z.array(safeTermSchema(80)).max(10).default([]),
@@ -43,7 +58,7 @@ export const resumeSearchV2FiltersSchema = z.object({
 
 export const resumeSearchV2RequestSchema = z.object({
   keywords: z.array(resumeSearchV2KeywordSchema).max(25).default([]),
-  phrases: z.array(safeTermSchema(240)).max(10).default([]),
+  phrases: z.array(resumeSearchV2PhraseSchema).max(10).default([]),
   filters: resumeSearchV2FiltersSchema,
   sort: resumeSearchV2SortSchema.default('RELEVANCE'),
   pageSize: z.coerce.number().int().min(1).max(50).default(25),
@@ -62,7 +77,7 @@ export const resumeSearchV2RequestSchema = z.object({
 
   const fingerprintable = [
     ...value.keywords.map((item) => `${item.mode}:${item.term.toLowerCase()}`),
-    ...value.phrases.map((item) => `PHRASE:${item.toLowerCase()}`),
+    ...value.phrases.map((item) => `PHRASE:${item.mode}:${item.term.toLowerCase()}`),
   ];
   if (!fingerprintable.length && !Object.values(value.filters || {}).some((item) => Array.isArray(item) ? item.length > 0 : item != null)) {
     ctx.addIssue({
@@ -77,6 +92,18 @@ export const resumeSearchV2RequestSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['filters', 'salaryMin'],
       message: 'salaryMin cannot exceed salaryMax.',
+    });
+  }
+
+  if (
+    value.filters.profileCompletenessMin != null
+    && value.filters.profileCompletenessMax != null
+    && value.filters.profileCompletenessMin > value.filters.profileCompletenessMax
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['filters', 'profileCompletenessMin'],
+      message: 'profileCompletenessMin cannot exceed profileCompletenessMax.',
     });
   }
 });
@@ -106,6 +133,9 @@ export const resumeSearchV2ResultItemSchema = z.object({
   currentEmployer: z.string().trim().min(1).max(240).nullable(),
   currentLocation: z.string().trim().min(1).max(200).nullable(),
   totalExperienceMonths: z.number().int().min(0).nullable(),
+  normalizedSkills: z.array(safeTermSchema(120)).max(20).default([]),
+  educationSummary: z.string().trim().min(1).max(400).nullable(),
+  certifications: z.array(safeTermSchema(160)).max(20).default([]),
   reviewRequired: z.boolean(),
   parsingConfidence: z.number().min(0).max(1).nullable(),
   resumeUpdatedAt: z.string().datetime().nullable(),

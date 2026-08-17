@@ -25,9 +25,9 @@ function escapeRegex(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function buildShouldClausesForTerm(term) {
+function buildShouldClausesForTerm(term, fieldsOverride = null) {
   const concept = buildConceptVariants(term);
-  const fields = getSearchFields(concept.fieldMode);
+  const fields = fieldsOverride || getSearchFields(concept.fieldMode);
   const should = [];
 
   for (const variant of concept.variants) {
@@ -115,12 +115,13 @@ function buildKeywordClause(keyword) {
 }
 
 function buildPhraseClause(phrase) {
+  const value = typeof phrase === 'string' ? phrase : phrase?.term;
   return {
     bool: {
       should: [
         {
           multi_match: {
-            query: phrase,
+            query: value,
             type: 'phrase',
             fields: getSearchFields('phrase'),
             boost: 5,
@@ -128,13 +129,47 @@ function buildPhraseClause(phrase) {
         },
         {
           multi_match: {
-            query: phrase,
+            query: value,
             fields: getSearchFields('phrase'),
             operator: 'and',
             fuzziness: '0',
           },
         },
       ],
+      minimum_should_match: 1,
+    },
+  };
+}
+
+function buildFieldScopedPhraseFirstClause(term, fields) {
+  const concept = buildConceptVariants(term);
+  const should = [];
+
+  for (const variant of concept.variants) {
+    if (concept.phraseFirst || /\s|[.+#/]/.test(variant)) {
+      should.push({
+        multi_match: {
+          query: variant,
+          type: 'phrase',
+          fields,
+          boost: 4,
+        },
+      });
+    }
+
+    should.push({
+      multi_match: {
+        query: variant,
+        fields,
+        operator: 'and',
+        fuzziness: concept.exactOnly || variant.length < 5 ? '0' : 'AUTO:5,7',
+      },
+    });
+  }
+
+  return {
+    bool: {
+      should,
       minimum_should_match: 1,
     },
   };
@@ -171,6 +206,16 @@ function buildFilterClauses(filters = {}, { allowSalaryFilters = false } = {}) {
   ]) {
     const normalized = nonEmptyStrings(values).map((value) => value.toLowerCase());
     if (normalized.length) clauses.push({ terms: { [field]: normalized } });
+  }
+
+  const previousTitleValues = nonEmptyStrings(filters.previousTitles);
+  if (previousTitleValues.length) {
+    const previousTitleClauses = previousTitleValues.map((title) => buildFieldScopedPhraseFirstClause(title, ['previousTitles^6']));
+    clauses.push({
+      bool: filters.previousTitlesMatchMode === 'ALL'
+        ? { must: previousTitleClauses }
+        : { should: previousTitleClauses, minimum_should_match: 1 },
+    });
   }
 
   if (nonEmptyStrings(filters.skills).length) {
@@ -235,6 +280,17 @@ function buildFilterClauses(filters = {}, { allowSalaryFilters = false } = {}) {
     clauses.push({ term: { searchableProfile: Boolean(filters.searchableProfile) } });
   }
 
+  if (filters.profileCompletenessMin != null || filters.profileCompletenessMax != null) {
+    clauses.push({
+      range: {
+        profileCompletenessScore: {
+          gte: filters.profileCompletenessMin ?? undefined,
+          lte: filters.profileCompletenessMax ?? undefined,
+        },
+      },
+    });
+  }
+
   const reviewStatuses = nonEmptyStrings(filters.parsingReviewStatus);
   if (reviewStatuses.length === 1) {
     clauses.push({ term: { reviewRequired: reviewStatuses[0] === 'REVIEW_REQUIRED' } });
@@ -267,7 +323,10 @@ export function compileResumeSearchV2Query(input, { allowSalaryFilters = false }
   }
 
   for (const phrase of payload.phrases) {
-    should.push(buildPhraseClause(phrase));
+    const clause = buildPhraseClause(phrase);
+    if (phrase.mode === 'MUST') must.push(clause);
+    if (phrase.mode === 'SHOULD') should.push(clause);
+    if (phrase.mode === 'MUST_NOT') mustNot.push(clause);
   }
 
   const bool = {
@@ -279,10 +338,24 @@ export function compileResumeSearchV2Query(input, { allowSalaryFilters = false }
   };
 
   const sort = payload.sort === 'PROFILE_UPDATED_AT_DESC'
-    ? [{ profileUpdatedAt: 'desc' }, { candidateId: 'asc' }]
+    ? [{ profileUpdatedAt: 'desc' }, { candidateId: 'asc' }, { documentId: 'asc' }]
     : payload.sort === 'RESUME_UPDATED_AT_DESC'
-      ? [{ resumeUpdatedAt: 'desc' }, { candidateId: 'asc' }]
-      : [{ _score: 'desc' }, { profileUpdatedAt: 'desc' }, { candidateId: 'asc' }];
+      ? [{ resumeUpdatedAt: 'desc' }, { candidateId: 'asc' }, { documentId: 'asc' }]
+      : payload.sort === 'EXPERIENCE_DESC'
+        ? [
+            { totalExperienceMonths: { order: 'desc', missing: '_last' } },
+            { profileUpdatedAt: 'desc' },
+            { candidateId: 'asc' },
+            { documentId: 'asc' },
+          ]
+        : payload.sort === 'EXPERIENCE_ASC'
+          ? [
+              { totalExperienceMonths: { order: 'asc', missing: '_last' } },
+              { profileUpdatedAt: 'desc' },
+              { candidateId: 'asc' },
+              { documentId: 'asc' },
+            ]
+          : [{ _score: 'desc' }, { profileUpdatedAt: 'desc' }, { candidateId: 'asc' }, { documentId: 'asc' }];
 
   return {
     payload,

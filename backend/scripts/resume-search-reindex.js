@@ -16,12 +16,17 @@ async function main() {
 
   const before = await resumeSearchAdapter.getIndexHealth();
   const ensured = await resumeSearchAdapter.ensureIndexVersion();
+  const validated = await resumeSearchAdapter.validateAliases({ indexName: ensured.indexName });
+  if (options.execute) {
+    await resumeSearchAdapter.switchAliases({ indexName: ensured.indexName });
+  }
   const after = await resumeSearchAdapter.getIndexHealth();
 
   console.log(JSON.stringify({
     mode: options.execute ? 'EXECUTE' : 'VALIDATE_ONLY',
     before,
     ensured,
+    validated,
     after,
   }, null, 2));
 }

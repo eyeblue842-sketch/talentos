@@ -135,7 +135,7 @@ test('enqueue upsert uses one idempotent task per source version and no raw resu
 
   const first = await enqueueResumeSearchIndexUpsert('candidate-1', { correlationId: 'corr-1' });
   assert.equal(first.type, 'RESUME_SEARCH_INDEX_SYNC');
-  assert.match(first.idempotencyKey, /^resume-search-index:candidate-1:v1:/);
+  assert.match(first.idempotencyKey, /^resume-search-index:candidate-1:v2:/);
   assert.equal(JSON.stringify(first.payload).includes('Java engineer'), false);
 
   prisma.backgroundTask.create = async () => {

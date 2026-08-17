@@ -15,6 +15,24 @@ function sanitizeHighlightSnippet(value = '') {
     .slice(0, 500);
 }
 
+function sanitizePlainResultText(value = '', maxLength = 240) {
+  return String(value || '')
+    .replace(/<\/?mark\b[^>]*>/gi, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeResultTextList(values = [], { maxItems = 20, maxLength = 160 } = {}) {
+  return [...new Set((Array.isArray(values) ? values : [values])
+    .map((value) => sanitizePlainResultText(value, maxLength))
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
+    .slice(0, maxItems);
+}
+
 function canUseSalaryFilters(actorUser) {
   const role = actorUser?.activeMembership?.role;
   return ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(role) || ['ADMIN', 'PLATFORM_ADMIN'].includes(actorUser?.role);
@@ -36,6 +54,13 @@ function explainMatchedTerms(item, payload) {
     if (!field) continue;
     const prefix = keyword.mode === 'MUST' ? 'Matched required' : keyword.mode === 'MUST_NOT' ? 'Excluded' : 'Matched optional';
     explanations.push({ field, text: `${prefix} ${keyword.term} in ${field}` });
+  }
+  for (const phrase of payload.phrases || []) {
+    const lowered = phrase.term.toLowerCase();
+    const field = Object.keys(textByField).find((name) => textByField[name].toLowerCase().includes(lowered));
+    if (!field) continue;
+    const prefix = phrase.mode === 'MUST' ? 'Exact required phrase' : phrase.mode === 'MUST_NOT' ? 'Excluded phrase' : 'Exact optional phrase';
+    explanations.push({ field, text: `${prefix} ${phrase.term} matched in ${field}` });
   }
   return explanations.slice(0, 20);
 }
@@ -80,11 +105,14 @@ export async function searchResumesV2(actorUser, rawPayload, requestMeta = {}) {
       return {
         documentId: source.documentId || hit._id,
         candidateId: source.candidateId,
-        normalizedName: source.normalizedName || null,
-        currentTitle: source.currentTitle || null,
-        currentEmployer: source.currentEmployer || null,
-        currentLocation: source.currentLocation || null,
+        normalizedName: sanitizePlainResultText(source.normalizedName, 240) || null,
+        currentTitle: sanitizePlainResultText(source.currentTitle, 240) || null,
+        currentEmployer: sanitizePlainResultText(source.currentEmployer, 240) || null,
+        currentLocation: sanitizePlainResultText(source.currentLocation, 200) || null,
         totalExperienceMonths: source.totalExperienceMonths ?? null,
+        normalizedSkills: sanitizeResultTextList(source.normalizedSkills, { maxItems: 20, maxLength: 120 }),
+        educationSummary: sanitizePlainResultText(source.educationSummary, 400) || null,
+        certifications: sanitizeResultTextList(source.certifications, { maxItems: 20, maxLength: 160 }),
         reviewRequired: Boolean(source.reviewRequired),
         parsingConfidence: source.parsingConfidence ?? null,
         resumeUpdatedAt: source.resumeUpdatedAt || null,

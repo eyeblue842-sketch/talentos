@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { sanitizeResumeString } from '../resumeImportUtils.js';
 import { normalizeCandidateProfileForPresentation } from '../candidateProfileSanitizer.js';
 import { RESUME_SEARCH_INDEX_SCHEMA_VERSION } from './mapping.js';
+import { calculateResumeSearchProfileCompleteness } from './profileCompleteness.js';
 import { sanitizeResumeSearchText, sanitizeResumeSearchTextList } from './privacy.js';
 import { resolveResumeVisibilityClassification, RESUME_VISIBILITY_CLASSIFICATIONS } from './visibility.js';
 
@@ -9,8 +10,19 @@ function normalizeText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function sanitizePlainText(value = '', maxLength = 240) {
+  return sanitizeResumeSearchText(normalizeText(value))
+    .replace(/<\/?mark\b[^>]*>/gi, '')
+    .replace(/[<>]/g, '')
+    .slice(0, maxLength)
+    .trim();
+}
+
 function normalizeKeywordList(values = []) {
-  return [...new Set((Array.isArray(values) ? values : []).map((value) => normalizeText(value)).filter(Boolean))];
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => sanitizePlainText(value, 160))
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
 }
 
 function joinText(parts = []) {
@@ -35,6 +47,15 @@ function toMonths(years) {
   return Math.max(0, Math.round(Number(years) * 12));
 }
 
+function buildEducationSummary(educationEntries = []) {
+  const summary = (Array.isArray(educationEntries) ? educationEntries : [])
+    .map((entry) => [entry.degree, entry.specialization, entry.institution].map((value) => sanitizePlainText(value, 120)).filter(Boolean).join(', '))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' | ');
+  return sanitizePlainText(summary, 400) || null;
+}
+
 export function buildResumeSearchDocument(candidate, resume = null, options = {}) {
   const safe = normalizeCandidateProfileForPresentation(candidate);
   const salarySearchable = Boolean(safe.salaryVisibleToRecruiters && options.allowSalaryIndexing !== false);
@@ -47,6 +68,7 @@ export function buildResumeSearchDocument(candidate, resume = null, options = {}
   const industries = normalizeKeywordList(safe.preferredIndustries || []);
   const sourceVersion = buildSourceVersion(safe, resume);
   const documentId = `candidate:${safe.id}`;
+  const profileCompleteness = calculateResumeSearchProfileCompleteness(safe);
 
   return {
     documentId,
@@ -58,8 +80,8 @@ export function buildResumeSearchDocument(candidate, resume = null, options = {}
     visibilityClassification,
     contactVisibilityClassification: safe.phoneVisibleToRecruiters ? 'RECRUITER_VISIBLE' : 'HIDDEN',
     searchableProfile: visibilityClassification !== RESUME_VISIBILITY_CLASSIFICATIONS.NOT_SEARCHABLE,
-    normalizedName: normalizeText(safe.fullName),
-    currentTitle: normalizeText(safe.currentTitle || safe.headline || currentTitles[0] || ''),
+    normalizedName: sanitizePlainText(safe.fullName, 240),
+    currentTitle: sanitizePlainText(safe.currentTitle || safe.headline || currentTitles[0] || '', 240),
     previousTitles: sanitizeResumeSearchTextList(normalizeKeywordList(previousTitles)),
     normalizedSkills: normalizeKeywordList([
       ...(safe.skills || []),
@@ -68,23 +90,25 @@ export function buildResumeSearchDocument(candidate, resume = null, options = {}
       ...(safe.frameworks || []),
       ...(safe.cloudPlatforms || []),
       ...(safe.databases || []),
-    ]),
+    ]).slice(0, 20),
     rawSkills: normalizeKeywordList(safe.skills || []),
     totalExperienceMonths: toMonths(safe.totalExperience),
-    currentEmployer: normalizeText(safe.currentEmployer || ''),
+    currentEmployer: sanitizePlainText(safe.currentEmployer || '', 240),
     previousEmployers: sanitizeResumeSearchTextList(normalizeKeywordList(previousEmployers)),
     industries,
     employmentHistoryText: joinText((safe.experienceEntries || []).flatMap((entry) => [entry.title, entry.company, entry.summary, ...(entry.skills || [])])),
     projectsText: joinText((safe.projectEntries || []).flatMap((entry) => [entry.projectName, entry.summary, ...(entry.skills || [])])),
     educationText: joinText((safe.educationEntries || []).flatMap((entry) => [entry.degree, entry.institution, entry.specialization])),
-    certifications: sanitizeResumeSearchTextList(normalizeKeywordList(certifications)),
+    educationSummary: buildEducationSummary(safe.educationEntries),
+    certifications: sanitizeResumeSearchTextList(normalizeKeywordList(certifications)).slice(0, 20),
     languages: sanitizeResumeSearchTextList(normalizeKeywordList(languages)),
-    currentLocation: normalizeText(safe.location).toLowerCase() || null,
+    currentLocation: sanitizePlainText(safe.location, 200).toLowerCase() || null,
     preferredLocations: sanitizeResumeSearchTextList(normalizeKeywordList(safe.preferredLocations || []).map((item) => item.toLowerCase())),
     noticePeriodDays: Number.isFinite(Number(safe.noticePeriodDays)) ? Number(safe.noticePeriodDays) : null,
     salarySearchable,
     currentSalaryNormalized: salarySearchable && Number.isFinite(Number(safe.currentCtcLpa)) ? Math.round(Number(safe.currentCtcLpa)) : null,
     expectedSalaryNormalized: salarySearchable && Number.isFinite(Number(safe.expectedCtcLpa)) ? Math.round(Number(safe.expectedCtcLpa)) : null,
+    profileCompletenessScore: profileCompleteness.score,
     parsingConfidence: typeof safe.parserMetadata?.parsedData === 'object'
       ? Number(safe.parserMetadata?.parsedData?.metadata?.documentProcessor?.extractionConfidence || 0) || null
       : null,

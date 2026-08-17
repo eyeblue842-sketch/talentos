@@ -27,6 +27,7 @@ export class OpenSearchResumeSearchAdapter {
     this.username = config.username ?? env.openSearchUsername;
     this.password = config.password ?? env.openSearchPassword;
     this.indexPrefix = config.indexPrefix ?? env.openSearchIndexPrefix;
+    this.schemaVersion = config.schemaVersion ?? RESUME_SEARCH_INDEX_SCHEMA_VERSION;
     this.client = this.node
       ? new Client({
           node: this.node,
@@ -36,7 +37,7 @@ export class OpenSearchResumeSearchAdapter {
   }
 
   get indexName() {
-    return buildResumeSearchIndexName(this.indexPrefix);
+    return buildResumeSearchIndexName(this.indexPrefix, this.schemaVersion);
   }
 
   ensureConfigured() {
@@ -48,17 +49,25 @@ export class OpenSearchResumeSearchAdapter {
     }
   }
 
-  async ensureIndexVersion() {
+  async ensureIndexVersion({ switchAliases = false } = {}) {
     this.ensureConfigured();
     const exists = await this.client.indices.exists({ index: this.indexName });
     if (!exists.body) {
       await this.client.indices.create({
         index: this.indexName,
-        body: buildResumeSearchIndexMapping(),
+        body: buildResumeSearchIndexMapping(this.schemaVersion),
       });
     }
-    await this.switchAliases({ indexName: this.indexName });
-    return { indexName: this.indexName, indexSchemaVersion: RESUME_SEARCH_INDEX_SCHEMA_VERSION };
+    const aliasStatus = await this.validateAliases({ indexName: this.indexName });
+    if (switchAliases) {
+      await this.switchAliases({ indexName: this.indexName });
+    }
+    return {
+      indexName: this.indexName,
+      indexSchemaVersion: this.schemaVersion,
+      aliasStatus,
+      aliasesSwitched: Boolean(switchAliases),
+    };
   }
 
   async getIndexHealth() {
@@ -88,7 +97,7 @@ export class OpenSearchResumeSearchAdapter {
         node: this.node,
         readAlias: aliasMap.readAlias,
         writeAlias: aliasMap.writeAlias,
-        indexSchemaVersion: RESUME_SEARCH_INDEX_SCHEMA_VERSION,
+        indexSchemaVersion: this.schemaVersion,
       };
     } catch (error) {
       return {
@@ -100,10 +109,10 @@ export class OpenSearchResumeSearchAdapter {
     }
   }
 
-  async openPointInTime(keepAlive = '2m') {
+  async openPointInTime(keepAlive = '2m', target = RESUME_SEARCH_READ_ALIAS) {
     this.ensureConfigured();
     const response = await this.client.createPit({
-      index: RESUME_SEARCH_READ_ALIAS,
+      index: target,
       keep_alive: keepAlive,
     });
     return response.body.pit_id;
@@ -126,22 +135,22 @@ export class OpenSearchResumeSearchAdapter {
     return response.body;
   }
 
-  async bulkIndexResumes(documents = []) {
+  async bulkIndexResumes(documents = [], targetIndex = RESUME_SEARCH_WRITE_ALIAS) {
     this.ensureConfigured();
     if (!documents.length) return { errors: false, items: [] };
     const operations = [];
     for (const document of documents) {
-      operations.push({ index: { _index: RESUME_SEARCH_WRITE_ALIAS, _id: document.documentId } });
+      operations.push({ index: { _index: targetIndex, _id: document.documentId } });
       operations.push(document);
     }
     const response = await this.client.bulk({ refresh: false, body: operations });
     return response.body;
   }
 
-  async upsertResumeDocument(document) {
+  async upsertResumeDocument(document, targetIndex = RESUME_SEARCH_WRITE_ALIAS) {
     this.ensureConfigured();
     const response = await this.client.index({
-      index: RESUME_SEARCH_WRITE_ALIAS,
+      index: targetIndex,
       id: document.documentId,
       body: document,
       refresh: false,
@@ -149,10 +158,10 @@ export class OpenSearchResumeSearchAdapter {
     return response.body;
   }
 
-  async deleteResumeDocument(documentId) {
+  async deleteResumeDocument(documentId, targetIndex = RESUME_SEARCH_WRITE_ALIAS) {
     this.ensureConfigured();
     return this.client.delete({
-      index: RESUME_SEARCH_WRITE_ALIAS,
+      index: targetIndex,
       id: documentId,
       refresh: false,
     }).catch((error) => {
@@ -175,6 +184,28 @@ export class OpenSearchResumeSearchAdapter {
     actions.push({ add: { index: indexName, alias: RESUME_SEARCH_READ_ALIAS } });
     actions.push({ add: { index: indexName, alias: RESUME_SEARCH_WRITE_ALIAS, is_write_index: true } });
     await this.client.indices.updateAliases({ body: { actions } });
+  }
+
+  async validateAliases({ indexName = this.indexName } = {}) {
+    this.ensureConfigured();
+    const existing = await this.client.indices.getAlias({ index: `${this.indexPrefix}-*` }).catch(() => ({ body: {} }));
+    let readAliasIndex = null;
+    let writeAliasIndex = null;
+
+    for (const [knownIndex, value] of Object.entries(existing.body || {})) {
+      const aliases = value.aliases || {};
+      if (aliases[RESUME_SEARCH_READ_ALIAS]) readAliasIndex = knownIndex;
+      if (aliases[RESUME_SEARCH_WRITE_ALIAS]) writeAliasIndex = knownIndex;
+    }
+
+    return {
+      indexName,
+      readAliasIndex,
+      writeAliasIndex,
+      readAliasMatches: readAliasIndex === indexName,
+      writeAliasMatches: writeAliasIndex === indexName,
+      aliasesConfigured: Boolean(readAliasIndex || writeAliasIndex),
+    };
   }
 }
 
