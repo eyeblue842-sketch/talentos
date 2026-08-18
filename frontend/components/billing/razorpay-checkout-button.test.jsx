@@ -3,12 +3,30 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RazorpayCheckoutButton } from './razorpay-checkout-button';
 
+// The component calls same-origin Route Handlers (app/api/billing/...) via
+// fetch, not lib/api.js directly (that module is server-only - see
+// components/billing/__tests__/client-server-boundary.test.js). Mock
+// fetch itself, keyed by path, to exercise the real client-side contract.
 const createBillingPurchaseIntent = vi.fn();
 const verifyBillingCheckoutPayment = vi.fn();
-vi.mock('@/lib/api', () => ({
-  createBillingPurchaseIntent: (...args) => createBillingPurchaseIntent(...args),
-  verifyBillingCheckoutPayment: (...args) => verifyBillingCheckoutPayment(...args),
-}));
+
+function mockFetchImplementation(url, options) {
+  const body = options?.body ? JSON.parse(options.body) : {};
+  if (url === '/api/billing/purchases') {
+    return createBillingPurchaseIntent(body.productCode, options.headers?.['Idempotency-Key']);
+  }
+  if (url === '/api/billing/purchases/verify') {
+    return verifyBillingCheckoutPayment(body);
+  }
+  throw new Error(`Unexpected fetch call: ${url}`);
+}
+
+function toFetchResponse(resultPromise) {
+  return resultPromise.then(
+    (data) => ({ ok: true, json: async () => ({ success: true, data }) }),
+    (error) => ({ ok: false, status: error.statusCode || 500, json: async () => ({ success: false, message: error.message }) }),
+  );
+}
 
 let lastCheckoutInstance = null;
 const loadRazorpayCheckout = vi.fn();
@@ -31,6 +49,9 @@ beforeEach(() => {
   verifyBillingCheckoutPayment.mockReset();
   loadRazorpayCheckout.mockReset().mockResolvedValue(FakeRazorpay);
   lastCheckoutInstance = null;
+  global.fetch = vi.fn((url, options) => toFetchResponse(
+    (async () => mockFetchImplementation(url, options))(),
+  ));
 });
 
 describe('RazorpayCheckoutButton', () => {

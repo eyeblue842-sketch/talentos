@@ -25,7 +25,19 @@ export default defineConfig({
       timeout: 120000,
     },
     {
-      command: 'npx next build --webpack && node ../node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3001',
+      // next.config.mjs sets `output: 'standalone'`. `next start` does not
+      // work with a standalone build (it warns and falls back to defaults,
+      // silently dropping the BACKEND_API_BASE_URL override below - every
+      // server-side Route Handler then calls the wrong backend port and
+      // fails with a raw "fetch failed"). The standalone build's own
+      // server.js is the correct way to run it, and reads PORT/HOSTNAME
+      // from the environment exactly like next start did. Next.js also
+      // requires static assets and public/ to be copied into the
+      // standalone output manually (documented, standard step) - without
+      // it every JS/CSS chunk 404s and the page never hydrates at all.
+      // public/ itself is optional (this repo has none), so the copy is
+      // skipped rather than assumed, matching Next's own behavior.
+      command: 'npx next build --webpack && node -e "const fs=require(\'fs\'); fs.cpSync(\'.next/static\',\'.next/standalone/frontend/.next/static\',{recursive:true}); if (fs.existsSync(\'public\')) fs.cpSync(\'public\',\'.next/standalone/frontend/public\',{recursive:true})" && node .next/standalone/frontend/server.js',
       cwd: '.',
       env: {
         ...process.env,

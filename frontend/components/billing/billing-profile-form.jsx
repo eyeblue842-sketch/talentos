@@ -2,7 +2,19 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { upsertBillingProfile } from '@/lib/api';
+
+async function putJson(path, payload) {
+  const response = await fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.message || 'Request failed.');
+  }
+  return body.data;
+}
 
 const FIELDS = [
   { name: 'legalCompanyName', label: 'Legal company name', required: true },
@@ -43,7 +55,7 @@ export function BillingProfileForm({ initialProfile }) {
     setStatus('saving');
     setErrorMessage(null);
     try {
-      await upsertBillingProfile({
+      await putJson('/api/billing/profile', {
         ...values,
         billingPhone: values.billingPhone || null,
         addressLine2: values.addressLine2 || null,

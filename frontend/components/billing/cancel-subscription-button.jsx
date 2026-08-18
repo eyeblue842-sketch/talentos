@@ -3,8 +3,20 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { cancelBillingSubscription } from '@/lib/api';
 import { formatBillingDate } from '@/lib/billing-format';
+
+async function postJson(path, payload) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.message || 'Request failed.');
+  }
+  return body.data;
+}
 
 // Wording is deliberately explicit that this stops renewal only - it must
 // not read like an immediate cutoff. Suspension (policy/dispute) and
@@ -26,7 +38,7 @@ export function CancelSubscriptionButton({ expiresAt }) {
     setStatus('cancelling');
     setErrorMessage(null);
     try {
-      await cancelBillingSubscription(reason.trim());
+      await postJson('/api/billing/subscription/cancel', { reason: reason.trim() });
       setStatus('cancelled');
       router.refresh();
     } catch (error) {

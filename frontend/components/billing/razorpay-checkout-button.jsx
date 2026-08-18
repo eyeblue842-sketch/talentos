@@ -3,7 +3,19 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { loadRazorpayCheckout } from '@/lib/razorpay-loader';
-import { createBillingPurchaseIntent, verifyBillingCheckoutPayment } from '@/lib/api';
+
+async function postJson(path, payload, extraHeaders) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.message || 'Request failed.');
+  }
+  return body.data;
+}
 
 // Section 6/12: opening checkout, or the checkout modal reporting success,
 // never grants access by itself - the `handler` callback below only calls
@@ -37,7 +49,7 @@ export function RazorpayCheckoutButton({
 
     try {
       const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      const intent = await createBillingPurchaseIntent(productCode, idempotencyKey);
+      const intent = await postJson('/api/billing/purchases', { productCode }, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined);
       const RazorpayCtor = await loadRazorpayCheckout();
       setStatus('opening');
 
@@ -51,7 +63,7 @@ export function RazorpayCheckoutButton({
         handler: async (response) => {
           setStatus('verifying');
           try {
-            const activated = await verifyBillingCheckoutPayment({
+            const activated = await postJson('/api/billing/purchases/verify', {
               purchaseId: intent.purchaseId,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,

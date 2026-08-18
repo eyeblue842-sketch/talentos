@@ -1,3 +1,4 @@
+import 'server-only';
 import { getSessionToken, requestBackend } from '@/lib/auth';
 import { buildQueryString } from '@/lib/query-internal';
 
