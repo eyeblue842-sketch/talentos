@@ -410,7 +410,10 @@ async function requestResumeSearchV2(payload, signal) {
     throw error;
   }
 
-  return parseResumeSearchV2Response(body?.data);
+  // The API returns { success, data: [...items], meta } - data and meta
+  // are siblings, not nested - but resumeSearchV2ResponseSchema expects
+  // { items, meta }.
+  return parseResumeSearchV2Response({ items: body?.data, meta: body?.meta });
 }
 
 export function RecruiterResumeSearchV2Page({

@@ -3,14 +3,14 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 // CAREERIZ PRODUCT INTEGRATION - Phase F: focused browser acceptance.
-// Fictional accounts/data only. Never references the protected batch
-// cmsox1c0z000pul00qtc5g62y. Does not weaken auth/verification/
+// Fictional accounts/data only. Never processes or references any
+// protected/real production batch. Does not weaken auth/verification/
 // entitlement/CSRF/tenant/rollout controls to make these pass.
 
 type SeedResult = {
   password: string;
   verified: { email: string; organisationId: string };
-  pending: { email: string };
+  pending: { email: string; organisationId: string };
   consultancyRegisterEmailDomain: string;
   consultancyRegisterEmailGmail: string;
   companyRegisterEmailPublic: string;
@@ -87,7 +87,18 @@ test.describe('CAREERIZ product integration - pending-verification restrictions'
     const s = seed();
     await login(page, s.pending.email, s.password);
     await page.goto('/recruiter/database/results?kw=MUST%3AKubernetes', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText(/verify|verification|pending|subscription|not have access/i).first()).toBeVisible({ timeout: 20000 });
+    // The pending org is allowlisted for Resume Search V2 rollout the same
+    // as the verified org (see pi-e2e-resume-search-bootstrap.mjs), so
+    // this reaches the real entitlement/verification-gated V2 endpoint
+    // (auto-run from the URL's kw param, same as the verified-recruiter
+    // search test below) rather than the unrelated legacy AI-search
+    // fallback a non-allowlisted org would fall through to.
+    // Scoped to the "Search unavailable" restriction heading, not a bare
+    // keyword regex - the fictional org is itself literally named
+    // "Fictional Pending Co", so a loose /pending/i match would resolve to
+    // that (hidden, sidebar) text instead of the real restriction below it.
+    await expect(page.getByRole('heading', { name: /search unavailable/i })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/verify|verification|subscription is required|not have access/i).first()).toBeVisible();
   });
 });
 

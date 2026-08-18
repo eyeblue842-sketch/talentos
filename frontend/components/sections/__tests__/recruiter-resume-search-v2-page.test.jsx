@@ -54,23 +54,24 @@ function installMatchMedia(matches = false) {
 }
 
 function buildSuccessResponse(items, meta = {}) {
+  // The real API returns { success, data: [...items], meta } - data and
+  // meta are siblings, not nested (see requestResumeSearchV2's
+  // parseResumeSearchV2Response call).
   return {
     ok: true,
     status: 200,
     json: async () => ({
       success: true,
-      data: {
-        items,
-        meta: {
-          pageSize: 25,
-          nextCursor: null,
-          totalRelation: 'EQ',
-          totalValue: items.length,
-          searchEngine: 'OPENSEARCH',
-          indexSchemaVersion: '2',
-          queryFingerprint: 'fp-1',
-          ...meta,
-        },
+      data: items,
+      meta: {
+        pageSize: 25,
+        nextCursor: null,
+        totalRelation: 'EQ',
+        totalValue: items.length,
+        searchEngine: 'OPENSEARCH',
+        indexSchemaVersion: '2',
+        queryFingerprint: 'fp-1',
+        ...meta,
       },
     }),
   };

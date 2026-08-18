@@ -18,21 +18,35 @@ async function main() {
   if (!verifiedUser) throw new Error('Phase E fictional org not found - run pi-phase-e-parsing-indexing.mjs first.');
   await prisma.user.update({ where: { id: verifiedUser.id }, data: { passwordHash, emailVerifiedAt: new Date() } });
 
-  // A fresh PENDING company org (no subscription), for the
-  // pending-verification-restrictions browser check.
-  const pendingEmail = `pending-owner-${suffix}@fictionalpendingco${suffix}.example`;
-  const pendingSignupUser = await prisma.user.create({
-    data: { email: pendingEmail, passwordHash, role: 'RECRUITER', emailVerifiedAt: new Date() },
-  });
-  const pendingOrg = await prisma.organisation.create({
-    data: { name: `Fictional Pending Co ${suffix}`, slug: `fictional-pending-co-${suffix}`, type: 'COMPANY', verifiedDomain: `fictionalpendingco${suffix}.example`, domainVerificationStatus: 'PENDING' },
-  });
-  await prisma.organisationMembership.create({ data: { userId: pendingSignupUser.id, organisationId: pendingOrg.id, role: 'OWNER', status: 'ACTIVE' } });
+  // A stable (non-suffixed, idempotent - same pattern as the Phase E
+  // verified org above) PENDING company org with no subscription, for the
+  // pending-verification-restrictions browser check. Stable so its
+  // organisation id can be looked up once and allowlisted for Resume
+  // Search V2 rollout in an isolated harness, exercising the real
+  // entitlement/verification gate instead of the unrelated legacy
+  // AI-search fallback (which requires intelligence infra out of scope
+  // here).
+  const PENDING_OWNER_EMAIL = 'pending-owner-phase-f@fictionalpendingco.example';
+  let pendingSignupUser = await prisma.user.findUnique({ where: { email: PENDING_OWNER_EMAIL } });
+  let pendingOrg;
+  if (pendingSignupUser) {
+    await prisma.user.update({ where: { id: pendingSignupUser.id }, data: { passwordHash } });
+    const membership = await prisma.organisationMembership.findFirst({ where: { userId: pendingSignupUser.id } });
+    pendingOrg = await prisma.organisation.findUnique({ where: { id: membership.organisationId } });
+  } else {
+    pendingSignupUser = await prisma.user.create({
+      data: { email: PENDING_OWNER_EMAIL, passwordHash, role: 'RECRUITER', emailVerifiedAt: new Date() },
+    });
+    pendingOrg = await prisma.organisation.create({
+      data: { name: 'Fictional Pending Co', slug: 'fictional-pending-co', type: 'COMPANY', verifiedDomain: 'fictionalpendingco.example', domainVerificationStatus: 'PENDING' },
+    });
+    await prisma.organisationMembership.create({ data: { userId: pendingSignupUser.id, organisationId: pendingOrg.id, role: 'OWNER', status: 'ACTIVE' } });
+  }
 
   console.log(JSON.stringify({
     password: PASSWORD,
     verified: { email: 'owner-phase-e@fictionalparsingco.example', organisationId: verifiedUser.id },
-    pending: { email: pendingEmail },
+    pending: { email: PENDING_OWNER_EMAIL, organisationId: pendingOrg.id },
     consultancyRegisterEmailDomain: `fictionalconsultancy${suffix}.example`,
     consultancyRegisterEmailGmail: `fictional-consultancy-gmail-${suffix}@gmail.com`,
     companyRegisterEmailPublic: `fictional-company-public-${suffix}@gmail.com`,
