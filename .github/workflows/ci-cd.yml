@@ -19,14 +19,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      # The root npm ci (workspaces: shared, frontend, backend) is the only
+      # install this pipeline needs or Docker actually uses (all three
+      # Dockerfiles COPY only the root package.json/package-lock.json - see
+      # backend/Dockerfile, backend/Dockerfile.worker, frontend/Dockerfile).
+      # There is deliberately no separate `npm ci --prefix backend`/
+      # `--prefix frontend` step here: those per-workspace lockfiles were
+      # never a build input for anything, just went stale, and made `npm
+      # ci` (strict, unlike the README's local `npm install`) fail on
+      # drift no production path depended on.
       - name: Install
         run: npm ci
-
-      - name: Backend install
-        run: npm ci --prefix backend
-
-      - name: Frontend install
-        run: npm ci --prefix frontend
 
       - name: Lint
         run: npm run lint
