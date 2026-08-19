@@ -337,7 +337,7 @@ async function detectDuplicateCandidate(organisationId, parsedData, tx = prisma,
 
     if (candidate) {
       let reason = 'matched existing candidate';
-      let matchFields = [];
+      const matchFields = [];
       if (email && candidate.email === email) {
         reason = 'email';
         matchFields.push('email');
@@ -1170,7 +1170,7 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
     let parserVersion = null;
     let errorCode = extracted.errorCode;
     let errorMessage = null;
-    let processingMetadata = sanitizeResumeData({
+    const processingMetadata = sanitizeResumeData({
       workerId,
       aiEnabled: env.aiResumeParsingEnabled,
       aiProvider: env.aiProvider,

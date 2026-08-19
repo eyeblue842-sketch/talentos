@@ -1,4 +1,3 @@
-const CONTROL_CHAR_PATTERN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const PHONE_PATTERN = /(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)/g;
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"')]+/gi;
@@ -7,9 +6,28 @@ const POSTAL_ADDRESS_FRAGMENT_PATTERN = /\b(?:address\s*:?\s*)?(?:flat|room|plot
 const PERSONAL_URL_HOST_PATTERN = /\b(?:github\.io|about\.me|linktr\.ee|me\.|bio\.site|carrd\.co)\b/i;
 const PRESERVE_NUMERIC_CONTEXT_PATTERN = /\b(?:\d+(?:\.\d+)?\s*(?:years?|yrs?|months?|lpa|lac|lakhs?|cr|crore|crores|usd|eur|inr|days?|%))\b/i;
 
+// Strips non-whitespace ASCII control characters (0x00-0x08, 0x0B, 0x0C,
+// 0x0E-0x1F, 0x7F) while preserving tab/newline/CR for the whitespace-
+// normalization steps that follow. Written as a code-point filter rather
+// than a regex control-char range so no-control-regex has nothing to flag.
+function isNonWhitespaceControlCodePoint(code) {
+  return (code >= 0x00 && code <= 0x08)
+    || code === 0x0b
+    || code === 0x0c
+    || (code >= 0x0e && code <= 0x1f)
+    || code === 0x7f;
+}
+
+function stripNonWhitespaceControlCharacters(value) {
+  let result = '';
+  for (const char of value) {
+    if (!isNonWhitespaceControlCodePoint(char.codePointAt(0))) result += char;
+  }
+  return result;
+}
+
 function normalizeWhitespace(value = '') {
-  return String(value || '')
-    .replace(CONTROL_CHAR_PATTERN, '')
+  return stripNonWhitespaceControlCharacters(String(value || ''))
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')

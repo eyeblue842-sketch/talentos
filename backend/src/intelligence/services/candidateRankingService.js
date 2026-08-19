@@ -5,7 +5,7 @@ import { requireIntelligenceFeature } from './featureAccessService.js';
 import { createFingerprint } from './governanceService.js';
 import { resolveActiveMatchScoringProfileVersion } from './matchScoringProfileService.js';
 import { getCandidateJobMatchCompatibility } from './candidateMatchEngineService.js';
-import { buildCandidateMatchEntityId, buildEffectiveCandidateMatchValues } from './candidateMatchResultService.js';
+import { buildEffectiveCandidateMatchValues } from './candidateMatchResultService.js';
 import {
   countRankingEntries,
   createRankingEntry,

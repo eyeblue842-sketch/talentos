@@ -1,5 +1,4 @@
-import { prisma } from '../src/config/db.js';
-import { closePrisma } from '../src/config/db.js';
+import { prisma, closePrisma } from '../src/config/db.js';
 
 const featureKeys = [
   'intelligence.resume_summary',

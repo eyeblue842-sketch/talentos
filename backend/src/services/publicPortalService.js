@@ -45,15 +45,6 @@ function normalizeCompanyName(value) {
   return tokens.join(' ');
 }
 
-function hasMeaningfulValue(value) {
-  if (value == null) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (typeof value === 'number') return Number.isFinite(value);
-  if (Array.isArray(value)) return value.some((item) => hasMeaningfulValue(item));
-  if (typeof value === 'object') return Object.values(value).some((item) => hasMeaningfulValue(item));
-  return Boolean(value);
-}
-
 function addCount(map, label, increment = 1) {
   if (!label) return;
   map.set(label, (map.get(label) || 0) + increment);

@@ -192,17 +192,6 @@ async function getTemplateAccess(actorUser, templateId, mode = 'read') {
   return { template, permissionContext };
 }
 
-async function getLatestDraftVersion(organisationId, versionGroupId) {
-  return prisma.jobDescriptionDraft.findFirst({
-    where: {
-      organisationId,
-      versionGroupId,
-      isLatestVersion: true,
-    },
-    orderBy: { version: 'desc' },
-  });
-}
-
 function buildTemplateKey(value) {
   return scrubText(value, 120).toLowerCase().replace(/\s+/g, '-');
 }

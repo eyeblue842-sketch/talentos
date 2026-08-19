@@ -66,6 +66,17 @@ export function getSearchFields(mode = 'keyword') {
   return SEARCH_FIELDS[mode] || SEARCH_FIELDS.keyword;
 }
 
+// Detects any ASCII control character (0x00-0x1F, 0x7F). Written as a
+// code-point scan rather than a regex control-char range so
+// no-control-regex has nothing to flag.
+function hasAsciiControlCharacter(value) {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    if ((code >= 0x00 && code <= 0x1f) || code === 0x7f) return true;
+  }
+  return false;
+}
+
 export function isControlCharacterSafe(value = '') {
-  return !/[\u0000-\u001f\u007f]/.test(String(value || ''));
+  return !hasAsciiControlCharacter(String(value || ''));
 }

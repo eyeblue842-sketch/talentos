@@ -156,7 +156,6 @@ export function filterCandidateRows(rows, filters = {}) {
   const skills = normalizeStringArray(filters.skills);
   const currentCompany = normalizeString(filters.currentCompany);
   const previousCompany = normalizeString(filters.previousCompany);
-  const education = normalizeString(filters.education);
   const industry = normalizeString(filters.industry);
   const noticePeriod = normalizeString(filters.noticePeriod);
   const resumeAttachment = normalizeString(filters.resumeAttachment);

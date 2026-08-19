@@ -235,9 +235,7 @@ test('a PROCESSING_TIMEOUT (504) from Python is surfaced with its own code and i
 });
 
 test('the circuit breaker opens after the configured number of consecutive failures and then fails fast', async () => {
-  let callCount = 0;
   global.fetch = mockPostAfterReady(async () => {
-    callCount += 1;
     throw new Error('connection refused');
   });
 

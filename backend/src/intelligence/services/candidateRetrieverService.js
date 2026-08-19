@@ -16,7 +16,6 @@ function mapIntentToSearchFilters(intent, plan) {
   const useRawKeyword = ['KEYWORD', 'BOOLEAN'].includes(plan.searchMode);
   const filters = {
     keyword: useRawKeyword && !skillFilters.length ? intent.keyword || undefined : undefined,
-    designation: intent.role || undefined,
     location: intent.filters.location || undefined,
     locations: intent.filters.locations || undefined,
     preferredLocations: intent.filters.preferredLocations || undefined,

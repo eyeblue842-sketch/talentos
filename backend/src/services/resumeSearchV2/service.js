@@ -15,11 +15,28 @@ function sanitizeHighlightSnippet(value = '') {
     .slice(0, 500);
 }
 
-function sanitizePlainResultText(value = '', maxLength = 240) {
-  return String(value || '')
-    .replace(/<\/?mark\b[^>]*>/gi, '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/[\u0000-\u001f\u007f]/g, '')
+// Strips all ASCII control characters (0x00-0x1F, 0x7F), including
+// tab/newline/CR, from already-flattened single-line result text.
+// Written as a code-point filter rather than a regex control-char
+// range so no-control-regex has nothing to flag.
+function isAsciiControlCodePoint(code) {
+  return (code >= 0x00 && code <= 0x1f) || code === 0x7f;
+}
+
+function stripAsciiControlCharacters(value) {
+  let result = '';
+  for (const char of value) {
+    if (!isAsciiControlCodePoint(char.codePointAt(0))) result += char;
+  }
+  return result;
+}
+
+export function sanitizePlainResultText(value = '', maxLength = 240) {
+  return stripAsciiControlCharacters(
+    String(value || '')
+      .replace(/<\/?mark\b[^>]*>/gi, '')
+      .replace(/<[^>]*>/g, ''),
+  )
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLength);

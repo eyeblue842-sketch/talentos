@@ -289,10 +289,6 @@ function recruiterActor() {
   return clone(state.users.find((item) => item.id === 'recruiter-1'));
 }
 
-function adminActor() {
-  return clone(state.users.find((item) => item.id === 'admin-1'));
-}
-
 function otherRecruiter() {
   return clone(state.users.find((item) => item.id === 'recruiter-2'));
 }

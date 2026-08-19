@@ -42,10 +42,6 @@ function paginateRows(rows, page, pageSize) {
   return rows.slice((page - 1) * pageSize, page * pageSize);
 }
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
 function asObjectArray(value) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
 }
@@ -76,10 +72,6 @@ function extractEducationTokens(profile) {
 
 function buildPairKey(userIdA, userIdB) {
   return [userIdA, userIdB].sort().join(':');
-}
-
-function getOtherUserId(connection, actorUserId) {
-  return connection.requesterUserId === actorUserId ? connection.receiverUserId : connection.requesterUserId;
 }
 
 function getConnectionDate(connection) {
