@@ -69,6 +69,7 @@ export function RecruiterTalentSearchAssistant({ jobId = '', requisitionId = '' 
         </span>
         <div>
           <p className="text-sm font-semibold text-[var(--color-text)]">AI Assist</p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">AI-generated suggestion. Review before use.</p>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">Describe the candidate you are looking for. Careeriz will interpret the request, populate recruiter filters, and wait for your review before running search.</p>
         </div>
       </div>
