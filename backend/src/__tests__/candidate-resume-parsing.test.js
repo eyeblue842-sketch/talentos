@@ -706,7 +706,15 @@ test('profile presentation normalization hides polluted values from the rendered
   }).percentage, true);
 });
 
-test('RESUME_PARSING accepts the local naukri_aditigarg regression PDF and applies parsed profile data', async () => {
+test('RESUME_PARSING accepts a naukri-style multi-role fictional regression PDF and applies parsed profile data', async () => {
+  // Originally read a real, git-ignored, developer-local PDF
+  // (storage/resumes/... is never committed - see .gitignore) that doesn't
+  // exist in any fresh checkout, including CI. Regenerated at test time
+  // instead with the same pdfkit helper every other test in this file
+  // already uses, reproducing the same "multi-section, multi-role,
+  // Naukri-style export" shape (name/title/contact/summary/skills/two
+  // experience entries/education/certifications) that made the original
+  // fixture worth regression-testing, using entirely fictional content.
   seedCandidate();
   seedResumeAsset({
     originalFilename: 'naukri_aditigarg-7y_0m.pdf',
@@ -714,8 +722,32 @@ test('RESUME_PARSING accepts the local naukri_aditigarg regression PDF and appli
     mimeType: 'application/pdf',
   });
 
-  const sourcePath = path.resolve(process.cwd(), 'storage/resumes/resumes/2026/08/9a75e7a7-c2a9-4969-af5c-f56460728227-naukri_aditigarg-7y_0m.pdf');
-  const resumeBuffer = fs.readFileSync(sourcePath);
+  const resumeBuffer = await bufferFromPdf({
+    text: [
+      'Aditi Garg',
+      'Senior Angular Developer',
+      'Bengaluru, Karnataka, India',
+      'aditi.garg.fictional@example.com',
+      '+91 90000 00000',
+      'Summary',
+      'Senior Angular Developer with 7 years of experience building enterprise web applications.',
+      'Skills',
+      'Angular, TypeScript, RxJS, JavaScript, HTML5, CSS3, REST APIs, Git',
+      'Experience',
+      'Senior Angular Developer at Fictional Tech Solutions',
+      'Jun 2019 - Present',
+      'Responsibilities: Led development of modular Angular applications and mentored junior engineers.',
+      'Angular Developer at Sample Software Pvt Ltd',
+      'Jan 2017 - May 2019',
+      'Responsibilities: Built responsive UI components and integrated REST APIs.',
+      'Education',
+      'B.Tech in Computer Science',
+      'Fictional Institute of Technology',
+      '2013 - 2017',
+      'Certifications',
+      'Angular Certified Developer (Fictional)',
+    ].join('\n'),
+  });
   state.asset.sizeBytes = resumeBuffer.length;
   writeStoredResume(state.asset.storageKey, resumeBuffer);
 
