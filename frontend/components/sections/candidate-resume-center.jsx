@@ -32,13 +32,16 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
     return () => clearInterval(interval);
   }, [hasPendingResume, router]);
 
-  useEffect(() => {
-    if (!pendingResumeAssetId) return;
+  // Adjusting state during render (not in an effect): clear the tracked
+  // pending resume as soon as the latest `resumes` prop shows it is no
+  // longer PENDING/PROCESSING. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  if (pendingResumeAssetId) {
     const stillPending = resumes.some((resume) => resume.id === pendingResumeAssetId && ['PENDING', 'PROCESSING'].includes(resume.parsingStatus));
     if (!stillPending) {
       setPendingResumeAssetId(null);
     }
-  }, [pendingResumeAssetId, resumes]);
+  }
 
   async function handleUpload(event) {
     const file = event.target.files?.[0];

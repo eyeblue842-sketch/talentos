@@ -47,19 +47,44 @@ export function MessagesWorkspace({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Adjusting state during render (not in an effect) so a fresh set of
+  // initial* props from the server - e.g. navigating to a different
+  // conversation - replaces local state in the same commit instead of an
+  // extra effect-driven render pass. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevInitialProps, setPrevInitialProps] = useState({
+    initialConversations,
+    initialConversation,
+    initialMessages,
+    initialMessagesMeta,
+    activeConversationId,
+  });
+  if (
+    initialConversations !== prevInitialProps.initialConversations
+    || initialConversation !== prevInitialProps.initialConversation
+    || initialMessages !== prevInitialProps.initialMessages
+    || initialMessagesMeta !== prevInitialProps.initialMessagesMeta
+    || activeConversationId !== prevInitialProps.activeConversationId
+  ) {
+    setPrevInitialProps({
+      initialConversations,
+      initialConversation,
+      initialMessages,
+      initialMessagesMeta,
+      activeConversationId,
+    });
+    setConversations(initialConversations || []);
+    setConversation(initialConversation || null);
+    setMessages(initialMessages || []);
+    setMessagesMeta(initialMessagesMeta || { nextCursor: null });
+  }
+
   function clearUnreadState(conversationId) {
     setConversation((current) => (current?.id === conversationId ? { ...current, unreadCount: 0 } : current));
     setConversations((current) => current.map((item) => (
       item.id === conversationId ? { ...item, unreadCount: 0 } : item
     )));
   }
-
-  useEffect(() => {
-    setConversations(initialConversations || []);
-    setConversation(initialConversation || null);
-    setMessages(initialMessages || []);
-    setMessagesMeta(initialMessagesMeta || { nextCursor: null });
-  }, [initialConversations, initialConversation, initialMessages, initialMessagesMeta, activeConversationId]);
 
   useEffect(() => {
     if (!conversation?.id) return undefined;

@@ -230,7 +230,12 @@ function OverrideDialog({ open, onClose, onSubmit, pending, generated, effective
     notes: '',
   });
 
-  useEffect(() => {
+  // Adjusting state during render (not in an effect) when the dialog
+  // closes, so the form is fresh the next time it opens. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (!open) {
       setForm({
         type: 'SCORE_ADJUSTMENT',
@@ -241,7 +246,7 @@ function OverrideDialog({ open, onClose, onSubmit, pending, generated, effective
         notes: '',
       });
     }
-  }, [effective?.isKnockedOut, generated?.recommendation?.label, open]);
+  }
 
   const requiresReason = ['SCORE_ADJUSTMENT', 'RECOMMENDATION_OVERRIDE', 'KNOCKOUT_OVERRIDE'].includes(form.type);
 
@@ -421,10 +426,14 @@ export function CandidateJobMatchPanel({
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overridePending, setOverridePending] = useState(false);
   const [evidenceState, setEvidenceState] = useState(null);
-  const [polling, setPolling] = useState(false);
   const pollTimerRef = useRef(null);
 
   const activeStatus = status?.status || result?.execution?.status || null;
+  // Derived directly from activeStatus instead of tracked as its own state:
+  // the polling effect below only ever runs its fetch loop while this same
+  // condition holds, so there is nothing for a separate "polling" state
+  // variable to capture that isn't already implied by activeStatus.
+  const polling = Boolean(featureEnabled && canRead && jobId && activeStatus && !CANDIDATE_MATCH_TERMINAL_STATUSES.has(activeStatus));
   const previousResultVisible = hasPreviousCandidateMatchResult(result);
 
   useEffect(() => {
@@ -433,12 +442,24 @@ export function CandidateJobMatchPanel({
     };
   }, []);
 
+  const fetchTrigger = { candidateId, canRead, featureEnabled, jobId, parsedInitialResult, parsedInitialStatus };
+  // Adjusting state during render (not in an effect): clear any stale
+  // error from a previous attempt right when a fresh fetch is about to
+  // start. `loading` itself needs no reset here - it is already lazily
+  // initialized to true for this exact condition (see the useState above).
+  const [prevFetchTrigger, setPrevFetchTrigger] = useState(fetchTrigger);
+  const fetchTriggerChanged = Object.keys(fetchTrigger).some((key) => fetchTrigger[key] !== prevFetchTrigger[key]);
+  if (fetchTriggerChanged) {
+    setPrevFetchTrigger(fetchTrigger);
+    if (featureEnabled && canRead && jobId && !parsedInitialResult && !parsedInitialStatus) {
+      setError('');
+    }
+  }
+
   useEffect(() => {
     if (!featureEnabled || !canRead || !jobId || parsedInitialResult || parsedInitialStatus) return undefined;
 
     let cancelled = false;
-    setLoading(true);
-    setError('');
 
     Promise.all([
       requestJson(`/api/intelligence/jobs/${jobId}/candidates/${candidateId}/match`).catch(() => null),
@@ -464,13 +485,9 @@ export function CandidateJobMatchPanel({
 
   useEffect(() => {
     if (!featureEnabled || !canRead || !jobId) return undefined;
-    if (!activeStatus || CANDIDATE_MATCH_TERMINAL_STATUSES.has(activeStatus)) {
-      setPolling(false);
-      return undefined;
-    }
+    if (!activeStatus || CANDIDATE_MATCH_TERMINAL_STATUSES.has(activeStatus)) return undefined;
 
     let cancelled = false;
-    setPolling(true);
 
     async function poll() {
       if (document.hidden) {
@@ -484,7 +501,6 @@ export function CandidateJobMatchPanel({
         setStatus(nextStatus);
 
         if (CANDIDATE_MATCH_TERMINAL_STATUSES.has(nextStatus.status)) {
-          setPolling(false);
           if (nextStatus.latestResultId) {
             const nextResult = parseCandidateJobMatchResponse(await requestJson(`/api/intelligence/jobs/${jobId}/candidates/${candidateId}/match`));
             if (!cancelled) setResult(nextResult);
@@ -494,7 +510,6 @@ export function CandidateJobMatchPanel({
       } catch (caught) {
         if (!cancelled) {
           setError(mapCandidateMatchError(caught));
-          setPolling(false);
         }
         return;
       }

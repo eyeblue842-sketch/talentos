@@ -348,17 +348,33 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
   });
   const [projectEntries, setProjectEntries] = useState(() => ensureArray(profile.projectEntries).map(createProjectEntry));
 
+  // Adjusting state during render (not in an effect) when the action state
+  // transitions to 'success', so closing the section happens in the same
+  // commit as the state change. router.refresh() and the error-summary
+  // focus call are not React state, so they stay in a plain effect. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevActionStatus, setPrevActionStatus] = useState(state.status);
+  if (state.status !== prevActionStatus) {
+    setPrevActionStatus(state.status);
+    if (state.status === 'success') {
+      setActiveSection(null);
+    }
+  }
+
   useEffect(() => {
     if (state.status === 'error' && summaryRef.current) {
       summaryRef.current.focus();
     }
     if (state.status === 'success') {
-      setActiveSection(null);
       router.refresh();
     }
   }, [router, state.status]);
 
-  useEffect(() => {
+  // Same render-time adjustment for resetting the whole form when the
+  // profile prop itself changes (e.g. a fresh server-fetched profile).
+  const [prevProfile, setPrevProfile] = useState(profile);
+  if (profile !== prevProfile) {
+    setPrevProfile(profile);
     setValues(buildValues(profile));
     setSkillInput(commaSeparatedValue(profile.skills));
     setWorkplacePreferences(ensureArray(profile.workplacePreferences));
@@ -369,12 +385,10 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
     setExperienceEntries(ensureArray(profile.experienceEntries).map(createExperienceEntry));
     setEducationEntries(ensureArray(profile.educationEntries).map(createEducationEntry));
     setCertificationEntries(ensureArray(profile.certificationEntries).map(createCertificationEntry));
-    setLanguageEntries(() => {
-      const seeded = ensureArray(profile.languageEntries).map(createLanguageEntry);
-      return seeded.length ? seeded : [createLanguageEntry()];
-    });
+    const seededLanguageEntries = ensureArray(profile.languageEntries).map(createLanguageEntry);
+    setLanguageEntries(seededLanguageEntries.length ? seededLanguageEntries : [createLanguageEntry()]);
     setProjectEntries(ensureArray(profile.projectEntries).map(createProjectEntry));
-  }, [profile]);
+  }
 
   const skills = useMemo(() => normalizeStringArray(skillInput.split(',')), [skillInput]);
 

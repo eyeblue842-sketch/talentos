@@ -444,34 +444,67 @@ export function RecruiterResumeSearchV2Page({
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const compactLayout = useMediaQuery('(max-width: 1279px)');
 
-  useEffect(() => {
+  // Adjusting state during render (not in an effect) whenever URL hydration
+  // produces a new `hydrated` value (e.g. navigating with different query
+  // params), so the criteria form and applied search reset in the same
+  // commit instead of an effect-driven extra render. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevHydrated, setPrevHydrated] = useState(hydrated);
+  if (hydrated !== prevHydrated) {
+    setPrevHydrated(hydrated);
     setSearchState(hydrated.state);
     setAppliedState(hydrated.state);
     setRequestValidationError(hydrated.errors[0] || '');
-  }, [hydrated]);
+  }
+
+  // Shared with the search-execution effect below so the validity check
+  // only runs once per (appliedState, canUseSalaryFilters) pair.
+  const appliedValidation = useMemo(
+    () => sanitizeResumeSearchV2State(appliedState, { includeSalary: canUseSalaryFilters }),
+    [appliedState, canUseSalaryFilters],
+  );
+
+  // Same render-time adjustment for when the applied search transitions
+  // (view === 'results'): clear stale results for an invalid state, or
+  // flip the loading indicator on for a valid one - both immediately,
+  // rather than in the effect body. The search-execution effect itself
+  // only performs the actual fetch when appliedValidation.ok is true, so
+  // this stays the single place that reacts to a genuine transition.
+  const [prevSearchTrigger, setPrevSearchTrigger] = useState({ appliedState, canUseSalaryFilters, view });
+  if (
+    appliedState !== prevSearchTrigger.appliedState
+    || canUseSalaryFilters !== prevSearchTrigger.canUseSalaryFilters
+    || view !== prevSearchTrigger.view
+  ) {
+    setPrevSearchTrigger({ appliedState, canUseSalaryFilters, view });
+    if (view === 'results') {
+      if (!appliedValidation.ok) {
+        setResults([]);
+        setMeta(null);
+        setSelectedCandidateId(null);
+        setRequestValidationError(appliedValidation.errors[0] || 'Invalid search configuration.');
+      } else {
+        setLoading(true);
+        setErrorMessage('');
+        setRequestValidationError('');
+      }
+    }
+  }
 
   useEffect(() => {
     if (view !== 'results') {
       return undefined;
     }
-
-    const { ok, state, errors } = sanitizeResumeSearchV2State(appliedState, { includeSalary: canUseSalaryFilters });
-    if (!ok) {
-      setResults([]);
-      setMeta(null);
-      setSelectedCandidateId(null);
-      setRequestValidationError(errors[0] || 'Invalid search configuration.');
+    if (!appliedValidation.ok) {
       return undefined;
     }
 
+    const { state } = appliedValidation;
     const requestId = activeRequestIdRef.current + 1;
     activeRequestIdRef.current = requestId;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
-    setLoading(true);
-    setErrorMessage('');
-    setRequestValidationError('');
 
     requestKeyRef.current = buildResumeSearchV2RequestKey(state);
     requestResumeSearchV2(state, controller.signal)
@@ -505,7 +538,7 @@ export function RecruiterResumeSearchV2Page({
       });
 
     return () => controller.abort();
-  }, [appliedState, canUseSalaryFilters, router, push, view]);
+  }, [appliedValidation, canUseSalaryFilters, router, push, view]);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 

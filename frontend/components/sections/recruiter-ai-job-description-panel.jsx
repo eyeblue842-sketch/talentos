@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -421,7 +421,7 @@ export function RecruiterAiJobDescriptionPanel({
   const isDirty = JSON.stringify(editorState) !== JSON.stringify(savedEditorState);
   const currentDraftStatus = currentDraft ? currentDraft.status : null;
 
-  async function refreshFullResult() {
+  const refreshFullResult = useCallback(async () => {
     const payload = await requestJson(`/api/intelligence/jobs/${jobId}`);
     const parsed = parseJobDescriptionResult(payload);
     setResult(parsed);
@@ -438,14 +438,14 @@ export function RecruiterAiJobDescriptionPanel({
     }));
     setError('');
     return parsed;
-  }
+  }, [jobId]);
 
-  async function refreshStatus() {
+  const refreshStatus = useCallback(async () => {
     const payload = await requestJson(`/api/intelligence/jobs/${jobId}/status`);
     const parsed = parseJobDescriptionStatus(payload);
     setStatus(parsed);
     return parsed;
-  }
+  }, [jobId]);
 
   async function refreshDrafts() {
     const payload = await requestJson(`/api/intelligence/jobs/${jobId}/drafts`);
@@ -454,12 +454,12 @@ export function RecruiterAiJobDescriptionPanel({
     return parsed;
   }
 
-  async function refreshHistory() {
+  const refreshHistory = useCallback(async () => {
     const payload = await requestJson(`/api/intelligence/jobs/${jobId}/history`);
     const parsed = parseJobDescriptionHistory(payload);
     setHistory(parsed);
     return parsed;
-  }
+  }, [jobId]);
 
   async function loadDraftDetail(draftId) {
     const payload = await requestJson(`/api/intelligence/job-description-drafts/${draftId}`);
@@ -485,7 +485,9 @@ export function RecruiterAiJobDescriptionPanel({
     if (!featureEnabled || !canRead || parsedInitialResult || parsedInitialStatus) return undefined;
     let cancelled = false;
 
-    setLoading(true);
+    // `loading` is already lazily initialized to true for exactly this
+    // condition (see the useState above); no synchronous reset is needed
+    // here.
     requestJson(`/api/intelligence/jobs/${jobId}`)
       .then((payload) => {
         if (cancelled) return;
@@ -634,7 +636,7 @@ export function RecruiterAiJobDescriptionPanel({
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [currentDraftId, initialLiveJob, isDirty, polling]);
+  }, [currentDraftId, initialLiveJob, isDirty, polling, refreshFullResult, refreshHistory, refreshStatus]);
 
   useEffect(() => {
     function handleBeforeUnload(event) {

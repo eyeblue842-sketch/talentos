@@ -162,11 +162,17 @@ function SaveSearchDialog({ open, onClose, onSave, pending, initialName }) {
   const [name, setName] = useState(initialName || '');
   const [description, setDescription] = useState('');
 
-  useEffect(() => {
-    if (!open) return;
-    setName(initialName || '');
-    setDescription('');
-  }, [initialName, open]);
+  // Adjusting state during render (not in an effect) when the dialog
+  // opens, so the form starts fresh in the same commit. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName(initialName || '');
+      setDescription('');
+    }
+  }
 
   return (
     <Dialog
@@ -640,10 +646,30 @@ export function RecruiterSemanticSearchWorkspace({
   }
 
   useEffect(() => {
-    loadSavedSearches().catch(() => {});
-    loadHistory().catch(() => {});
+    // Inlined here (rather than calling the loadHistory/loadSavedSearches
+    // helpers above) so every setState call is inside a genuine .then()
+    // callback - a plain call to those async functions would still run
+    // their synchronous guard-check prefix inside this effect's own call
+    // stack before their first await.
+    if (searchHistoryEnabled && canReadHistory) {
+      requestJson(`/api/intelligence/search/history?page=1&pageSize=${HISTORY_PAGE_SIZE}`)
+        .then((payload) => setHistory(parseSemanticSearchHistoryResponse(payload)))
+        .catch(() => {});
+    }
+    if (savedSearchesEnabled && canReadSavedSearches) {
+      requestJson('/api/intelligence/saved-searches')
+        .then((payload) => setSavedSearches(parseSavedCandidateSearchList(payload)))
+        .catch(() => {});
+    }
     if (isResultsView && hasSearchInputs(initialState) && !initialState.deferSearch) {
-      runSearch({ payloadOverride: buildSemanticSearchPayload(initialState, 1, SEARCH_PAGE_SIZE) }).catch(() => {});
+      // runSearch's own synchronous prefix (setError/setLoading) would
+      // otherwise run inside this effect's call stack the same way; a
+      // microtask defers just the call itself past that prefix without
+      // introducing any observable delay or changing request/cancellation
+      // behavior.
+      queueMicrotask(() => {
+        runSearch({ payloadOverride: buildSemanticSearchPayload(initialState, 1, SEARCH_PAGE_SIZE) }).catch(() => {});
+      });
     }
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
@@ -651,17 +677,42 @@ export function RecruiterSemanticSearchWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  const previewGuardTrigger = {
+    canReadCandidateIntelligence,
+    canReadCandidateMatch,
+    candidateIntelligenceEnabled,
+    candidateMatchingEnabled,
+    selectedCandidateId,
+    selectedJobId,
+    isResultsView,
+    showLivePreview,
+  };
+  // Adjusting state during render (not in an effect): clear the preview
+  // panel immediately when it should no longer be shown, instead of
+  // waiting for an effect to run. The fetch-and-populate path below stays
+  // in the effect since it's a genuine async round trip.
+  const [prevPreviewGuardTrigger, setPrevPreviewGuardTrigger] = useState(previewGuardTrigger);
+  const previewGuardChanged = Object.keys(previewGuardTrigger).some(
+    (key) => previewGuardTrigger[key] !== prevPreviewGuardTrigger[key],
+  );
+  if (previewGuardChanged) {
+    setPrevPreviewGuardTrigger(previewGuardTrigger);
     if (!showLivePreview || !isResultsView || !selectedCandidateId) {
       setPreview(null);
       setCandidateInsights(null);
       setCandidateInsightsStatus(null);
       setMatchDetails(null);
+    } else {
+      setPreviewLoading(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!showLivePreview || !isResultsView || !selectedCandidateId) {
       return;
     }
 
     let cancelled = false;
-    setPreviewLoading(true);
 
     Promise.all([
       requestJson(`/api/recruiter/candidates/${selectedCandidateId}/preview`).catch(() => null),
