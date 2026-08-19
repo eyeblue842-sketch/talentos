@@ -12,6 +12,16 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
+// This page calls getCurrentUser() (lib/auth.js), which reads next/headers'
+// cookies() to resolve the session. Outside a real request scope that
+// throws, so it must be mocked the same way lib/__tests__/auth.test.js
+// already does. No cookie -> getCurrentUser() resolves to null, matching
+// this suite's own intent of rendering as an anonymous/non-recruiter
+// visitor ("without recruiter edit actions").
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ get: () => undefined })),
+}));
+
 vi.mock('@/lib/api', () => ({
   getPublicOrganisation: vi.fn(async () => ({
     organisation: {
