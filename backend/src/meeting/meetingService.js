@@ -723,7 +723,7 @@ export async function getOrganisationInterviewMeeting(actorUser, roundId, organi
     throw error;
   }
 
-  return getMeetingWithContext(round.meeting.id);
+  return findMeetingWithContext(round.meeting.id);
 }
 
 export async function listInterviewerAssignedMeetings(actorUser, organisationId = null) {
