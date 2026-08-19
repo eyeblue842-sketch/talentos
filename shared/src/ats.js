@@ -174,10 +174,16 @@ const jobBaseFieldsSchema = z.object({
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().min(20).max(20000),
   skillsRequired: z.array(z.string().trim().min(1).max(80)).min(1).max(50),
+  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).optional().default([]),
+  requirements: z.array(z.string().trim().min(1).max(400)).max(60).optional().default([]),
+  benefits: z.array(z.string().trim().min(1).max(240)).max(40).optional().default([]),
+  applicationNotificationEmail: z.string().trim().email().max(320).optional().nullable(),
   experienceMin: z.coerce.number().int().min(0).max(60),
   experienceMax: z.coerce.number().int().min(0).max(60),
-  salaryMin: z.coerce.number().int().min(0).optional().nullable(),
-  salaryMax: z.coerce.number().int().min(0).optional().nullable(),
+  // Mandatory: Careeriz AI/matching/ranking business logic requires the actual
+  // compensation range even when publicSalaryEnabled hides it from candidates.
+  salaryMin: z.coerce.number().int().min(0),
+  salaryMax: z.coerce.number().int().min(0),
   currency: z.string().trim().min(3).max(10).optional().nullable(),
   isPublic: z.boolean().optional(),
   publicSalaryEnabled: z.boolean().optional(),
@@ -547,6 +553,12 @@ export const organisationInvitationCreateSchema = z.object({
 
 export const organisationInvitationTokenSchema = z.object({
   token: z.string().min(32),
+});
+
+export const organisationPostCreateSchema = z.object({
+  content: z.string().trim().min(2).max(4000),
+  imageUrl: z.string().trim().url().optional().or(z.literal('')).nullable(),
+  status: z.enum(['DRAFT', 'PUBLISHED']).optional(),
 });
 
 export const requisitionBaseSchema = z.object({

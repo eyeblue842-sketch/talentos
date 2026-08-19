@@ -1,37 +1,125 @@
-import { parseResumeWithAi } from './ai-provider.js';
-import { buildDeterministicResumeParse } from '../resumeImportUtils.js';
+import { getResumeAiProviderSelection, parseResumeWithAi } from './ai-provider.js';
+import { buildDeterministicResumeParse, sanitizeParsedCandidateField, sanitizeResumeData, sanitizeResumeString } from '../resumeImportUtils.js';
 
-function mergeValue(primary, fallback) {
-  return primary?.value != null ? primary : fallback;
+export const RESUME_PARSER_VERSION = '3.0.0';
+
+function hasMeaningfulValue(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
 }
 
-export async function parseResumeText(text, { originalFilename } = {}) {
-  const deterministic = buildDeterministicResumeParse(text, originalFilename || 'resume');
-  const aiParsed = await parseResumeWithAi({
-    text,
-    metadata: { fallbackName: deterministic.candidate.fullName.value },
-  }).catch(() => null);
+function sanitizeAiFieldValue(field, value) {
+  if (typeof value === 'string') {
+    return sanitizeParsedCandidateField(field, value);
+  }
+  if (Array.isArray(value)) {
+    return value.filter((item) => {
+      if (typeof item === 'string') {
+        return hasMeaningfulValue(sanitizeParsedCandidateField(field, item) || item);
+      }
+      return item && typeof item === 'object';
+    });
+  }
+  return value;
+}
 
-  if (!aiParsed?.candidate) {
-    return deterministic;
+export function mergeResumeFieldValue(field, primary, fallback) {
+  const safePrimaryValue = sanitizeAiFieldValue(field, primary?.value);
+  const primaryConfidence = Number(primary?.confidence || 0);
+  const fallbackConfidence = Number(fallback?.confidence || 0);
+
+  if (!hasMeaningfulValue(safePrimaryValue)) {
+    return fallback;
+  }
+
+  if (typeof safePrimaryValue === 'string' && primaryConfidence < Math.max(0.55, fallbackConfidence)) {
+    return fallback;
+  }
+
+  if (Array.isArray(safePrimaryValue) && primaryConfidence < 0.55 && hasMeaningfulValue(fallback?.value)) {
+    return fallback;
   }
 
   return {
-    candidate: {
-      fullName: mergeValue(aiParsed.candidate.fullName, deterministic.candidate.fullName),
-      email: mergeValue(aiParsed.candidate.email, deterministic.candidate.email),
-      phoneNumber: mergeValue(aiParsed.candidate.phoneNumber, deterministic.candidate.phoneNumber),
-      linkedInUrl: mergeValue(aiParsed.candidate.linkedInUrl, deterministic.candidate.linkedInUrl),
-      currentTitle: aiParsed.candidate.currentTitle || { value: null, confidence: 0 },
-      currentEmployer: aiParsed.candidate.currentEmployer || { value: null, confidence: 0 },
-      location: aiParsed.candidate.location || { value: null, confidence: 0 },
-      summary: aiParsed.candidate.summary || { value: null, confidence: 0 },
-      skills: aiParsed.candidate.skills || { value: null, confidence: 0 },
-    },
-    metadata: {
+    ...primary,
+    value: safePrimaryValue,
+  };
+}
+
+export async function parseResumeTextDetailed(text, { originalFilename } = {}) {
+  const sanitizedText = sanitizeResumeString(text);
+  const deterministic = sanitizeResumeData(buildDeterministicResumeParse(sanitizedText, originalFilename || 'resume'));
+  const aiSelection = getResumeAiProviderSelection();
+  let aiParsed = null;
+  let aiError = null;
+
+  if (aiSelection.enabled) {
+    try {
+      aiParsed = sanitizeResumeData(await parseResumeWithAi({
+        text: sanitizedText,
+        metadata: { fallbackName: deterministic.candidate.fullName.value },
+      }));
+    } catch (error) {
+      aiError = error;
+    }
+  }
+
+  if (!aiParsed?.candidate) {
+    return {
+      deterministicCandidate: deterministic.candidate,
+      aiCandidate: null,
+      mergedCandidate: deterministic.candidate,
+      metadata: sanitizeResumeData({
+        ...(deterministic.metadata || {}),
+        parserVersion: RESUME_PARSER_VERSION,
+        parser: 'careeriz-resume-parser-v3',
+        stages: {
+          deterministic: true,
+          aiRequested: aiSelection.enabled,
+          aiCompleted: false,
+        },
+        provider: aiSelection.provider || null,
+        model: aiSelection.model || null,
+        aiProvider: false,
+        aiRequested: aiSelection.enabled,
+        aiFallbackReason: aiError?.code || (aiSelection.enabled ? 'AI_EMPTY_RESULT' : null),
+      }),
+    };
+  }
+
+  const mergedCandidate = { ...deterministic.candidate };
+  for (const [field, deterministicField] of Object.entries(deterministic.candidate)) {
+    const aiField = aiParsed.candidate[field];
+    mergedCandidate[field] = mergeResumeFieldValue(field, aiField, deterministicField);
+  }
+
+  return {
+    deterministicCandidate: deterministic.candidate,
+    aiCandidate: aiParsed.candidate,
+    mergedCandidate: sanitizeResumeData(mergedCandidate),
+    metadata: sanitizeResumeData({
       ...(deterministic.metadata || {}),
       ...(aiParsed.metadata || {}),
+      parserVersion: RESUME_PARSER_VERSION,
+      parser: 'careeriz-resume-parser-v3',
+      stages: {
+        deterministic: true,
+        aiRequested: true,
+        aiCompleted: true,
+      },
       aiProvider: true,
-    },
+      aiRequested: true,
+      aiFallbackReason: null,
+    }),
+  };
+}
+
+export async function parseResumeText(text, { originalFilename } = {}) {
+  const result = await parseResumeTextDetailed(text, { originalFilename });
+  return {
+    candidate: result.mergedCandidate,
+    metadata: result.metadata,
   };
 }

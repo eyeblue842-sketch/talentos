@@ -6,7 +6,7 @@ import {
   storePrivateFile,
 } from '../config/storage.js';
 import { requireOrganisationRole } from './organisationAccessService.js';
-import { enqueueBackgroundTask } from './backgroundTaskService.js';
+import { enqueueBackgroundTask, renewTaskLease } from './backgroundTaskService.js';
 import { recordAuditLog } from './auditLogService.js';
 import {
   expandResumeArchive,
@@ -16,22 +16,45 @@ import {
   normalizeEmail,
   normalizeLinkedInUrl,
   normalizePhone,
+  sanitizeResumeData,
+  sanitizeResumeString,
   validateUploadedResumeFile,
 } from './resumeImportUtils.js';
 import { parseResumeText } from './ai/resume-parser.js';
 import { env } from '../config/env.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import { enqueueResumeSearchIndexUpsert } from './resumeSearchV2/indexingService.js';
+import {
+  buildResumeImportDocumentProcessorResult,
+  shouldUseDocumentProcessorForImportItem,
+} from './documentProcessor/resumeImportDocumentProcessorIntegration.js';
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'VIEWER'];
 const RETRYABLE_ITEM_STATUSES = new Set(['FAILED', 'REVIEW_REQUIRED', 'DUPLICATE']);
 const TERMINAL_ITEM_STATUSES = new Set(['REVIEW_REQUIRED', 'DUPLICATE', 'READY', 'IMPORTED', 'FAILED', 'CANCELLED']);
-
 function buildError(message, statusCode = 422, code = 'RESUME_IMPORT_ERROR') {
   const error = new Error(message);
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+export function isResumeImportBatchBlocked(batchId) {
+  return Boolean(batchId) && env.resumeImportBlockedBatchIds.includes(batchId);
+}
+
+export function buildBlockedResumeImportBatchReason(batchId) {
+  return `Resume import processing skipped because batch ${batchId} is blocked by configuration.`;
+}
+
+export function isResumeImportDocumentProcessorAllowed(item) {
+  return shouldUseDocumentProcessorForImportItem(item);
+}
+
+async function enqueueResumeSearchIndexUpsertBestEffort(candidateId, options = {}) {
+  if (!candidateId) return;
+  await enqueueResumeSearchIndexUpsert(candidateId, options).catch(() => {});
 }
 
 async function streamToBuffer(stream) {
@@ -91,9 +114,9 @@ function serializeItem(item) {
     fileExtension: item.fileExtension,
     fileSizeBytes: item.fileSizeBytes,
     status: item.status,
-    parsedData: item.parsedData || null,
+    parsedData: sanitizeResumeData(item.parsedData || null),
     parserVersion: item.parserVersion || null,
-    parsingConfidence: item.parsingConfidence || null,
+    parsingConfidence: sanitizeResumeData(item.parsingConfidence || null),
     duplicateCandidateId: item.duplicateCandidateId || null,
     duplicateReason: item.duplicateReason || null,
     duplicateMatchFields: item.duplicateMatchFields || null,
@@ -121,7 +144,7 @@ function mergeCandidateConfidence(parsedData, field, fallback = 0) {
 }
 
 function buildParsedDataPatch(currentParsedData, payload) {
-  const next = structuredClone(currentParsedData || {});
+  const next = sanitizeResumeData(structuredClone(currentParsedData || {}));
   next.candidate ||= {};
 
   const fieldMap = {
@@ -232,8 +255,8 @@ async function refreshBatchCounts(batchId, tx = prisma) {
 }
 
 function buildCandidateDataFromParsed(item, overrides = {}) {
-  const parsedData = buildParsedDataPatch(item.parsedData, overrides);
-  return {
+  const parsedData = sanitizeResumeData(buildParsedDataPatch(item.parsedData, overrides));
+  return sanitizeResumeData({
     fullName: overrides.fullName || mergeCandidateValue(parsedData, 'fullName', item.sanitizedFilename.replace(getExtension(item.sanitizedFilename), '')),
     email: normalizeEmail(overrides.email ?? mergeCandidateValue(parsedData, 'email')),
     phoneNumber: overrides.phoneNumber ?? mergeCandidateValue(parsedData, 'phoneNumber'),
@@ -262,7 +285,7 @@ function buildCandidateDataFromParsed(item, overrides = {}) {
     certificationEntries: overrides.certificationEntries ?? [],
     languageEntries: overrides.languageEntries ?? [],
     projectEntries: overrides.projectEntries ?? [],
-    rawResumeText: item.extractedText || null,
+    rawResumeText: sanitizeResumeString(item.extractedText || null),
     parserVersion: item.parserVersion || parsedData?.metadata?.parser || null,
     parserMetadata: {
       parsedData,
@@ -282,7 +305,7 @@ function buildCandidateDataFromParsed(item, overrides = {}) {
       ...(overrides.provenanceMetadata || {}),
     },
     consentMetadata: item.metadata?.consentMetadata || null,
-  };
+  });
 }
 
 function hasMinimumCandidateIdentity(candidateData) {
@@ -314,7 +337,7 @@ async function detectDuplicateCandidate(organisationId, parsedData, tx = prisma,
 
     if (candidate) {
       let reason = 'matched existing candidate';
-      let matchFields = [];
+      const matchFields = [];
       if (email && candidate.email === email) {
         reason = 'email';
         matchFields.push('email');
@@ -369,8 +392,8 @@ async function createCandidateResumeAsset(tx, candidateId, ownerUserId, item, pa
       mimeType: item.mimeType,
       sizeBytes: item.fileSizeBytes,
       parsingStatus: item.errorCode ? 'PARTIAL' : 'COMPLETED',
-      parsedText: item.extractedText || null,
-      parsedData: parsedData || item.parsedData || null,
+      parsedText: sanitizeResumeString(item.extractedText || null),
+      parsedData: sanitizeResumeData(parsedData || item.parsedData || null),
     },
   });
 
@@ -484,13 +507,63 @@ async function ensureWritableItem(actorUser, batchId, itemId, organisationId = n
   return { context, item };
 }
 
-async function enqueueItemProcessing(item, actorUserId, force = false) {
+const ACTIVE_BACKGROUND_TASK_STATUSES = ['PENDING', 'RUNNING', 'RETRY_SCHEDULED'];
+
+/**
+ * At most one non-terminal RESUME_IMPORT_PROCESSING task may exist for a
+ * given item at any time. Repeated (non-forced) enqueue calls reuse that
+ * active task instead of creating a new one. A forced retry may only
+ * supersede an active task that is not currently under an unexpired lease
+ * (i.e. not genuinely in flight) — superseding a live RUNNING task would
+ * risk two workers processing the same item concurrently and, further
+ * downstream, duplicate CandidateProfile creation.
+ */
+export async function enqueueItemProcessing(item, actorUserId, force = false) {
+  const activeTask = await prisma.backgroundTask.findFirst({
+    where: {
+      entityType: 'ResumeImportItem',
+      entityId: item.id,
+      status: { in: ACTIVE_BACKGROUND_TASK_STATUSES },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (activeTask) {
+    const leaseActive = activeTask.status === 'RUNNING'
+      && activeTask.leaseExpiresAt
+      && new Date(activeTask.leaseExpiresAt) > new Date();
+
+    if (!force) {
+      return activeTask;
+    }
+
+    if (leaseActive) {
+      throw buildError(
+        'This item is currently being processed by an active worker and cannot be retried yet.',
+        409,
+        'ITEM_PROCESSING_IN_PROGRESS',
+      );
+    }
+
+    await prisma.backgroundTask.updateMany({
+      where: { id: activeTask.id, status: activeTask.status },
+      data: {
+        status: 'CANCELLED',
+        completedAt: new Date(),
+        leaseOwnerId: null,
+        leaseExpiresAt: null,
+        lastErrorCode: 'SUPERSEDED_BY_RETRY',
+        lastErrorMessage: 'Superseded by a new retry request for the same item.',
+      },
+    });
+  }
+
   return enqueueBackgroundTask({
     organisationId: item.organisationId,
     type: 'RESUME_IMPORT_PROCESSING',
     entityType: 'ResumeImportItem',
     entityId: item.id,
-    idempotencyKey: `resume-import:${item.id}:process:${force ? Date.now() : item.retryCount}`,
+    idempotencyKey: `resume-import-item:${item.id}:gen:${item.retryCount}:${force ? 'forced' : 'auto'}`,
     payload: { batchId: item.batchId, itemId: item.id, force },
     nextAttemptAt: new Date(),
     createdByUserId: actorUserId,
@@ -744,10 +817,6 @@ export async function retryFailedResumeImportBatchItems(actorUser, batchId, { in
     ...requestMeta,
   });
 
-  if (result.candidate?.id || result.item.candidateId) {
-    await markCandidateIntelligenceStale(result.candidate?.id || result.item.candidateId, 'RESUME_IMPORT_CONFIRMED');
-  }
-
   return {
     batchId,
     retriedCount: items.length,
@@ -840,13 +909,20 @@ export async function confirmResumeImportItem(actorUser, batchId, itemId, payloa
     ...requestMeta,
   });
 
-  if (result.candidateId) {
-    await markCandidateIntelligenceStale(result.candidateId, 'RESUME_IMPORT_DUPLICATE_RESOLVED');
+  const confirmedCandidateId = result.candidate?.id || result.item.candidateId || null;
+  if (confirmedCandidateId) {
+    await Promise.allSettled([
+      markCandidateIntelligenceStale(confirmedCandidateId, 'RESUME_IMPORT_CONFIRMED'),
+      enqueueResumeSearchIndexUpsertBestEffort(confirmedCandidateId, {
+        correlationId: item.id,
+        createdByUserId: actorUser.id,
+      }),
+    ]);
   }
 
   return {
     item: serializeItem(result.item),
-    candidateId: result.candidate?.id || result.item.candidateId || null,
+    candidateId: confirmedCandidateId,
     duplicate: Boolean(result.duplicate),
   };
 }
@@ -971,6 +1047,16 @@ export async function resolveResumeImportDuplicate(actorUser, batchId, itemId, p
     ...requestMeta,
   });
 
+  if (result.candidateId) {
+    await Promise.allSettled([
+      markCandidateIntelligenceStale(result.candidateId, 'RESUME_IMPORT_DUPLICATE_RESOLVED'),
+      enqueueResumeSearchIndexUpsertBestEffort(result.candidateId, {
+        correlationId: item.id,
+        createdByUserId: actorUser.id,
+      }),
+    ]);
+  }
+
   return {
     item: serializeItem(result.item),
     candidateId: result.candidateId,
@@ -1046,13 +1132,20 @@ export async function streamResumeImportItemFile(actorUser, batchId, itemId, org
   };
 }
 
-export async function processResumeImportItem(itemId, workerId = null) {
+export async function processResumeImportItem(itemId, workerId = null, taskId = null) {
   const item = await prisma.resumeImportItem.findUnique({ where: { id: itemId } });
   if (!item) return 'cancelled';
-  if (item.status === 'IMPORTED' || item.status === 'CANCELLED') return 'cancelled';
+  if (!['QUEUED', 'UPLOADED'].includes(item.status)) return 'cancelled';
+  if (isResumeImportBatchBlocked(item.batchId)) {
+    return 'cancelled';
+  }
 
-  await prisma.resumeImportItem.update({
-    where: { id: item.id },
+  // Atomic (not read-then-write) claim of the item itself: closes the gap
+  // between the findUnique above and the write below, so two near-simultaneous
+  // calls for the same item (e.g. from a lingering duplicate task) can't both
+  // proceed past this point.
+  const claim = await prisma.resumeImportItem.updateMany({
+    where: { id: item.id, status: { in: ['QUEUED', 'UPLOADED'] } },
     data: {
       status: 'EXTRACTING',
       processingStartedAt: new Date(),
@@ -1060,40 +1153,105 @@ export async function processResumeImportItem(itemId, workerId = null) {
       errorMessage: null,
     },
   });
+  if (claim.count !== 1) return 'cancelled';
+
+  const renewLease = async () => {
+    if (!taskId) return;
+    await renewTaskLease(taskId, workerId).catch(() => {});
+  };
 
   try {
     const stored = await readPrivateFileNodeStream(item.storageProvider, item.storedObjectKey);
     const fileBuffer = await streamToBuffer(stored.stream);
-    const extracted = await extractResumeText({ extension: item.fileExtension, fileBuffer });
-    const trimmedText = String(extracted.text || '').slice(0, env.resumeImportMaxTextChars);
+    const extracted = sanitizeResumeData(await extractResumeText({ extension: item.fileExtension, fileBuffer }));
+    const trimmedText = sanitizeResumeString(extracted.text || '').slice(0, env.resumeImportMaxTextChars);
 
     let parsedData = null;
     let parserVersion = null;
     let errorCode = extracted.errorCode;
     let errorMessage = null;
+    const processingMetadata = sanitizeResumeData({
+      workerId,
+      aiEnabled: env.aiResumeParsingEnabled,
+      aiProvider: env.aiProvider,
+      extraction: {
+        totalPages: extracted.totalPages || null,
+        strategy: extracted.strategy || null,
+      },
+      documentProcessor: {
+        enabled: env.documentProcessorEnabled,
+        integrationEnabled: env.documentProcessorIntegrationEnabled,
+        rolloutMatched: false,
+        attempted: false,
+        used: false,
+      },
+    });
 
-    if (trimmedText) {
+    await renewLease();
+
+    const canUseDocumentProcessor = isResumeImportDocumentProcessorAllowed(item);
+    let documentProcessorOutcome = null;
+
+    if (canUseDocumentProcessor) {
+      documentProcessorOutcome = await buildResumeImportDocumentProcessorResult({
+        item,
+        fileBuffer,
+        legacyExtractedText: trimmedText,
+      });
+
+      processingMetadata.documentProcessor = sanitizeResumeData({
+        enabled: env.documentProcessorEnabled,
+        integrationEnabled: env.documentProcessorIntegrationEnabled,
+        ...documentProcessorOutcome.metadata,
+      });
+    }
+
+    const activeText = sanitizeResumeString(documentProcessorOutcome?.used
+      ? documentProcessorOutcome.extractedText
+      : trimmedText || '').slice(0, env.resumeImportMaxTextChars);
+
+    if (activeText) {
       await prisma.resumeImportItem.update({
         where: { id: item.id },
         data: {
           status: 'PARSING',
         },
       });
-      try {
-        parsedData = await parseResumeText(trimmedText, { originalFilename: item.originalFilename });
-        parserVersion = parsedData?.metadata?.parser || parsedData?.metadata?.provider || null;
-      } catch (error) {
-        errorCode = error.code || 'AI_PARSING_FAILED';
-        errorMessage = String(error.message || 'AI parsing failed.').slice(0, 1000);
+
+      if (documentProcessorOutcome?.used && documentProcessorOutcome?.parsedData) {
+        parsedData = sanitizeResumeData(documentProcessorOutcome.parsedData);
+        parserVersion = documentProcessorOutcome.parserVersion || parsedData?.metadata?.parser || null;
+      } else {
+        try {
+          parsedData = sanitizeResumeData(await parseResumeText(activeText, { originalFilename: item.originalFilename }));
+          parserVersion = parsedData?.metadata?.parser || parsedData?.metadata?.provider || null;
+        } catch (error) {
+          errorCode = error.code || 'AI_PARSING_FAILED';
+          errorMessage = String(error.message || 'AI parsing failed.').slice(0, 1000);
+        }
+      }
+
+      if (!documentProcessorOutcome?.used && documentProcessorOutcome?.attempted) {
+        processingMetadata.documentProcessor = sanitizeResumeData({
+          ...processingMetadata.documentProcessor,
+          fallbackReason: documentProcessorOutcome.fallbackReason || null,
+          fallbackMessage: documentProcessorOutcome.fallbackMessage || null,
+          retryable: Boolean(documentProcessorOutcome.retryable),
+        });
       }
     }
+
+    await renewLease();
 
     const duplicate = parsedData ? await detectDuplicateCandidate(item.organisationId, parsedData) : null;
     let status = 'READY';
     let duplicateCandidateId = null;
     let duplicateReason = null;
     let duplicateMatchFields = null;
-    let requiresManualReview = extracted.requiresManualReview || !parsedData || !hasMinimumIdentity(parsedData);
+    let requiresManualReview = extracted.requiresManualReview
+      || documentProcessorOutcome?.requiresManualReview
+      || !parsedData
+      || !hasMinimumIdentity(parsedData);
 
     if (duplicate && !duplicate.suggestedOnly) {
       status = 'DUPLICATE';
@@ -1115,10 +1273,10 @@ export async function processResumeImportItem(itemId, workerId = null) {
       where: { id: item.id },
       data: {
         status,
-        extractedText: trimmedText || null,
-        parsedData: parsedData || null,
+        extractedText: sanitizeResumeString(activeText || null),
+        parsedData: sanitizeResumeData(parsedData || null),
         parserVersion,
-        parsingConfidence: parsedData?.candidate || Prisma.JsonNull,
+        parsingConfidence: sanitizeResumeData(parsedData?.candidate || Prisma.JsonNull),
         duplicateCandidateId,
         duplicateReason,
         duplicateMatchFields: duplicateMatchFields || Prisma.JsonNull,
@@ -1126,15 +1284,7 @@ export async function processResumeImportItem(itemId, workerId = null) {
         errorCode,
         errorMessage,
         processingCompletedAt: new Date(),
-        metadata: {
-          workerId,
-          aiEnabled: env.aiResumeParsingEnabled,
-          aiProvider: env.aiProvider,
-          extraction: {
-            totalPages: extracted.totalPages || null,
-            strategy: extracted.strategy || null,
-          },
-        },
+        metadata: processingMetadata,
       },
     });
     await refreshBatchCounts(item.batchId);

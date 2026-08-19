@@ -119,7 +119,6 @@ export function JobCandidateRankingPanel({
   const [error, setError] = useState('');
   const [requestPending, setRequestPending] = useState(false);
   const [previewByCandidateId, setPreviewByCandidateId] = useState({});
-  const [polling, setPolling] = useState(false);
   const pollTimerRef = useRef(null);
   const [filters, setFilters] = useState({
     page: 1,
@@ -134,6 +133,9 @@ export function JobCandidateRankingPanel({
   });
 
   const activeStatus = status?.status || ranking?.snapshot?.status || null;
+  // Derived directly from activeStatus instead of tracked as its own state
+  // - see the identical comment in candidate-job-match-panel.jsx.
+  const polling = Boolean(featureEnabled && canRead && activeStatus && !CANDIDATE_RANKING_TERMINAL_STATUSES.has(activeStatus));
   const hasSnapshot = hasPreviousCandidateRankingSnapshot(ranking?.snapshot);
 
   useEffect(() => {
@@ -147,12 +149,24 @@ export function JobCandidateRankingPanel({
     return parseCandidateRankingResponse(data);
   }
 
+  const fetchTrigger = { canRead, featureEnabled, jobId, parsedInitialRanking, parsedInitialStatus };
+  // Adjusting state during render (not in an effect): clear any stale
+  // error from a previous attempt right when a fresh fetch is about to
+  // start. `loading` itself needs no reset here - it is already lazily
+  // initialized to true for this exact condition (see the useState above).
+  const [prevFetchTrigger, setPrevFetchTrigger] = useState(fetchTrigger);
+  const fetchTriggerChanged = Object.keys(fetchTrigger).some((key) => fetchTrigger[key] !== prevFetchTrigger[key]);
+  if (fetchTriggerChanged) {
+    setPrevFetchTrigger(fetchTrigger);
+    if (featureEnabled && canRead && !parsedInitialRanking && !parsedInitialStatus) {
+      setError('');
+    }
+  }
+
   useEffect(() => {
     if (!featureEnabled || !canRead || parsedInitialRanking || parsedInitialStatus) return undefined;
 
     let cancelled = false;
-    setLoading(true);
-    setError('');
 
     Promise.all([
       loadRanking().catch(() => null),
@@ -206,13 +220,9 @@ export function JobCandidateRankingPanel({
 
   useEffect(() => {
     if (!featureEnabled || !canRead) return undefined;
-    if (!activeStatus || CANDIDATE_RANKING_TERMINAL_STATUSES.has(activeStatus)) {
-      setPolling(false);
-      return undefined;
-    }
+    if (!activeStatus || CANDIDATE_RANKING_TERMINAL_STATUSES.has(activeStatus)) return undefined;
 
     let cancelled = false;
-    setPolling(true);
 
     async function poll() {
       if (document.hidden) {
@@ -226,7 +236,6 @@ export function JobCandidateRankingPanel({
         setStatus(nextStatus);
 
         if (CANDIDATE_RANKING_TERMINAL_STATUSES.has(nextStatus.status)) {
-          setPolling(false);
           const nextRanking = await loadRanking(filters);
           if (!cancelled) setRanking(nextRanking);
           return;
@@ -234,7 +243,6 @@ export function JobCandidateRankingPanel({
       } catch (caught) {
         if (!cancelled) {
           setError(mapCandidateRankingError(caught));
-          setPolling(false);
         }
         return;
       }

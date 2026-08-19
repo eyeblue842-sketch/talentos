@@ -137,8 +137,18 @@ export const semanticSearchFilterSchema = z.object({
   minExperience: z.number().min(0).max(80).nullable().optional(),
   maxExperience: z.number().min(0).max(80).nullable().optional(),
   location: z.string().trim().min(1).max(200).nullable().optional(),
+  locations: z.array(z.string().trim().min(1).max(200)).max(30).default([]),
+  preferredLocations: z.array(z.string().trim().min(1).max(200)).max(30).default([]),
+  includeWillingToRelocate: z.boolean().default(false),
   workMode: z.string().trim().min(1).max(60).nullable().optional(),
   employmentType: z.string().trim().min(1).max(60).nullable().optional(),
+  workAuthorization: z.string().trim().min(1).max(120).nullable().optional(),
+  workPermitCountries: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
+  jobTypes: z.array(z.enum(['PERMANENT', 'TEMPORARY', 'CONTRACT'])).max(3).default([]),
+  employmentTypes: z.array(z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'])).max(4).default([]),
+  displayCandidateType: z.enum(['ALL', 'NEW_REGISTRATIONS', 'MODIFIED']).default('ALL'),
+  activeWithin: z.coerce.number().int().min(1).max(366).nullable().optional(),
+  sortBy: z.enum(['relevance', 'experience', 'resumeFreshness']).default('relevance'),
   noticePeriodDaysMax: z.number().int().min(0).max(365).nullable().optional(),
   salaryMin: z.number().min(0).max(10000000).nullable().optional(),
   salaryMax: z.number().min(0).max(10000000).nullable().optional(),
@@ -147,7 +157,42 @@ export const semanticSearchFilterSchema = z.object({
   domain: z.string().trim().min(1).max(200).nullable().optional(),
   currentEmployer: z.string().trim().min(1).max(200).nullable().optional(),
   previousEmployer: z.string().trim().min(1).max(200).nullable().optional(),
+  companyScope: z.enum(['current', 'previous', 'any']).default('current'),
+  designation: z.string().trim().min(1).max(200).nullable().optional(),
+  designationScope: z.enum(['current', 'previous', 'any']).default('current'),
   education: z.string().trim().min(1).max(200).nullable().optional(),
+  educationFilters: z.object({
+    ug: z.object({
+      mode: z.enum(['ANY', 'SPECIFIC', 'NONE']).default('ANY'),
+      course: z.string().trim().max(160).optional(),
+      institute: z.string().trim().max(200).optional(),
+      educationType: z.string().trim().max(60).optional(),
+      completionYearFrom: z.coerce.number().int().min(1900).max(2200).optional(),
+      completionYearTo: z.coerce.number().int().min(1900).max(2200).optional(),
+    }).optional(),
+    pg: z.object({
+      mode: z.enum(['ANY', 'SPECIFIC', 'NONE']).default('ANY'),
+      course: z.string().trim().max(160).optional(),
+      institute: z.string().trim().max(200).optional(),
+      educationType: z.string().trim().max(60).optional(),
+      completionYearFrom: z.coerce.number().int().min(1900).max(2200).optional(),
+      completionYearTo: z.coerce.number().int().min(1900).max(2200).optional(),
+    }).optional(),
+    ppg: z.object({
+      mode: z.enum(['ANY', 'SPECIFIC', 'NONE']).default('ANY'),
+      course: z.string().trim().max(160).optional(),
+      institute: z.string().trim().max(200).optional(),
+      educationType: z.string().trim().max(60).optional(),
+      completionYearFrom: z.coerce.number().int().min(1900).max(2200).optional(),
+      completionYearTo: z.coerce.number().int().min(1900).max(2200).optional(),
+    }).optional(),
+    requireUgPg: z.boolean().default(false),
+    requirePgPpg: z.boolean().default(false),
+  }).optional(),
+  resumeAttachment: z.enum(['Available', 'Unavailable']).nullable().optional(),
+  emailVerified: z.boolean().default(false),
+  profileRecency: z.enum(['ALL', 'NEW', 'MODIFIED']).default('ALL'),
+  profileRecencyDays: z.coerce.number().int().min(1).max(366).nullable().optional(),
   certifications: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
   skills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
   requiredSkills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
@@ -175,6 +220,9 @@ const semanticSearchRequestBaseSchema = z.object({
 });
 
 export const semanticSearchRequestSchema = semanticSearchRequestBaseSchema.superRefine((value, ctx) => {
+  const hasFilter = Object.values(value.filters || {}).some((filterValue) => (
+    Array.isArray(filterValue) ? filterValue.length > 0 : filterValue !== null && filterValue !== undefined && filterValue !== ''
+  ));
   if (
     !String(value.query || '').trim()
     && !value.similarCandidateId
@@ -182,6 +230,7 @@ export const semanticSearchRequestSchema = semanticSearchRequestBaseSchema.super
     && !value.sourceCandidateId
     && !value.sourceJobId
     && !value.jobId
+    && !hasFilter
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -277,10 +326,34 @@ export const semanticSearchResultItemSchema = z.object({
     id: z.string().trim().min(1).max(120),
     fullName: z.string().trim().min(1).max(240).nullable().optional(),
     headline: z.string().trim().min(1).max(240).nullable().optional(),
+    currentDesignation: z.string().trim().min(1).max(240).nullable().optional(),
     location: z.string().trim().min(1).max(200).nullable().optional(),
+    preferredLocations: z.array(z.string().trim().min(1).max(200)).max(30).default([]),
+    preferredRoles: z.array(z.string().trim().min(1).max(200)).max(30).default([]),
     totalExperience: z.number().nullable().optional(),
     skills: z.array(z.string().trim().min(1).max(120)).max(80).default([]),
     currentCompany: z.string().trim().min(1).max(240).nullable().optional(),
+    previousCompany: z.string().trim().min(1).max(240).nullable().optional(),
+    previousDesignation: z.string().trim().min(1).max(240).nullable().optional(),
+    currentSalary: z.number().nullable().optional(),
+    expectedSalary: z.number().nullable().optional(),
+    salaryVisible: z.boolean().optional(),
+    noticePeriodDays: z.number().nullable().optional(),
+    availability: z.string().trim().max(80).nullable().optional(),
+    employmentPreferences: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+    workplacePreferences: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+    willingToRelocate: z.boolean().nullable().optional(),
+    summary: z.string().trim().max(1000).nullable().optional(),
+    educationSummary: z.string().trim().max(300).nullable().optional(),
+    educationDetail: z.object({
+      degree: z.string().trim().max(160).nullable().optional(),
+      institution: z.string().trim().max(240).nullable().optional(),
+      completionYear: z.number().int().nullable().optional(),
+    }).nullable().optional(),
+    profileImageUrl: z.string().trim().max(500).nullable().optional(),
+    resumeAvailable: z.boolean().optional(),
+    updatedAt: z.string().datetime().nullable().optional(),
+    lastActiveAt: z.string().datetime().nullable().optional(),
     matchScore: z.number().int().min(0).max(100).nullable().optional(),
   }),
   retrieval: z.object({

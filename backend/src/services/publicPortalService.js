@@ -1,12 +1,204 @@
 import { prisma } from '../config/db.js';
-import { serializePublicJob, serializePublicOrganisation } from '../serializers/index.js';
+import { serializeOrganisationPost, serializePublicJob, serializePublicOrganisation } from '../serializers/index.js';
+import { normalizeCandidateProfileForPresentation } from './candidateProfileSanitizer.js';
+import {
+  enrichJobWithNetworkContext,
+  getCompanyFollowStatus,
+  listOrganisationRecruitersForNetwork,
+} from './networkService.js';
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
 const MAX_RELEVANCE_CANDIDATES = 250;
+const MIN_PEOPLE_SAMPLE_SIZE = 5;
+const MIN_PUBLIC_BUCKET_SIZE = 3;
+const COMPANY_SUFFIX_TOKENS = new Set([
+  'pvt',
+  'private',
+  'ltd',
+  'limited',
+  'llp',
+  'inc',
+  'corp',
+  'corporation',
+  'co',
+  'company',
+  'plc',
+]);
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeCompanyName(value) {
+  const tokens = String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  while (tokens.length > 1 && COMPANY_SUFFIX_TOKENS.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+
+  return tokens.join(' ');
+}
+
+function addCount(map, label, increment = 1) {
+  if (!label) return;
+  map.set(label, (map.get(label) || 0) + increment);
+}
+
+function finalizeBuckets(map, { minCount = MIN_PUBLIC_BUCKET_SIZE, limit = 10 } = {}) {
+  return [...map.entries()]
+    .filter(([, count]) => count >= minCount)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, limit)
+    .map(([label, count]) => ({ label, count }));
+}
+
+function categorizeEducation(degree) {
+  const normalized = normalize(degree);
+  if (!normalized) return null;
+  if (/\b(b\.?tech|b\.?e|m\.?tech|m\.?e|bca|mca|engineering|computer)\b/.test(normalized)) return 'Engineering';
+  if (/\b(mba|pgdm|management)\b/.test(normalized)) return 'Management';
+  if (/\b(b\.?com|m\.?com|commerce|accounting)\b/.test(normalized)) return 'Commerce';
+  if (/\b(b\.?sc|m\.?sc|science)\b/.test(normalized)) return 'Science';
+  if (/\b(ba|ma|arts|humanities|literature)\b/.test(normalized)) return 'Arts & Humanities';
+  if (/\b(mca|bca|computer applications)\b/.test(normalized)) return 'Computer Applications';
+  return 'Other';
+}
+
+function experienceBand(totalExperience) {
+  const years = Number(totalExperience);
+  if (!Number.isFinite(years) || years < 0) return null;
+  if (years <= 2) return '0-2 years';
+  if (years <= 5) return '3-5 years';
+  if (years <= 10) return '6-10 years';
+  if (years <= 15) return '11-15 years';
+  return '15+ years';
+}
+
+function deriveCurrentEmployer(profile) {
+  if (profile.currentEmployer) return profile.currentEmployer;
+  const currentEntry = (profile.experienceEntries || []).find((entry) => entry.isCurrent || entry.currentlyWorking);
+  return currentEntry?.company || currentEntry?.employer || null;
+}
+
+function buildPeopleInsightsSummary(sampleSize, locations, education, roles, experienceLevels, skills) {
+  return {
+    sampleSize,
+    hasEnoughData: sampleSize >= MIN_PEOPLE_SAMPLE_SIZE,
+    insufficientDataMessage: sampleSize >= MIN_PEOPLE_SAMPLE_SIZE ? null : 'Not enough Careeriz profile data is available yet to display workforce insights.',
+    locations,
+    education,
+    roles,
+    experienceLevels,
+    skills,
+  };
+}
+
+async function getOrganisationPosts(organisationId) {
+  const posts = await prisma.organisationPost.findMany({
+    where: {
+      organisationId,
+      status: 'PUBLISHED',
+    },
+    include: {
+      authorUser: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+    take: 8,
+  });
+
+  return posts.map(serializeOrganisationPost);
+}
+
+async function getPeopleInsightsForOrganisation(organisation) {
+  const canonicalOrganisation = normalizeCompanyName(organisation.name);
+  if (!canonicalOrganisation) {
+    return buildPeopleInsightsSummary(0, [], [], [], [], []);
+  }
+
+  const rows = await prisma.candidateProfile.findMany({
+    where: {
+      OR: [
+        { currentEmployer: { not: null } },
+        { experienceEntries: { not: null } },
+      ],
+    },
+    select: {
+      id: true,
+      currentEmployer: true,
+      currentTitle: true,
+      currentDesignation: true,
+      location: true,
+      currentCity: true,
+      totalExperience: true,
+      skills: true,
+      educationEntries: true,
+      experienceEntries: true,
+    },
+  });
+
+  const matchedProfiles = rows
+    .map((row) => normalizeCandidateProfileForPresentation(row))
+    .filter((profile) => {
+      const employer = deriveCurrentEmployer(profile);
+      return employer && normalizeCompanyName(employer) === canonicalOrganisation;
+    });
+
+  const locationCounts = new Map();
+  const educationCounts = new Map();
+  const roleCounts = new Map();
+  const experienceCounts = new Map();
+  const skillCounts = new Map();
+
+  for (const profile of matchedProfiles) {
+    addCount(locationCounts, profile.location || profile.currentCity || null);
+    addCount(roleCounts, profile.currentDesignation || profile.currentTitle || null);
+    addCount(experienceCounts, experienceBand(profile.totalExperience));
+
+    const primaryEducation = Array.isArray(profile.educationEntries) ? profile.educationEntries[0] : null;
+    addCount(educationCounts, categorizeEducation(primaryEducation?.degree));
+
+    for (const skill of profile.skills || []) {
+      addCount(skillCounts, skill);
+    }
+  }
+
+  return buildPeopleInsightsSummary(
+    matchedProfiles.length,
+    finalizeBuckets(locationCounts),
+    finalizeBuckets(educationCounts),
+    finalizeBuckets(roleCounts),
+    finalizeBuckets(experienceCounts, { limit: 5 }),
+    finalizeBuckets(skillCounts),
+  );
+}
+
+function buildPublicInsightsFromJobs(jobs = []) {
+  const locationCounts = new Map();
+  const roleCounts = new Map();
+  const skillCounts = new Map();
+
+  for (const job of jobs) {
+    addCount(locationCounts, job.location || null);
+    addCount(roleCounts, job.title || null);
+    for (const skill of job.skillsRequired || []) {
+      addCount(skillCounts, skill);
+    }
+  }
+
+  return {
+    activeJobCount: jobs.length,
+    hiringLocations: finalizeBuckets(locationCounts, { minCount: 1, limit: 5 }),
+    commonRoles: finalizeBuckets(roleCounts, { minCount: 1, limit: 5 }),
+    commonSkills: finalizeBuckets(skillCounts, { minCount: 1, limit: 10 }),
+  };
 }
 
 function buildPaginationMeta(total, page, pageSize) {
@@ -306,7 +498,7 @@ export async function searchPublicJobs(filters = {}, candidateId = null) {
   };
 }
 
-export async function getPublicJobDetail(slug, candidateId = null) {
+export async function getPublicJobDetail(slug, actor = null, candidateId = null) {
   const job = await prisma.job.findFirst({
     where: {
       slug,
@@ -352,13 +544,15 @@ export async function getPublicJobDetail(slug, candidateId = null) {
     .slice(0, 6)
     .map((item) => serializePublicJob(item.row));
 
+  const enrichedJob = actor ? await enrichJobWithNetworkContext(job, actor) : job;
+
   return {
-    job: serializePublicJob(job, { saved: savedIds.has(job.id) }),
+    job: serializePublicJob(enrichedJob, { saved: savedIds.has(job.id) }),
     similarJobs,
   };
 }
 
-export async function getPublicOrganisationProfile(slug, filters = {}, candidateId = null) {
+export async function getPublicOrganisationProfile(slug, filters = {}, actor = null, candidateId = null) {
   const organisation = await prisma.organisation.findFirst({
     where: {
       slug,
@@ -374,11 +568,33 @@ export async function getPublicOrganisationProfile(slug, filters = {}, candidate
   }
 
   const scopedFilters = { ...filters, organisationSlug: slug };
-  const jobs = await searchPublicJobs(scopedFilters, candidateId);
+  const [jobs, allPublicJobs, posts, peopleInsights, recruitingTeam, following] = await Promise.all([
+    searchPublicJobs(scopedFilters, candidateId),
+    prisma.job.findMany({
+      where: buildPublicJobWhere({ organisationSlug: slug }),
+      include: { organisation: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: 200,
+    }),
+    getOrganisationPosts(organisation.id),
+    getPeopleInsightsForOrganisation(organisation),
+    actor ? listOrganisationRecruitersForNetwork(actor, organisation.id, 8) : Promise.resolve([]),
+    actor ? getCompanyFollowStatus(actor.id, organisation.id) : Promise.resolve(false),
+  ]);
+
+  const publicInsights = buildPublicInsightsFromJobs(allPublicJobs);
 
   return {
-    organisation: serializePublicOrganisation(organisation),
+    organisation: {
+      ...serializePublicOrganisation(organisation),
+      following,
+    },
     jobs,
+    recentJobs: allPublicJobs.slice(0, 3).map((job) => serializePublicJob(job)),
+    posts,
+    peopleInsights,
+    publicInsights,
+    recruitingTeam,
   };
 }
 

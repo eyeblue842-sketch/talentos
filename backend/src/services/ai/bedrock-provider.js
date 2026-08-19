@@ -14,6 +14,13 @@ Rules:
 - Use null when a field is unavailable.
 - Do not infer sensitive or protected attributes.
 - Do not invent an email, employer, salary, or dates.
+- Respect resume section boundaries.
+- Experience must contain jobs only.
+- Education must contain academic records only.
+- Certifications must contain actual certifications only, never work history, tools, declarations, employers, or education text.
+- Projects must contain project work only.
+- Languages must only contain explicit language + proficiency data.
+- Ignore personal profile details that do not map to professional fields, including father name, marital status, DOB, nationality, passport, and declaration text.
 - Output shape:
 {
   "candidate": {
@@ -21,11 +28,31 @@ Rules:
     "email": { "value": string|null, "confidence": number },
     "phoneNumber": { "value": string|null, "confidence": number },
     "linkedInUrl": { "value": string|null, "confidence": number },
+    "githubUrl": { "value": string|null, "confidence": number },
+    "portfolioUrl": { "value": string|null, "confidence": number },
+    "headline": { "value": string|null, "confidence": number },
     "currentTitle": { "value": string|null, "confidence": number },
     "currentEmployer": { "value": string|null, "confidence": number },
+    "currentDesignation": { "value": string|null, "confidence": number },
     "location": { "value": string|null, "confidence": number },
+    "currentCity": { "value": string|null, "confidence": number },
+    "currentState": { "value": string|null, "confidence": number },
+    "currentCountry": { "value": string|null, "confidence": number },
+    "totalExperience": { "value": number|null, "confidence": number },
     "summary": { "value": string|null, "confidence": number },
-    "skills": { "value": string[]|null, "confidence": number }
+    "skills": { "value": string[]|null, "confidence": number },
+    "functionalSkills": { "value": string[]|null, "confidence": number },
+    "tools": { "value": string[]|null, "confidence": number },
+    "frameworks": { "value": string[]|null, "confidence": number },
+    "cloudPlatforms": { "value": string[]|null, "confidence": number },
+    "databases": { "value": string[]|null, "confidence": number },
+    "softSkills": { "value": string[]|null, "confidence": number },
+    "experienceEntries": { "value": object[]|null, "confidence": number },
+    "educationEntries": { "value": object[]|null, "confidence": number },
+    "certificationEntries": { "value": object[]|null, "confidence": number },
+    "projectEntries": { "value": object[]|null, "confidence": number },
+    "languageEntries": { "value": object[]|null, "confidence": number },
+    "portfolioLinks": { "value": []|null, "confidence": number }
   }
 }`;
 

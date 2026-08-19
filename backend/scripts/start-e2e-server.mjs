@@ -1,0 +1,52 @@
+import '../src/__tests__/setup/node-test-globals.js';
+import { resolveE2eDatabaseConfig } from './resolveE2eDatabaseConfig.js';
+
+// Resolved before any other setup, and before the env-clearing loop below,
+// so a missing TEST_DATABASE_URL fails fast with a clear error instead of
+// partially clearing process.env and then failing deeper inside server
+// startup.
+const { databaseUrl, directUrl } = resolveE2eDatabaseConfig();
+
+for (const key of [
+  'NODE_ENV',
+  'PORT',
+  'FRONTEND_URL',
+  'BACKEND_URL',
+  'CORS_ALLOWED_ORIGINS',
+  'DATABASE_URL',
+  'DIRECT_URL',
+  'JWT_SECRET',
+  'STORAGE_PROVIDER',
+  'LOCAL_STORAGE_PATH',
+  'ELASTICSEARCH_ENABLED',
+  'REDIS_ENABLED',
+  'INTELLIGENCE_ENABLED',
+  'INTELLIGENCE_PROVIDER',
+  'QUEUE_PROVIDER',
+  'EMAIL_FROM',
+]) {
+  delete process.env[key];
+}
+
+Object.assign(process.env, {
+  NODE_ENV: 'development',
+  PORT: '5001',
+  FRONTEND_URL: 'http://127.0.0.1:3001',
+  BACKEND_URL: 'http://127.0.0.1:5001',
+  CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3001',
+  DATABASE_URL: databaseUrl,
+  DIRECT_URL: directUrl,
+  JWT_SECRET: 'careeriz-messaging-phase1-e2e-secret-123456',
+  STORAGE_PROVIDER: 'local',
+  LOCAL_STORAGE_PATH: './storage/resumes',
+  ELASTICSEARCH_ENABLED: 'false',
+  REDIS_ENABLED: 'false',
+  INTELLIGENCE_ENABLED: 'false',
+  INTELLIGENCE_PROVIDER: 'DISABLED',
+  QUEUE_PROVIDER: 'database',
+  EMAIL_FROM: 'no-reply@careeriz.app',
+  AUTH_LOGIN_RATE_LIMIT: '1000',
+});
+
+const { start } = await import('../src/server.js');
+await start();

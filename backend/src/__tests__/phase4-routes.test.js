@@ -28,8 +28,11 @@ function seedState() {
         userId: 'candidate-user-1',
         fullName: 'Candidate One',
         currentTitle: 'Frontend Engineer',
+        currentDesignation: 'Frontend Engineer',
+        currentEmployer: 'Acme Labs',
         headline: 'Builds polished UI',
         location: 'Bengaluru',
+        currentCity: 'Bengaluru',
         preferredLocations: ['Bengaluru'],
         preferredRoles: ['frontend engineer'],
         totalExperience: 4,
@@ -41,6 +44,8 @@ function seedState() {
         expectedCtcLpa: 18,
         skills: ['React', 'Next.js'],
         summary: 'Candidate summary',
+        educationEntries: [{ degree: 'B.Tech Computer Science' }],
+        experienceEntries: [{ company: 'Acme Labs', title: 'Frontend Engineer', isCurrent: true }],
         profileVisibility: 'PRIVATE',
         recommendationEnabled: true,
         notifyForSavedJobUpdates: true,
@@ -55,8 +60,11 @@ function seedState() {
         userId: 'candidate-user-2',
         fullName: 'Candidate Two',
         currentTitle: 'Backend Engineer',
+        currentDesignation: 'Backend Engineer',
+        currentEmployer: 'Other Corp',
         headline: 'APIs and data',
         location: 'Remote',
+        currentCity: 'Remote',
         preferredLocations: ['Remote'],
         preferredRoles: ['backend engineer'],
         totalExperience: 5,
@@ -68,6 +76,8 @@ function seedState() {
         expectedCtcLpa: 22,
         skills: ['Node.js'],
         summary: 'Other summary',
+        educationEntries: [{ degree: 'BCA' }],
+        experienceEntries: [{ company: 'Other Corp', title: 'Backend Engineer', isCurrent: true }],
         profileVisibility: 'PRIVATE',
         recommendationEnabled: true,
         notifyForSavedJobUpdates: true,
@@ -291,6 +301,19 @@ function seedState() {
         createdAt: now(),
       },
     ],
+    organisationPosts: [
+      {
+        id: 'post-1',
+        organisationId: 'org-1',
+        authorUserId: 'recruiter-user-1',
+        content: 'We are expanding our public engineering team.',
+        imageUrl: null,
+        status: 'PUBLISHED',
+        publishedAt: now(),
+        createdAt: now(),
+        updatedAt: now(),
+      },
+    ],
   };
 }
 
@@ -440,6 +463,12 @@ beforeEach(() => {
   prisma.savedJob.count = async ({ where = {} } = {}) => state.savedJobs.filter((item) => !where.candidateId || item.candidateId === where.candidateId).length;
 
   prisma.candidateProfile.findUnique = async ({ where } = {}) => clone(state.candidateProfiles.find((item) => item.id === where.id) || null);
+  prisma.candidateProfile.findMany = async ({ select } = {}) => state.candidateProfiles.map((profile) => {
+    if (!select) return clone(profile);
+    const picked = {};
+    for (const key of Object.keys(select)) picked[key] = clone(profile[key]);
+    return picked;
+  });
   prisma.candidateProfile.update = async ({ where, data } = {}) => {
     const profile = state.candidateProfiles.find((item) => item.id === where.id);
     Object.assign(profile, data);
@@ -450,6 +479,18 @@ beforeEach(() => {
   };
   prisma.auditLog = {
     create: async () => ({}),
+  };
+  prisma.organisationPost = {
+    findMany: async ({ where = {} } = {}) => state.organisationPosts
+      .filter((post) => (!where.organisationId || post.organisationId === where.organisationId) && (!where.status || post.status === where.status))
+      .map((post) => ({
+        ...clone(post),
+        authorUser: {
+          id: post.authorUserId,
+          name: 'Hiring Team',
+          email: 'hiring@acme.example',
+        },
+      })),
   };
 
   prisma.notification.count = async ({ where = {} } = {}) => state.notifications.filter((item) => item.recipientUserId === where.recipientUserId && (!('readAt' in where) || item.readAt === where.readAt)).length;
@@ -511,6 +552,8 @@ test('public organisation route returns public-safe fields and scoped jobs', asy
   assert.equal(response.body.data.organisation.name, 'Acme Labs');
   assert.equal(response.body.data.organisation.memberships, undefined);
   assert.deepEqual(response.body.data.jobs.items.map((item) => item.slug), ['frontend-engineer', 'design-systems-engineer']);
+  assert.equal(response.body.data.posts.length, 1);
+  assert.equal(response.body.data.peopleInsights.sampleSize, 1);
 });
 
 test('public organisation route returns safe 404 for invalid slug', async () => {
@@ -556,6 +599,15 @@ test('candidate self-service validation failures return 422', async () => {
     .send({ fullName: 'A' });
 
   assert.equal(response.status, 422);
+});
+
+test('candidate profile accepts a date-only last working date payload', async () => {
+  const response = await request(app)
+    .patch('/api/candidate/profile')
+    .set(authHeader('candidate-user-1'))
+    .send({ lastWorkingDate: '2026-08-01' });
+
+  assert.equal(response.status, 200);
 });
 
 test('candidate saved-job ownership is enforced', async () => {

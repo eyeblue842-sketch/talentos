@@ -88,10 +88,6 @@ function recommendationLabel(score, thresholds, context = {}) {
   return 'LIMITED_MATCH';
 }
 
-function clamp01(value) {
-  return Math.max(0, Math.min(1, Number(value || 0)));
-}
-
 function clone(value) {
   return value == null ? value : structuredClone(value);
 }

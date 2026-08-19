@@ -10,7 +10,8 @@
     "type-check": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@careeriz/shared": "file:../shared",
@@ -18,9 +19,11 @@
     "lucide-react": "^0.511.0",
     "next": "^16.2.3",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.1.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -30,6 +33,8 @@
     "eslint": "^9.34.0",
     "eslint-config-next": "^16.2.3",
     "jsdom": "^29.1.1",
+    "playwright": "^1.62.1",
+    "rolldown": "^1.1.5",
     "tailwindcss": "^4.1.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",

@@ -5,11 +5,13 @@ let prisma;
 let getPublicJobApplyContext;
 let validateApplicationAnswers;
 let submitJobApplication;
+let getSentEmails;
+let resetSentEmails;
 
 let state;
 
 function now() {
-  return new Date('2026-07-17T09:00:00.000Z');
+  return new Date('2026-08-17T09:00:00.000Z');
 }
 
 function clone(value) {
@@ -41,8 +43,9 @@ function seedState() {
       archivedAt: null,
       status: 'OPEN',
       applicationOpensAt: null,
-      applicationClosesAt: new Date('2026-07-31T00:00:00.000Z'),
-      applicationDeadline: new Date('2026-07-31T00:00:00.000Z'),
+      applicationClosesAt: new Date('2026-08-31T00:00:00.000Z'),
+      applicationDeadline: new Date('2026-08-31T00:00:00.000Z'),
+      applicationNotificationEmail: 'recruiter@acme.example',
       maxApplications: 10,
       organisation: {
         id: 'org-1',
@@ -101,10 +104,15 @@ before(async () => {
     validateApplicationAnswers,
     submitJobApplication,
   } = await import('../services/applicationWorkflowService.js'));
+  ({
+    __getSentEmails: getSentEmails,
+    __resetSentEmails: resetSentEmails,
+  } = await import('../services/emailService.js'));
 });
 
 beforeEach(() => {
   seedState();
+  resetSentEmails();
 
   prisma.job.findFirst = async ({ where, include } = {}) => {
     if (where.slug && where.slug !== state.publicJob.slug) return null;
@@ -219,6 +227,7 @@ test('application submission creates answer snapshots and review flags without t
       title: 'Frontend Engineer',
       slug: 'frontend-engineer',
       location: 'Bengaluru',
+      applicationNotificationEmail: 'recruiter@acme.example',
       organisation: { id: 'org-1', name: 'Acme Labs', slug: 'acme-labs' },
     } : undefined,
     candidate: include?.candidate ? {
@@ -291,4 +300,7 @@ test('application submission creates answer snapshots and review flags without t
   assert.equal(state.createdAnswers.length, 1);
   assert.equal(state.createdFlags.length, 1);
   assert.equal(result.stage, 'APPLICATION_RECEIVED');
+  assert.equal(getSentEmails().length, 1);
+  assert.match(getSentEmails()[0].subject, /New application: Frontend Engineer - Aarav Sharma/);
+  assert.match(getSentEmails()[0].text, /View application:/);
 });

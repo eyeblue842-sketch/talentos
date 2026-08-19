@@ -3,6 +3,14 @@ import { env } from './config/env.js';
 import { ensureResumeIndex, isElasticsearchEnabled } from './config/elastic.js';
 import { getRedisClient, isRedisEnabled } from './config/redis.js';
 import { pathToFileURL } from 'url';
+import { getSafeIntelligenceRuntimeConfiguration, getSafeResumeAiConfiguration } from './intelligence/services/runtimeConfigurationService.js';
+
+// Billing product-catalogue sync is deliberately NOT run automatically on
+// server boot (B1 hardening, section 10 - that was an uncontrolled write
+// executed by every instance on every start). Run it explicitly and
+// deliberately instead: `npm run catalogue:sync --prefix backend` (see
+// scripts/sync-product-catalogue.js), as part of a controlled deploy step,
+// same posture as "migrations are created but not applied automatically."
 
 export function createServerStarter({
   application = app,
@@ -27,6 +35,19 @@ export function createServerStarter({
       } else {
         logger.warn('Elasticsearch is disabled. Resume search functionality is unavailable.');
       }
+
+      logger.log(JSON.stringify({
+        level: 'info',
+        event: 'ai.runtime.configuration',
+        service: 'api',
+        ...getSafeIntelligenceRuntimeConfiguration(),
+      }));
+      logger.log(JSON.stringify({
+        level: 'info',
+        event: 'resume.ai.configuration',
+        service: 'api',
+        ...getSafeResumeAiConfiguration(),
+      }));
 
       return application.listen(runtimeEnv.port, () => {
         logger.log(`Careeriz API running on port ${runtimeEnv.port}`);

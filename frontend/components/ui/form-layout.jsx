@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input, PasswordField } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-export function FormSection({ title, description, className, children }) {
+export function FormSection({ id, title, description, className, children }) {
   return (
-    <section className={cn('grid gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-sm)]', className)}>
+    <section id={id} className={cn('grid gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-sm)]', className)}>
       {(title || description) ? (
         <div>
           {title ? <h2 className="text-xl font-semibold text-[var(--color-text)]">{title}</h2> : null}

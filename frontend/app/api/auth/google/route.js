@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getBackendApiBaseUrl } from '@/lib/auth';
 import { safeInternalPath } from '@/lib/roles';
+
+const ALLOWED_ROLES = new Set(['CANDIDATE', 'RECRUITER']);
+const ALLOWED_EMPLOYER_TYPES = new Set(['CONSULTANCY', 'COMPANY']);
 
 export async function GET(request) {
   const mode =
@@ -7,27 +11,36 @@ export async function GET(request) {
       ? 'signup'
       : 'login';
 
+  const requestedRole = (request.nextUrl.searchParams.get('role') || '').toUpperCase();
+  const role = ALLOWED_ROLES.has(requestedRole) ? requestedRole : 'CANDIDATE';
+
+  const requestedEmployerType = (request.nextUrl.searchParams.get('employerType') || '').toUpperCase();
+  const employerType = ALLOWED_EMPLOYER_TYPES.has(requestedEmployerType) ? requestedEmployerType : 'CONSULTANCY';
+
   const next = safeInternalPath(
     request.nextUrl.searchParams.get('next'),
-    '/candidate/dashboard'
+    role === 'RECRUITER' ? '/recruiter/home' : '/candidate/dashboard'
   );
 
+  const headers = request?.headers;
+  const requestOrigin = request?.nextUrl?.origin || 'https://careeriz.com';
   const forwardedProto =
-    request.headers.get('x-forwarded-proto') || 'https';
-
+    headers?.get?.('x-forwarded-proto') ||
+    new URL(requestOrigin).protocol.replace(':', '');
   const forwardedHost =
-    request.headers.get('x-forwarded-host') ||
-    request.headers.get('host') ||
-    'careeriz.com';
+    headers?.get?.('x-forwarded-host') ||
+    headers?.get?.('host') ||
+    new URL(requestOrigin).host;
 
-  const publicOrigin = `${forwardedProto}://${forwardedHost}`;
+  const backendApiBaseUrl = getBackendApiBaseUrl() || process.env.OAUTH_PUBLIC_BASE_URL;
+  const backendUrl = backendApiBaseUrl
+    ? new URL('auth/oauth/google/start', `${backendApiBaseUrl.replace(/\/+$/, '')}/`)
+    : new URL('/api/auth/oauth/google/start', `${forwardedProto}://${forwardedHost}`);
 
-  const backendUrl = new URL(
-    '/api/auth/oauth/google/start',
-    publicOrigin
-  );
-
-  backendUrl.searchParams.set('role', 'CANDIDATE');
+  backendUrl.searchParams.set('role', role);
+  if (role === 'RECRUITER') {
+    backendUrl.searchParams.set('employerType', employerType);
+  }
   backendUrl.searchParams.set('mode', mode);
   backendUrl.searchParams.set('next', next);
 

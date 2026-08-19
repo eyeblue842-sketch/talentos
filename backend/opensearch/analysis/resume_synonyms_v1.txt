@@ -1,0 +1,11 @@
+javascript, js
+typescript, ts
+amazon web services, aws
+google cloud platform, gcp
+human resources, hr
+talent acquisition, recruitment
+information technology, information-technology
+business development, bd
+pl sql, pl/sql, pl-sql
+oracle apex, oracle application express
+spring boot, springboot

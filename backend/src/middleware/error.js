@@ -1,6 +1,9 @@
 export function errorHandler(error, req, res, next) {
   void next;
-  const status = error.statusCode || 500;
+  const status = error.statusCode
+    || (error.code === 'LIMIT_FILE_SIZE' ? 413 : undefined)
+    || (error.name === 'MulterError' ? 422 : undefined)
+    || 500;
   console.error(JSON.stringify({
     level: 'error',
     event: 'http.request.error',
@@ -15,9 +18,15 @@ export function errorHandler(error, req, res, next) {
     latencyMs: req.requestStartedAt ? Date.now() - req.requestStartedAt : null,
   }));
 
-  const safeMessage = status >= 500 ? 'Internal server error' : (error.message || 'Request failed');
+  const safeMessage = status >= 500
+    ? 'Internal server error'
+    : (error.message
+        || (error.code === 'LIMIT_FILE_SIZE'
+          ? 'Uploaded file exceeds the allowed size.'
+          : 'Request failed'));
   res.status(status).json({
     success: false,
     message: safeMessage,
+    ...(status < 500 && error.code ? { code: error.code } : {}),
   });
 }

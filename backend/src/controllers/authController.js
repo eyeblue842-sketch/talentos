@@ -1,4 +1,5 @@
 import {
+  changePassword,
   createPasswordResetSession,
   confirmEmailVerification,
   confirmPasswordReset,
@@ -95,6 +96,15 @@ export async function saveRecruiterProfile(req, res, next) {
   }
 }
 
+export async function changePasswordHandler(req, res, next) {
+  try {
+    const result = await changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function logout(req, res, next) {
   try {
     const result = await logoutUser(req.user.id);
@@ -108,12 +118,13 @@ export async function startOAuth(req, res) {
   try {
     const url = await getOAuthAuthorizationUrl(req.params.provider, {
       role: req.query.role,
+      employerType: req.query.employerType,
       mode: req.query.mode,
       next: req.query.next,
     });
     res.redirect(url);
   } catch (error) {
-    res.redirect(buildOAuthErrorRedirect(error.message));
+    res.redirect(buildOAuthErrorRedirect(error.message, req.query.role, req.query.employerType));
   }
 }
 
@@ -123,7 +134,7 @@ export async function oauthCallback(req, res, next) {
       const result = await handleOAuthCallbackRedirect(req.params.provider, req.query.code, req.query.state);
       res.redirect(result.redirectUrl);
     } catch (error) {
-      res.redirect(buildOAuthErrorRedirect(error.message));
+      res.redirect(buildOAuthErrorRedirect(error.message, error.oauthRole, error.oauthEmployerType));
     }
     return;
   }

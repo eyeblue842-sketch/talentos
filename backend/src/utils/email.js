@@ -1,4 +1,8 @@
-const personalEmailDomains = new Set([
+// Exported so domainPolicyService.js (the single authoritative source for
+// employer-registration domain decisions) can reuse this list instead of
+// maintaining a second copy. Frontend code must never duplicate this list -
+// see domainPolicyService.js's module doc comment.
+export const personalEmailDomains = new Set([
   'gmail.com',
   'yahoo.com',
   'yahoo.co.in',

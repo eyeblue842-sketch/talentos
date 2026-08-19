@@ -8,6 +8,8 @@
     "worker:dev": "nodemon src/worker.js",
     "start": "node src/server.js",
     "worker": "node src/worker.js",
+    "ai:health": "node scripts/ai-health-check.js",
+    "ai:enable-local-features": "node scripts/enable-local-ai-features.js",
     "build": "node -e \"console.log('backend build ready')\"",
     "lint": "eslint .",
     "test": "node --import ./env-bootstrap.js --test",
@@ -18,7 +20,11 @@
     "db:test:status": "node ./scripts/run-with-test-db.js npx prisma migrate status --schema prisma/schema.prisma",
     "db:test:migrate": "node ./scripts/run-with-test-db.js npx prisma migrate deploy --schema prisma/schema.prisma",
     "db:test:reset": "node ./scripts/run-with-test-db.js npx prisma migrate reset --force --skip-generate --skip-seed --schema prisma/schema.prisma",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "seed:test-admin": "node scripts/seed-test-admin.js",
+    "resume-search:backfill": "node scripts/resume-search-backfill.js",
+    "resume-search:reindex": "node scripts/resume-search-reindex.js",
+    "catalogue:sync": "node scripts/sync-product-catalogue.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1094.0",
@@ -27,6 +33,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@careeriz/shared": "file:../shared",
     "@elastic/elasticsearch": "^8.15.0",
+    "@opensearch-project/opensearch": "3.0.0",
     "@prisma/client": "^6.5.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -42,6 +49,7 @@
     "nodemailer": "^8.0.5",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.1",
+    "razorpay": "^2.9.8",
     "redis": "^6.1.0",
     "slugify": "^1.6.6",
     "yauzl": "^3.4.0",

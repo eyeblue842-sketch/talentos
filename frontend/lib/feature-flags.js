@@ -14,7 +14,15 @@ const envFlagMap = {
   searchSuggestions: 'NEXT_PUBLIC_FEATURE_SEARCH_SUGGESTIONS',
   similarCandidateSearch: 'NEXT_PUBLIC_FEATURE_SIMILAR_CANDIDATE_SEARCH',
   similarJobSearch: 'NEXT_PUBLIC_FEATURE_SIMILAR_JOB_SEARCH',
+  resumeSearchV2: 'NEXT_PUBLIC_FEATURE_RESUME_SEARCH_V2',
 };
+
+function splitCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === 'boolean') return value;
@@ -43,6 +51,7 @@ export function getFeatureFlags() {
     searchSuggestions: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SEARCH_SUGGESTIONS, false),
     similarCandidateSearch: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SIMILAR_CANDIDATE_SEARCH, false),
     similarJobSearch: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_SIMILAR_JOB_SEARCH, false),
+    resumeSearchV2: normalizeBoolean(process.env.NEXT_PUBLIC_FEATURE_RESUME_SEARCH_V2, false),
   };
 }
 

@@ -2,6 +2,8 @@ import { prisma } from '../config/db.js';
 import { elastic, isElasticsearchEnabled } from '../config/elastic.js';
 import { getRedisHealth } from '../config/redis.js';
 import { getIntelligenceProviderHealth } from '../intelligence/services/providerService.js';
+import { isResumeSearchEngineEnabled } from './resumeSearchV2/openSearchAdapter.js';
+import { listResumeSearchIndexHealth } from './resumeSearchV2/service.js';
 import { getOrSetCachedJson } from './runtimeCacheService.js';
 
 async function getDatabaseHealth() {
@@ -52,8 +54,12 @@ export async function getApplicationHealth() {
       getIntelligenceProviderHealth(),
       getBackgroundTaskHealth(),
     ]);
+    const resumeSearchV2 = await listResumeSearchIndexHealth();
 
-    const healthy = database.healthy && elasticsearch.healthy && redis.healthy;
+    const healthy = database.healthy
+      && elasticsearch.healthy
+      && redis.healthy
+      && (!isResumeSearchEngineEnabled() || resumeSearchV2.healthy);
 
     return {
       status: healthy ? 'ok' : 'degraded',
@@ -63,6 +69,7 @@ export async function getApplicationHealth() {
       redis,
       intelligence,
       backgroundTasks,
+      resumeSearchV2,
     };
   }, 5);
 

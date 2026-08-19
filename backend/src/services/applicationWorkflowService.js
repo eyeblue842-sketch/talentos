@@ -1,9 +1,12 @@
 import crypto from 'crypto';
+import { prisma } from '../config/db.js';
 import { storePrivateFile, readPrivateFileNodeStream } from '../config/storage.js';
 import { requireOrganisationRole, requireOrganisationContext } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { enqueueBackgroundTask } from './backgroundTaskService.js';
+import { sendRecruiterApplicationNotificationEmail } from './emailService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 import {
   archiveResumeAssetRecord,
   countApplicationResumeSnapshotReferences,
@@ -350,6 +353,46 @@ function serializeTemplate(template) {
 }
 
 function serializeResumeAsset(asset) {
+  const failureCode = asset.parsedData?.errorCode || null;
+  const parsingStatusMeta = (() => {
+    switch (asset.parsingStatus) {
+      case 'PROCESSING':
+        return {
+          label: 'Parsing resume',
+          message: 'Careeriz is extracting and organizing resume details in the background.',
+        };
+      case 'COMPLETED':
+        return {
+          label: 'Parsed successfully',
+          message: 'Resume details are available to review and apply to your profile.',
+        };
+      case 'PARTIAL':
+        return {
+          label: 'Needs review',
+          message: 'Careeriz extracted limited resume data and skipped low-confidence updates. Review the resume or retry parsing.',
+        };
+      case 'FAILED':
+        return {
+          label: 'Parsing failed',
+          message: failureCode === 'PDF_IMAGE_ONLY'
+            ? 'Unable to extract readable text from this resume. It may be image-only or scanned without OCR support.'
+            : failureCode === 'PDF_TEXT_LOW_QUALITY' || failureCode === 'DOCX_TEXT_LOW_QUALITY' || failureCode === 'DOC_TEXT_LOW_QUALITY'
+              ? 'We extracted unreadable resume text and skipped profile updates. Please retry with a cleaner PDF/DOC/DOCX file.'
+              : failureCode === 'UNSUPPORTED_FILE_TYPE'
+                ? 'Resume format is unsupported for parsing.'
+                : failureCode === 'AI_PROVIDER_UNAVAILABLE'
+                  ? 'AI parsing service is unavailable right now. Please retry parsing later.'
+                  : 'We could not fully parse this resume. Your uploaded file is safe. You can retry parsing or update your profile manually.',
+        };
+      case 'PENDING':
+      default:
+        return {
+          label: 'Queued for parsing',
+          message: 'Your resume is queued for parsing.',
+        };
+    }
+  })();
+
   return {
     id: asset.id,
     filename: asset.originalFilename,
@@ -359,6 +402,8 @@ function serializeResumeAsset(asset) {
     status: asset.status,
     isPrimary: asset.isPrimary,
     parsingStatus: asset.parsingStatus,
+    parsingStatusLabel: parsingStatusMeta.label,
+    parsingStatusMessage: parsingStatusMeta.message,
     parsedData: asset.parsedData || null,
     createdAt: iso(asset.createdAt),
     updatedAt: iso(asset.updatedAt),
@@ -368,65 +413,6 @@ function serializeResumeAsset(asset) {
     externalResumeVersion: asset.externalResumeVersion,
     lastSynchronizedAt: iso(asset.lastSynchronizedAt),
     downloadUrl: `/api/candidate/resumes/${asset.id}/download`,
-  };
-}
-
-function normalizeResumeFilename(filename) {
-  return String(filename || '')
-    .replace(/\.[^.]+$/, '')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function inferResumeSkills(filename) {
-  const normalized = normalizeResumeFilename(filename).toLowerCase();
-  const knownSkills = ['react', 'nextjs', 'next js', 'node', 'nodejs', 'javascript', 'typescript', 'java', 'spring', 'aws', 'python', 'sql', 'docker', 'kubernetes'];
-  return knownSkills
-    .filter((skill) => normalized.includes(skill))
-    .map((skill) => skill.replace('nextjs', 'Next.js').replace('nodejs', 'Node.js'))
-    .slice(0, 8);
-}
-
-function inferResumeTitle(filename) {
-  const normalized = normalizeResumeFilename(filename).toLowerCase();
-  const titleMap = [
-    ['frontend', 'Frontend Developer'],
-    ['backend', 'Backend Developer'],
-    ['full stack', 'Full Stack Developer'],
-    ['java', 'Java Developer'],
-    ['python', 'Python Developer'],
-    ['react', 'React Developer'],
-    ['data analyst', 'Data Analyst'],
-    ['product manager', 'Product Manager'],
-  ];
-  const match = titleMap.find(([token]) => normalized.includes(token));
-  return match?.[1] || null;
-}
-
-function buildDeterministicParse(filename, candidateProfile) {
-  const inferredSkills = inferResumeSkills(filename);
-  const inferredTitle = inferResumeTitle(filename);
-  const suggestedUpdates = {
-    currentTitle: !candidateProfile?.currentTitle && inferredTitle ? inferredTitle : null,
-    skills: inferredSkills.length ? inferredSkills : null,
-  };
-
-  const availableFields = Object.entries(suggestedUpdates)
-    .filter(([, value]) => value && (!Array.isArray(value) || value.length))
-    .map(([field]) => field);
-
-  return {
-    parsingStatus: availableFields.length ? 'PARTIAL' : 'FAILED',
-    parsedData: {
-      parser: 'careeriz-metadata-fallback',
-      extractedTextAvailable: false,
-      summary: availableFields.length
-        ? 'Careeriz created limited metadata-based suggestions from the uploaded resume filename.'
-        : 'No structured parse suggestions were available for this upload.',
-      suggestedUpdates,
-      availableFields,
-    },
   };
 }
 
@@ -937,12 +923,7 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
     throw error;
   }
   const stored = await storePrivateFile(file, { prefix: kind === 'RESUME' ? 'resumes' : 'screening-files' });
-  const candidateProfile = kind === 'RESUME'
-    ? await findCandidateProfile(candidateUser.candidateProfile.id)
-    : null;
-  const parsePreview = kind === 'RESUME'
-    ? buildDeterministicParse(stored.originalFilename, candidateProfile)
-    : { parsingStatus: 'PENDING', parsedData: null };
+  const parsePreview = { parsingStatus: 'PENDING', parsedData: null };
   const asset = await createResumeAssetRecord({
     candidateId: candidateUser.candidateProfile.id,
     ownerUserId: candidateUser.id,
@@ -972,6 +953,7 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
       createdByUserId: candidateUser.id,
       maxAttempts: 5,
     }).catch(() => {});
+    await touchCandidateLastActive(candidateUser.candidateProfile.id);
   }
   return serializeResumeAsset(asset);
 }
@@ -1107,6 +1089,8 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
       generatePublicReference,
     });
 
+    await touchCandidateLastActive(candidateUser.candidateProfile.id);
+
     await recordAuditLog({
       organisationId: result.jobApplication.organisationId,
       actorUserId: candidateUser.id,
@@ -1121,6 +1105,34 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
     });
 
     const submission = await getCandidateApplicationDetail(candidateUser, result.jobApplication.id);
+
+    const applicationNotificationEmail = submission.job?.applicationNotificationEmail || null;
+    if (applicationNotificationEmail) {
+      const recruiterName = submission.job?.organisation?.name || 'Recruiter';
+      const frontendBaseUrl = process.env.FRONTEND_URL || '';
+      const applicationPath = `/recruiter/job-responses?jobId=${encodeURIComponent(submission.job?.id || payload.jobId)}`;
+      const applicationUrl = frontendBaseUrl
+        ? new URL(applicationPath, frontendBaseUrl).toString()
+        : applicationPath;
+
+      await sendRecruiterApplicationNotificationEmail({
+        to: applicationNotificationEmail,
+        recruiterName,
+        candidateName: submission.candidate?.fullName || candidateProfile.fullName || 'A candidate',
+        jobTitle: submission.job?.title || 'your job',
+        appliedAt: submission.submittedAt,
+        applicationUrl,
+      }).catch((emailError) => {
+        console.error('application.notification.email.failed', {
+          code: emailError?.code || null,
+          message: emailError?.message || 'Unable to send recruiter application email.',
+          applicationId: submission.id,
+          jobId: submission.job?.id || payload.jobId,
+          organisationId: submission.organisationId || null,
+        });
+      });
+    }
+
     return submission;
   } catch (error) {
     if (error?.code === 'P2002') {
@@ -1168,6 +1180,7 @@ function serializeJobApplicationDetail(application) {
       location: application.job.location,
       employmentType: application.job.employmentType,
       workplaceType: application.job.workplaceType,
+      applicationNotificationEmail: application.job.applicationNotificationEmail || null,
       organisation: application.job.organisation ? {
         id: application.job.organisation.id,
         name: application.job.organisation.name,
@@ -1324,7 +1337,15 @@ export async function listRecruiterJobApplications(actorUser, filters = {}, orga
   const where = {
     organisationId: context.organisationId,
     jobId: filters.jobId || undefined,
-    application: filters.status ? { statusLabel: filters.status } : undefined,
+    job: {
+      status: filters.jobStatus || undefined,
+      recruiterId: filters.recruiterId || undefined,
+      title: filters.search ? { contains: filters.search, mode: 'insensitive' } : undefined,
+    },
+    application: {
+      statusLabel: filters.status || undefined,
+      currentStage: filters.stage || undefined,
+    },
     flags: filters.hasFlags ? { some: {} } : undefined,
   };
   const total = await countRecruiterJobApplications(where);
@@ -1613,8 +1634,54 @@ export async function updateCandidateResumeAssetState(candidateUser, assetId, ac
   } else if (action === 'RESTORE') {
     await restoreResumeAssetRecord(asset.id);
   } else if (action === 'RETRY_PARSE') {
-    const nextParse = buildDeterministicParse(asset.originalFilename, candidateUser.candidateProfile);
-    await updateResumeAssetParsing(asset.id, nextParse.parsingStatus, nextParse.parsedData);
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'resume.parse.retry.requested',
+      assetId: asset.id,
+      candidateId: candidateUser.candidateProfile.id,
+      actorUserId: candidateUser.id,
+    }));
+
+    const activeTask = await prisma.backgroundTask.findFirst({
+      where: {
+        type: 'RESUME_PARSING',
+        entityId: asset.id,
+        status: { in: ['PENDING', 'RETRY_SCHEDULED', 'RUNNING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (activeTask) {
+      console.log(JSON.stringify({
+        level: 'info',
+        event: 'resume.parse.task.already-active',
+        taskId: activeTask.id,
+        assetId: asset.id,
+        candidateId: candidateUser.candidateProfile.id,
+      }));
+      return listCandidateResumeAssets(candidateUser);
+    }
+
+    await updateResumeAssetParsing(asset.id, 'PENDING', null);
+    const task = await enqueueBackgroundTask({
+      type: 'RESUME_PARSING',
+      entityType: 'ResumeAsset',
+      entityId: asset.id,
+      idempotencyKey: `resume-parse:${asset.id}:retry:${Date.now()}`,
+      payload: { assetId: asset.id },
+      nextAttemptAt: new Date(),
+      createdByUserId: candidateUser.id,
+      maxAttempts: 5,
+    }).catch(() => {});
+
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'resume.parse.task.enqueued',
+      taskId: task?.id || null,
+      assetId: asset.id,
+      candidateId: candidateUser.candidateProfile.id,
+      status: 'PENDING',
+    }));
   }
 
   await recordAuditLog({
@@ -1635,6 +1702,7 @@ export async function updateCandidateResumeAssetState(candidateUser, assetId, ac
 export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, payload = {}, requestMeta = {}) {
   const asset = await ensureOwnedResumeAsset(candidateUser.candidateProfile.id, assetId);
   const suggestedUpdates = asset.parsedData?.suggestedUpdates || {};
+  const dismiss = payload.dismiss === true;
   const fields = payload.acceptAll
     ? Object.keys(suggestedUpdates)
     : Array.isArray(payload.fields)
@@ -1642,11 +1710,39 @@ export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, 
       : [];
 
   const updateData = {};
-  if (fields.includes('currentTitle') && suggestedUpdates.currentTitle) {
-    updateData.currentTitle = suggestedUpdates.currentTitle;
-  }
-  if (fields.includes('skills') && Array.isArray(suggestedUpdates.skills)) {
-    updateData.skills = [...new Set([...(candidateUser.candidateProfile.skills || []), ...suggestedUpdates.skills])];
+  const nextSuggestedUpdates = { ...suggestedUpdates };
+  const acceptedFields = Array.isArray(asset.parsedData?.acceptedFields) ? [...asset.parsedData.acceptedFields] : [];
+  const dismissedFields = Array.isArray(asset.parsedData?.dismissedFields) ? [...asset.parsedData.dismissedFields] : [];
+
+  for (const field of fields) {
+    if (!suggestedUpdates[field]) continue;
+    if (dismiss) {
+      delete nextSuggestedUpdates[field];
+      if (!dismissedFields.includes(field)) dismissedFields.push(field);
+      continue;
+    }
+
+    const suggestion = suggestedUpdates[field];
+    const resumeValue = typeof suggestion === 'object' && suggestion !== null && 'resumeValue' in suggestion
+      ? suggestion.resumeValue
+      : suggestion;
+
+    if (field === 'skills' && Array.isArray(resumeValue)) {
+      updateData.skills = [...new Set([...(candidateUser.candidateProfile.skills || []), ...resumeValue])];
+    } else if ([
+      'currentTitle',
+      'currentEmployer',
+      'currentDesignation',
+      'location',
+      'headline',
+      'summary',
+      'phoneNumber',
+    ].includes(field) && resumeValue) {
+      updateData[field] = resumeValue;
+    }
+
+    delete nextSuggestedUpdates[field];
+    if (!acceptedFields.includes(field)) acceptedFields.push(field);
   }
 
   if (Object.keys(updateData).length) {
@@ -1657,10 +1753,12 @@ export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, 
     asset.id,
     {
       ...(asset.parsedData || {}),
-      acceptedFields: fields,
+      suggestedUpdates: nextSuggestedUpdates,
+      acceptedFields,
+      dismissedFields,
       lastReviewedAt: new Date().toISOString(),
     },
-    asset.parsedData?.availableFields?.length ? 'PARTIAL' : asset.parsingStatus,
+    Object.keys(nextSuggestedUpdates).length ? 'PARTIAL' : asset.parsingStatus,
   );
 
   await recordAuditLog({
@@ -1671,6 +1769,7 @@ export async function applyCandidateResumeParsedUpdates(candidateUser, assetId, 
     metadata: {
       candidateId: candidateUser.candidateProfile.id,
       fields,
+      dismiss,
     },
     ...requestMeta,
   });

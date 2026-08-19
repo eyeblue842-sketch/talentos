@@ -6,18 +6,24 @@ import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function toQueryString(parsed, jobId, requisitionId) {
+  const semantic = parsed?.parsedQuery || {};
+  const semanticFilters = semantic?.filters || {};
   const params = new URLSearchParams();
+  params.set('reviewFilters', 'true');
   if (jobId) params.set('jobId', jobId);
   if (requisitionId) params.set('requisitionId', requisitionId);
-  if (parsed.keyword) params.set('keyword', parsed.keyword);
+  if (semantic.mode) params.set('mode', semantic.mode);
+  if (semantic.originalQuery || parsed.keyword || parsed.query) params.set('q', semantic.originalQuery || parsed.keyword || parsed.query);
   if (parsed.location) params.set('location', parsed.location);
   if (parsed.minExperience != null) params.set('minExperience', String(parsed.minExperience));
   if (parsed.maxExperience != null) params.set('maxExperience', String(parsed.maxExperience));
-  if (parsed.availability) params.set('availability', parsed.availability);
-  if (parsed.skills?.length) params.set('skills', parsed.skills.join(', '));
-  if (parsed.currentTitle) params.set('designation', parsed.currentTitle);
+  if (parsed.currentTitle) params.set('candidateName', parsed.currentTitle);
   if (parsed.education) params.set('education', parsed.education);
-  if (parsed.certifications?.length) params.set('certifications', parsed.certifications.join(', '));
+  const requiredSkills = semanticFilters.requiredSkills?.length
+    ? semanticFilters.requiredSkills
+    : parsed.skills || [];
+  if (requiredSkills.length) params.set('requiredSkills', requiredSkills.join(', '));
+  if (semanticFilters.optionalSkills?.length) params.set('optionalSkills', semanticFilters.optionalSkills.join(', '));
   return params.toString();
 }
 
@@ -62,26 +68,27 @@ export function RecruiterTalentSearchAssistant({ jobId = '', requisitionId = '' 
           <Sparkles size={18} aria-hidden="true" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-[var(--color-text)]">Natural-language talent search</p>
-          <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">AI-generated suggestion. Review before use. Parsed filters are editable before the actual search runs.</p>
+          <p className="text-sm font-semibold text-[var(--color-text)]">AI Assist</p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">AI-generated suggestion. Review before use.</p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">Describe the candidate you are looking for. Careeriz will interpret the request, populate recruiter filters, and wait for your review before running search.</p>
         </div>
       </div>
 
       <textarea
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Find senior Java developers in Bangalore with AWS, Kafka and a notice period under 30 days."
+        placeholder="Find a Java developer in Bengaluru with Spring Boot and AWS, 6-10 years experience and maximum 30 days notice."
         className="mt-4 min-h-28 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3.5 py-3 text-sm text-[var(--color-text)] shadow-[var(--shadow-sm)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]"
       />
 
       <div className="mt-3 flex flex-wrap gap-3">
         <Button type="button" onClick={handleGenerate} disabled={pending || query.trim().length < 8}>
           <Sparkles size={16} aria-hidden="true" />
-          {pending ? 'Interpreting...' : 'Interpret Query'}
+          {pending ? 'Interpreting...' : 'Search with AI'}
         </Button>
         {result ? (
           <Button type="button" variant="outline" onClick={applyFilters}>
-            Apply Filters
+            Review filters
           </Button>
         ) : null}
       </div>

@@ -5,6 +5,7 @@ dist
 coverage
 .env
 .env.local
+.env.test.local
 backend/node_modules
 frontend/node_modules
 backend/storage/resumes/*
@@ -14,3 +15,25 @@ backend/storage/resumes/*
 backend-dev.log
 frontend-dev.log
 backend-dev.err.log
+
+# Python (document-processor)
+document-processor/.venv
+document-processor/__pycache__
+document-processor/**/__pycache__
+document-processor/.pytest_cache
+document-processor/.ruff_cache
+document-processor/.env
+# Defense-in-depth: model weights/HF caches use the OS default cache
+# location (outside this repo) unless HF_HOME/DOCLING_ARTIFACTS_PATH is
+# ever pointed inside the project -- these patterns make sure that stays
+# true even if a future run does that.
+document-processor/.cache
+document-processor/**/*.whl
+document-processor/**/model-cache
+# Step 5: test-run output (preprocessed images generated while running
+# tests/test_preprocessing.py locally) -- never real fixture content.
+document-processor/tests/fixtures/preprocessing/_out
+document-processor/tests/fixtures/preprocessing/_measure
+document-processor/.phasep1-paddlex-cache/
+document-processor/tests/fixtures/ocr_validation/_out_*/
+frontend/test-results/

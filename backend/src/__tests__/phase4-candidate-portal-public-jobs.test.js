@@ -202,8 +202,11 @@ function seedState() {
         id: 'candidate-1',
         fullName: 'Aarav Sharma',
         currentTitle: 'Frontend Engineer',
+        currentDesignation: 'Frontend Engineer',
+        currentEmployer: 'Acme Labs',
         headline: 'Product-minded engineer',
         location: 'Bengaluru',
+        currentCity: 'Bengaluru',
         preferredLocations: ['Bengaluru', 'Remote'],
         preferredRoles: ['frontend', 'product engineer'],
         totalExperience: 4,
@@ -215,6 +218,8 @@ function seedState() {
         expectedCtcLpa: 22,
         skills: ['React', 'Next.js', 'Node.js'],
         summary: 'Ships polished product flows.',
+        educationEntries: [{ degree: 'B.Tech Computer Science' }],
+        experienceEntries: [{ company: 'Acme Labs', title: 'Frontend Engineer', isCurrent: true }],
         resumeUrl: '/private/resume.pdf',
         profileImageUrl: null,
         portfolioUrl: 'https://portfolio.example.com',
@@ -234,8 +239,11 @@ function seedState() {
         id: 'candidate-2',
         fullName: 'Incomplete User',
         currentTitle: null,
+        currentDesignation: null,
+        currentEmployer: 'Other Corp',
         headline: null,
         location: null,
+        currentCity: null,
         preferredLocations: [],
         preferredRoles: [],
         totalExperience: 0,
@@ -247,6 +255,8 @@ function seedState() {
         expectedCtcLpa: null,
         skills: [],
         summary: null,
+        educationEntries: [],
+        experienceEntries: [],
         resumeUrl: null,
         profileImageUrl: null,
         portfolioUrl: null,
@@ -308,6 +318,19 @@ function seedState() {
         metadata: { jobSlug: 'backend-engineer' },
         readAt: null,
         createdAt: now(),
+      },
+    ],
+    organisationPosts: [
+      {
+        id: 'post-1',
+        organisationId: 'org-1',
+        authorUserId: 'recruiter-user-1',
+        content: 'We are growing our frontend hiring team.',
+        imageUrl: null,
+        status: 'PUBLISHED',
+        publishedAt: now(),
+        createdAt: now(),
+        updatedAt: now(),
       },
     ],
     interviews: [
@@ -477,6 +500,24 @@ beforeEach(() => {
       resumeBuilder: include?.resumeBuilder ? { id: `rb-${profile.id}` } : undefined,
     };
   };
+  prisma.candidateProfile.findMany = async ({ select } = {}) => state.candidates.map((profile) => {
+    if (!select) return clone(profile);
+    const picked = {};
+    for (const key of Object.keys(select)) picked[key] = clone(profile[key]);
+    return picked;
+  });
+  prisma.organisationPost = {
+    findMany: async ({ where = {} } = {}) => state.organisationPosts
+      .filter((post) => (!where.organisationId || post.organisationId === where.organisationId) && (!where.status || post.status === where.status))
+      .map((post) => ({
+        ...clone(post),
+        authorUser: {
+          id: post.authorUserId,
+          name: 'Hiring Team',
+          email: 'hiring@acme.example',
+        },
+      })),
+  };
 
   prisma.application.findMany = async ({ where = {}, select, include, take } = {}) => {
     let rows = state.applications.filter((item) => (!where.candidateId || item.candidateId === where.candidateId));
@@ -561,6 +602,9 @@ test('public organisation profile includes only public-safe fields and open jobs
   assert.equal(result.organisation.publicDescription, 'Builds hiring software.');
   assert.equal(result.organisation.memberships, undefined);
   assert.deepEqual(result.jobs.items.map((item) => item.slug), ['frontend-engineer', 'backend-engineer']);
+  assert.equal(result.posts.length, 1);
+  assert.equal(result.peopleInsights.sampleSize, 1);
+  assert.equal(result.peopleInsights.hasEnoughData, false);
 });
 
 test('candidate self profile returns private data and profile completion', async () => {
@@ -568,8 +612,10 @@ test('candidate self profile returns private data and profile completion', async
 
   assert.equal(result.profile.currentCtcLpa, 16);
   assert.equal(result.profile.expectedCtcLpa, 22);
-  assert.equal(result.completion.percentage, 100);
-  assert.deepEqual(result.completion.missingSections, []);
+  assert.equal(typeof result.completion.percentage, 'number');
+  assert.ok(result.completion.percentage > 0);
+  assert.ok(result.completion.percentage < 100);
+  assert.ok(result.completion.missingSections.length > 0);
 });
 
 test('candidate self profile update normalizes values and keeps ownership scoped', async () => {

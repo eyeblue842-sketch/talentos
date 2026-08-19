@@ -1,10 +1,21 @@
 const ROLE_HOME_ROUTES = {
   CANDIDATE: '/candidate/dashboard',
-  RECRUITER: '/recruiter',
+  RECRUITER: '/recruiter/home',
   ADMIN: '/admin',
   SUPER_ADMIN: '/admin',
-  HIRING_MANAGER: '/recruiter',
+  HIRING_MANAGER: '/recruiter/home',
   INTERVIEWER: '/recruiter/ats',
+  // CANDIDATE_ADMIN is a normal candidate account (no candidate-admin-only
+  // surface exists yet - the role is reserved for future use).
+  CANDIDATE_ADMIN: '/candidate/dashboard',
+  // RECRUITER_ADMIN is the owner of the recruiter application: it lands on
+  // the same recruiter workspace as any recruiter, with the admin/org console
+  // reachable as an additional surface (see WORKSPACE_PATH_PREFIXES) rather
+  // than its primary landing page.
+  RECRUITER_ADMIN: '/recruiter/home',
+  // PLATFORM_ADMIN is the opt-in equivalent of the legacy org-agnostic ADMIN
+  // bypass, for optional system-wide access.
+  PLATFORM_ADMIN: '/admin',
 };
 
 const WORKSPACE_PATH_PREFIXES = {
@@ -14,6 +25,9 @@ const WORKSPACE_PATH_PREFIXES = {
   SUPER_ADMIN: ['/admin'],
   HIRING_MANAGER: ['/recruiter', '/auth/invitations'],
   INTERVIEWER: ['/recruiter', '/auth/invitations'],
+  CANDIDATE_ADMIN: ['/candidate', '/jobs', '/companies'],
+  RECRUITER_ADMIN: ['/admin', '/recruiter', '/auth/invitations'],
+  PLATFORM_ADMIN: ['/admin'],
 };
 
 export { ROLE_HOME_ROUTES };

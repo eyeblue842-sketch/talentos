@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from '../../config/db.js';
 import { recordAuditLog } from '../../services/auditLogService.js';
 import { requireIntelligenceFeature } from './featureAccessService.js';
+import { updateJobStatus } from '../../services/jobService.js';
 
 const FEATURE = 'JOB_DESCRIPTION';
 const DEFAULT_SCHEMA_VERSION = '1.0.0';
@@ -191,17 +192,6 @@ async function getTemplateAccess(actorUser, templateId, mode = 'read') {
   return { template, permissionContext };
 }
 
-async function getLatestDraftVersion(organisationId, versionGroupId) {
-  return prisma.jobDescriptionDraft.findFirst({
-    where: {
-      organisationId,
-      versionGroupId,
-      isLatestVersion: true,
-    },
-    orderBy: { version: 'desc' },
-  });
-}
-
 function buildTemplateKey(value) {
   return scrubText(value, 120).toLowerCase().replace(/\s+/g, '-');
 }
@@ -386,9 +376,18 @@ export async function applyJobDescriptionDraft(actorUser, payload, requestMeta =
       responsibilities: snapshot.responsibilities,
       requirements: snapshot.requirements,
       skillsRequired: snapshot.skillsRequired,
-      status: payload.publishStatus || undefined,
     },
   });
+
+  // Status changes - especially DRAFT/ON_HOLD/CLOSED -> OPEN - MUST go
+  // through jobService.updateJobStatus, never a direct prisma.job.update,
+  // so a job-posting credit is actually checked/consumed. A raw status
+  // write here would have been a live bypass of the entitlement system
+  // (B1 hardening, section 4: "no alternate endpoint may activate a job
+  // without consuming a valid credit").
+  if (payload.publishStatus && payload.publishStatus !== job.status) {
+    await updateJobStatus(job.id, actorUser, payload.publishStatus, permissionContext.organisationId, requestMeta);
+  }
 
   const applied = await prisma.jobDescriptionDraft.update({
     where: { id: draft.id },

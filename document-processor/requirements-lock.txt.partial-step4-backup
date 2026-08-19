@@ -1,0 +1,278 @@
+# Generated for Track B Step 4 closure. This is a --require-hashes
+# compatible fully-pinned lock of requirements.txt plus its full transitive
+# tree (105 packages, dominated by docling -> torch/transformers/opencv/
+# pandas/rapidocr). requirements.txt stays the readable top-level source of
+# truth; this file exists purely for reproducible, tamper-evident installs:
+#
+#     pip install --require-hashes -r requirements-lock.txt
+#
+# Provenance: versions were taken from a real, working local install of
+# docling (this session verified real PDF/DOCX conversion against it), then
+# cross-checked against PyPI metadata for a matching Python 3.11 / Linux
+# x86_64 wheel (the actual Dockerfile target). Two packages -- numpy and
+# scipy -- resolved to a newer version locally (this dev machine runs
+# Python 3.14) than what publishes a cp311 wheel; those two are pinned down
+# to the newest STABLE release that does (see the inline NOTE at each).
+# Everything else matches the proven-working version exactly.
+#
+# NOT independently verified end-to-end on real Python 3.11 / Linux --
+# local verification here was blocked by two real constraints: no Docker
+# available in this environment, and pip cross-platform resolution cannot
+# correctly evaluate sys_platform-conditional markers (e.g. Windows-only
+# pywin32) when run from a Windows host (confirmed by direct reproduction:
+# a cross-platform pip dry-run targeting Linux still pulled in a
+# Windows-only dependency because pip evaluates such markers using the
+# host's own platform, not the --platform override). The document-processor
+# CI job (.github/workflows/ci-cd.yml) is the authoritative verification;
+# treat this lock as verified-by-metadata, pending that job's first real
+# run.
+#
+# Regenerate: for each package==version in requirements.txt's resolved
+# tree, query https://pypi.org/pypi/<name>/<version>/json, pick the file
+# matching cp311/manylinux/x86_64 (or an abi3/universal wheel where the
+# package doesn't need a version-specific one), and record its
+# digests.sha256. Re-run whenever requirements.txt's docling pin changes.
+
+Jinja2==3.1.6 \
+    --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67  # universal-wheel: jinja2-3.1.6-py3-none-any.whl
+MarkupSafe==3.0.3 \
+    --hash=sha256:0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf  # cp311-exact-linux-wheel: markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+PyYAML==6.0.3 \
+    --hash=sha256:b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d  # cp311-exact-linux-wheel: pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+accelerate==1.14.0 \
+    --hash=sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6  # universal-wheel: accelerate-1.14.0-py3-none-any.whl
+annotated-doc==0.0.5 \
+    --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101  # universal-wheel: annotated_doc-0.0.5-py3-none-any.whl
+annotated-types==0.8.0 \
+    --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0  # universal-wheel: annotated_types-0.8.0-py3-none-any.whl
+antlr4-python3-runtime==4.9.3 \
+    --hash=sha256:f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b  # sdist (pure Python, no compiled extension -- builds without a compiler): antlr4-python3-runtime-4.9.3.tar.gz
+anyio==4.14.2 \
+    --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494  # universal-wheel: anyio-4.14.2-py3-none-any.whl
+attrs==26.1.0 \
+    --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309  # universal-wheel: attrs-26.1.0-py3-none-any.whl
+beautifulsoup4==4.15.0 \
+    --hash=sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9  # universal-wheel: beautifulsoup4-4.15.0-py3-none-any.whl
+certifi==2026.7.22 \
+    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775  # universal-wheel: certifi-2026.7.22-py3-none-any.whl
+charset-normalizer==3.4.9 \
+    --hash=sha256:04ce310cb89c15df659582aee80a0603788732a5e017d5bd5c81158106ce249c  # cp311-exact-linux-wheel: charset_normalizer-3.4.9-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+click==8.4.2 \
+    --hash=sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76  # universal-wheel: click-8.4.2-py3-none-any.whl
+colorlog==6.12.0 \
+    --hash=sha256:30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e  # universal-wheel: colorlog-6.12.0-py3-none-any.whl
+defusedxml==0.7.1 \
+    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61  # universal-wheel: defusedxml-0.7.1-py2.py3-none-any.whl
+dill==0.4.1 \
+    --hash=sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d  # universal-wheel: dill-0.4.1-py3-none-any.whl
+doclang==0.7.3 \
+    --hash=sha256:9440c4ca9f7e061a7b8d33bdf15b1029be69a4c13cd8952dd6ce541884e4c685  # universal-wheel: doclang-0.7.3-py3-none-any.whl
+docling-core==2.91.0 \
+    --hash=sha256:4949a5dd77ae1daf4153c095897d3bdde1c870f2bbe401bf94d8834bef867998  # universal-wheel: docling_core-2.91.0-py3-none-any.whl
+docling-ibm-models==3.14.0 \
+    --hash=sha256:795d39cd0f7b1e14a702e681b0ef0f9bd31deaedddb4e2686ad577296ecb8fc9  # universal-wheel: docling_ibm_models-3.14.0-py3-none-any.whl
+docling-parse==7.12.0 \
+    --hash=sha256:1d97474c25f96b24eaae63046b013fd61d9ea94518b3de7ce74b4fbeffed9ccd  # cp311-exact-linux-wheel: docling_parse-7.12.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+docling-slim==2.119.0 \
+    --hash=sha256:ca385bc6b0ca99a4f0bba07feaa4c0fc4d5fa685a22184baa79de4bd87598323  # universal-wheel: docling_slim-2.119.0-py3-none-any.whl
+docling==2.119.0 \
+    --hash=sha256:3ff6f1dbe9f53ac034aca03c39fae374b381dc1eda4ad85d27a458fc13fbc917  # universal-wheel: docling-2.119.0-py3-none-any.whl
+et_xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa  # universal-wheel: et_xmlfile-2.0.0-py3-none-any.whl
+fastapi==0.141.1 \
+    --hash=sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3  # universal-wheel: fastapi-0.141.1-py3-none-any.whl
+filelock==3.32.2 \
+    --hash=sha256:87dd94cf281e586d135fa51132b8e3d9a598b316e90377a288663c9321036c82  # universal-wheel: filelock-3.32.2-py3-none-any.whl
+filetype==1.2.0 \
+    --hash=sha256:7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25  # universal-wheel: filetype-1.2.0-py2.py3-none-any.whl
+fsspec==2026.7.0 \
+    --hash=sha256:b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279  # universal-wheel: fsspec-2026.7.0-py3-none-any.whl
+h11==0.16.0 \
+    --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86  # universal-wheel: h11-0.16.0-py3-none-any.whl
+hf-xet==1.6.0 \
+    --hash=sha256:d62671bb130879cef0ee4c9ebe47a14af6c66ec53e6d84dc15936e5ffdfac82f  # abi3-linux-wheel: hf_xet-1.6.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+httpcore==1.0.9 \
+    --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55  # universal-wheel: httpcore-1.0.9-py3-none-any.whl
+httptools==0.8.0 \
+    --hash=sha256:57278e6fa0424c42a8a3e454828ab4f0aff27b40cddf9679579b98c6dce6a376  # cp311-exact-linux-wheel: httptools-0.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+huggingface_hub==1.27.0 \
+    --hash=sha256:7df6827c2f956c60fbaa64646e979e566db76f619dd0a9729dfb8c5a3eb4f68d  # universal-wheel: huggingface_hub-1.27.0-py3-none-any.whl
+idna==3.18 \
+    --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2  # universal-wheel: idna-3.18-py3-none-any.whl
+jsonlines==4.0.0 \
+    --hash=sha256:185b334ff2ca5a91362993f42e83588a360cf95ce4b71a73548502bda52a7c55  # universal-wheel: jsonlines-4.0.0-py3-none-any.whl
+jsonref==1.1.0 \
+    --hash=sha256:590dc7773df6c21cbf948b5dac07a72a251db28b0238ceecce0a2abfa8ec30a9  # universal-wheel: jsonref-1.1.0-py3-none-any.whl
+jsonschema-specifications==2025.9.1 \
+    --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe  # universal-wheel: jsonschema_specifications-2025.9.1-py3-none-any.whl
+jsonschema==4.26.0 \
+    --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce  # universal-wheel: jsonschema-4.26.0-py3-none-any.whl
+latex2mathml==3.81.0 \
+    --hash=sha256:d317710393fe20579aea39cfe8928fa2ad9b8780896e585326c75e89c1d1d1a4  # universal-wheel: latex2mathml-3.81.0-py3-none-any.whl
+lxml==6.1.1 \
+    --hash=sha256:db1d75f6617a49c1c01bc7023713e0ff59ab32c9579ae62a7674c0e34f3b0b0a  # cp311-exact-linux-wheel: lxml-6.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+mail-parser==4.6.0 \
+    --hash=sha256:18f02d80d2e561c992514d1cc602b98a6a2c3fa5911c415bb291492cc43826e7  # universal-wheel: mail_parser-4.6.0-py3-none-any.whl
+markdown-it-py==4.2.0 \
+    --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a  # universal-wheel: markdown_it_py-4.2.0-py3-none-any.whl
+marko==2.2.4 \
+    --hash=sha256:d80510506edba096ec49d4720a09645fa0bb78e7b7b88697f20032fc19730aa9  # universal-wheel: marko-2.2.4-py3-none-any.whl
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8  # universal-wheel: mdurl-0.1.2-py3-none-any.whl
+mpire==2.10.2 \
+    --hash=sha256:d627707f7a8d02aa4c7f7d59de399dec5290945ddf7fbd36cbb1d6ebb37a51fb  # universal-wheel: mpire-2.10.2-py3-none-any.whl
+mpmath==1.3.0 \
+    --hash=sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c  # universal-wheel: mpmath-1.3.0-py3-none-any.whl
+multiprocess==0.70.19 \
+    --hash=sha256:928851ae7973aea4ce0eaf330bbdafb2e01398a91518d5c8818802845564f45c  # py311-specific-wheel: multiprocess-0.70.19-py311-none-any.whl
+networkx==3.6.1 \
+    --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762  # universal-wheel: networkx-3.6.1-py3-none-any.whl
+# NOTE: 2.5.2 (what this dev machine resolved on Python 3.14) has NO cp311
+# wheel -- numpy dropped 3.11 support in that release. 2.4.6 is the newest
+# STABLE release that still publishes one; docling-ibm-models/opencv/etc.
+# only require numpy>=1.x so this is expected to satisfy them, but the
+# full-graph resolution has not been verified end-to-end on real cp311
+# (see the document-processor CI job -- pending its first real run).
+numpy==2.4.6 \
+    --hash=sha256:89cd468399cfd2504718f0ba50e410dca55a170b61a02ad92bb18c8a65186e93  # cp311-exact-linux-wheel: numpy-2.4.6-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+olefile==0.47 \
+    --hash=sha256:543c7da2a7adadf21214938bb79c83ea12b473a4b6ee4ad4bf854e7715e13d1f  # universal-wheel: olefile-0.47-py2.py3-none-any.whl
+omegaconf==2.3.1 \
+    --hash=sha256:3d701d14e9a8828f1edd28bb70b725908b34277cdd72cf7d6a83f94dadc6b6a0  # universal-wheel: omegaconf-2.3.1-py3-none-any.whl
+opencv-python==5.0.0.93 \
+    --hash=sha256:f8b6d0a212253dd26ad338c812f1f23ca118fdf05a9c8c6b9444f161aa8c5881  # abi3-linux-wheel: opencv_python-5.0.0.93-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2  # universal-wheel: openpyxl-3.1.5-py2.py3-none-any.whl
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c  # universal-wheel: packaging-26.3-py3-none-any.whl
+pandas==3.0.5 \
+    --hash=sha256:2c0cf1dd9b55a22d105fc46c1b489af3bd42264fcba7c66297bf47a9a1d9c78a  # cp311-exact-linux-wheel: pandas-3.0.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+pillow==12.3.0 \
+    --hash=sha256:23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd  # cp311-exact-linux-wheel: pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+psutil==7.2.2 \
+    --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9  # abi3-linux-wheel: psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl
+pyclipper==1.4.0 \
+    --hash=sha256:1b6c8d75ba20c6433c9ea8f1a0feb7e4d3ac06a09ad1fd6d571afc1ddf89b869  # cp311-exact-linux-wheel: pyclipper-1.4.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+pydantic-settings==2.15.0 \
+    --hash=sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42  # universal-wheel: pydantic_settings-2.15.0-py3-none-any.whl
+pydantic==2.13.4 \
+    --hash=sha256:45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba  # universal-wheel: pydantic-2.13.4-py3-none-any.whl
+pydantic_core==2.46.4 \
+    --hash=sha256:f9fa868638bf362d3d138ea55829cefb3d5f4b0d7f142234382a15e2485dbec4  # cp311-exact-linux-wheel: pydantic_core-2.46.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pylatexenc==2.11 \
+    --hash=sha256:e78e7391d6c104f1ed150e21cfaa58016cdb50aa54406a2eecb793649ffdfdd0  # universal-wheel: pylatexenc-2.11-py2.py3-none-any.whl
+pypdfium2==5.12.1 \
+    --hash=sha256:e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7  # py3-platform-specific-wheel: pypdfium2-5.12.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427  # universal-wheel: python_dateutil-2.9.0.post0-py2.py3-none-any.whl
+python-docx==1.2.0 \
+    --hash=sha256:3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7  # universal-wheel: python_docx-1.2.0-py3-none-any.whl
+python-dotenv==1.2.2 \
+    --hash=sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a  # universal-wheel: python_dotenv-1.2.2-py3-none-any.whl
+python-multipart==0.0.32 \
+    --hash=sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23  # universal-wheel: python_multipart-0.0.32-py3-none-any.whl
+python-oxmsg==0.0.2 \
+    --hash=sha256:22be29b14c46016bcd05e34abddfd8e05ee82082f53b82753d115da3fc7d0355  # universal-wheel: python_oxmsg-0.0.2-py3-none-any.whl
+python-pptx==1.0.2 \
+    --hash=sha256:160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba  # universal-wheel: python_pptx-1.0.2-py3-none-any.whl
+rapidocr==3.9.2 \
+    --hash=sha256:04d6b8d151f823d930bd91910555f57bea897c0c44fa6794267b94cf9c1ef9a0  # universal-wheel: rapidocr-3.9.2-py3-none-any.whl
+referencing==0.37.0 \
+    --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231  # universal-wheel: referencing-0.37.0-py3-none-any.whl
+regex==2026.7.19 \
+    --hash=sha256:09f3e5287f94f17b709dc9a9e70865855feee835c861613be144218ce4ca82cc  # cp311-exact-linux-wheel: regex-2026.7.19-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+requests==2.34.2 \
+    --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0  # universal-wheel: requests-2.34.2-py3-none-any.whl
+rich==15.0.0 \
+    --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb  # universal-wheel: rich-15.0.0-py3-none-any.whl
+rpds-py==2026.6.3 \
+    --hash=sha256:9c1255b302953c86a486b81d330d5ee1d5bd937691ce271b6be0ef0e299eaab7  # cp311-exact-linux-wheel: rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+rtree==1.4.1 \
+    --hash=sha256:12de4578f1b3381a93a655846900be4e3d5f4cd5e306b8b00aa77c1121dc7e8c  # py3-platform-specific-wheel: rtree-1.4.1-py3-none-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+safetensors==0.8.0 \
+    --hash=sha256:fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774  # abi3-linux-wheel: safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# NOTE: same situation as numpy above -- 1.18.0 (cp314-resolved) has no
+# cp311 wheel; 1.17.1 is the newest stable release that does.
+scipy==1.17.1 \
+    --hash=sha256:43af8d1f3bea642559019edfe64e9b11192a8978efbd1539d7bc2aaa23d92de4  # cp311-exact-linux-wheel: scipy-1.17.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+semchunk==3.2.5 \
+    --hash=sha256:fd09cc5f380bd010b8ca773bd81893f7eaf11d37dd8362a83d46cedaf5dae076  # universal-wheel: semchunk-3.2.5-py3-none-any.whl
+setuptools==84.0.0 \
+    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670  # universal-wheel: setuptools-84.0.0-py3-none-any.whl
+shapely==2.1.2 \
+    --hash=sha256:136ab87b17e733e22f0961504d05e77e7be8c9b5a8184f685b4a91a84efe3c26  # cp311-exact-linux-wheel: shapely-2.1.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+shellingham==1.5.4 \
+    --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686  # universal-wheel: shellingham-1.5.4-py2.py3-none-any.whl
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274  # universal-wheel: six-1.17.0-py2.py3-none-any.whl
+soupsieve==2.9.2 \
+    --hash=sha256:8089a26fd974ca7a1f30276d3d8492ab266ab15af581642dfe8aa162e0c1c823  # universal-wheel: soupsieve-2.9.2-py3-none-any.whl
+starlette==1.6.0 \
+    --hash=sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c  # universal-wheel: starlette-1.6.0-py3-none-any.whl
+sympy==1.14.0 \
+    --hash=sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5  # universal-wheel: sympy-1.14.0-py3-none-any.whl
+tabulate==0.10.0 \
+    --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3  # universal-wheel: tabulate-0.10.0-py3-none-any.whl
+tokenizers==0.22.2 \
+    --hash=sha256:369cc9fc8cc10cb24143873a0d95438bb8ee257bb80c71989e3ee290e8d72c67  # abi3-linux-wheel: tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+torch==2.13.0 \
+    --hash=sha256:60fcdcb2f3876e21146cb4524ef06397d727ca9ad5f020818547e25075fe3cb7  # cp311-exact-linux-wheel: torch-2.13.0-cp311-cp311-manylinux_2_28_x86_64.whl
+torchvision==0.28.0 \
+    --hash=sha256:7e80f543b22503d9415e126db5f0ff3917036925e38560ee6b9ae38c571a4002  # cp311-exact-linux-wheel: torchvision-0.28.0-cp311-cp311-manylinux_2_28_x86_64.whl
+tqdm==4.70.0 \
+    --hash=sha256:7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953  # universal-wheel: tqdm-4.70.0-py3-none-any.whl
+transformers==5.15.0 \
+    --hash=sha256:d7f007736f67749ae9490c4f8cb5d30b452ae2d68c8675e50ba8d63ea7feb107  # universal-wheel: transformers-5.15.0-py3-none-any.whl
+tree-sitter-c==0.24.2 \
+    --hash=sha256:5041ef67eb68ce6bc8bb0b1f8ef3a5585ce523dae0c7eec109ab0627dd75aede  # abi3-linux-wheel: tree_sitter_c-0.24.2-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+tree-sitter-javascript==0.25.0 \
+    --hash=sha256:9dc04ba91fc8583344e57c1f1ed5b2c97ecaaf47480011b92fbeab8dda96db75  # abi3-linux-wheel: tree_sitter_javascript-0.25.0-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+tree-sitter-python==0.25.0 \
+    --hash=sha256:86f118e5eecad616ecdb81d171a36dde9bef5a0b21ed71ea9c3e390813c3baf5  # abi3-linux-wheel: tree_sitter_python-0.25.0-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+tree-sitter-typescript==0.23.2 \
+    --hash=sha256:e96d36b85bcacdeb8ff5c2618d75593ef12ebaf1b4eace3477e2bdb2abb1752c  # abi3-linux-wheel: tree_sitter_typescript-0.23.2-cp39-abi3-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+tree-sitter==0.26.0 \
+    --hash=sha256:335294ce0504fcefde5245dff596778ffaf820205b98ae0b549c72e48855f1d8  # cp311-exact-linux-wheel: tree_sitter-0.26.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+typer==0.26.8 \
+    --hash=sha256:3512ca79ac5c11113414b36e80281b872884477722440691c89d1112e321a49c  # universal-wheel: typer-0.26.8-py3-none-any.whl
+typing-inspection==0.4.3 \
+    --hash=sha256:5f42b23858a91e0b4ef521f5418f03a0da3c9216fd2995ef5e73463100e676cd  # universal-wheel: typing_inspection-0.4.3-py3-none-any.whl
+typing_extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8  # universal-wheel: typing_extensions-4.16.0-py3-none-any.whl
+tzdata==2026.3 \
+    --hash=sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931  # universal-wheel: tzdata-2026.3-py2.py3-none-any.whl
+urllib3==2.7.0 \
+    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897  # universal-wheel: urllib3-2.7.0-py3-none-any.whl
+uvicorn==0.52.1 \
+    --hash=sha256:e4403f9d93188cf9d1088e9f40e3acd12630e2df8675316704379a7fc20fff6a  # universal-wheel: uvicorn-0.52.1-py3-none-any.whl
+watchfiles==1.2.0 \
+    --hash=sha256:a711b51aec4370d0dcda5b6c09463206f133a5759341d7744b953a7b62e1100e  # cp311-exact-linux-wheel: watchfiles-1.2.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+websockets==16.1.1 \
+    --hash=sha256:da4ca1a9d72f9030b3146b8d7022719a9f3d478f61efe6f7dd51d243f61c51b2  # cp311-exact-linux-wheel: websockets-16.1.1-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+xlsxwriter==3.2.9 \
+    --hash=sha256:9a5db42bc5dff014806c58a20b9eae7322a134abb6fce3c92c181bfb275ec5b3  # universal-wheel: xlsxwriter-3.2.9-py3-none-any.whl
+
+# --- Step 6 (PaddleOCR) additions -------------------------------------
+# Appended here rather than merged into the alphabetical block above, and
+# deliberately INCOMPLETE relative to the rest of this file: these three
+# hashes are for paddlepaddle/paddlex/paddleocr's OWN wheel files only,
+# each independently verified by a real `pip download` in this session
+# (not PyPI-metadata-only, and not relayed through any summarising tool --
+# every digest below was computed directly with Python's hashlib against
+# the downloaded .whl bytes). Their transitive dependency tree (opencv-
+# contrib-python, shapely, pyclipper, protobuf, and paddlepaddle's own
+# numerous native deps) was NOT individually hash-pinned in this pass --
+# unlike Docling's full 105-package closure above, hand-resolving another
+# ~20-30 packages one PyPI query at a time was judged not worth the time
+# for this step given the same information is producible mechanically by
+# running `pip-compile --generate-hashes` for real inside the actual
+# Python 3.11 Linux container (the document-processor CI job), which this
+# service could not do locally (no Docker/Linux 3.11 environment in this
+# dev sandbox). Treat this as a partial lock; completing it via a real
+# pip-compile run in CI is a known follow-up, not done here.
+paddlepaddle==3.3.1 \
+    --hash=sha256:bb22396233d807f6957d9c4a6a1edc76693fb589c4ee3d17caf7e39113ca4047  # cp311-exact-linux-wheel: paddlepaddle-3.3.1-cp311-cp311-manylinux1_x86_64.whl (194,813,574 bytes)
+paddlex==3.7.2 \
+    --hash=sha256:f1678bf650bbaccfd8f0d4e49d0ae631b4685c829fdae6e802ccd90d4fcb9a7f  # universal-wheel: paddlex-3.7.2-py3-none-any.whl (2,239,708 bytes)
+paddleocr==3.7.0 \
+    --hash=sha256:c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338  # universal-wheel: paddleocr-3.7.0-py3-none-any.whl (146,750 bytes)

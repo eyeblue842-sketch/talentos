@@ -4,9 +4,15 @@ import {
   serializePublicJob,
   serializeSavedJob,
 } from '../serializers/index.js';
+import {
+  deletePrivateFile,
+  readPrivateFileNodeStream,
+  storePrivateFile,
+} from '../config/storage.js';
 import { buildPublicJobWhere } from './publicPortalService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
+import { touchCandidateLastActive } from './candidateActivityService.js';
 import {
   countApplications,
   countCandidateJobViews,
@@ -53,6 +59,10 @@ import {
   upsertCandidateJobViewRecord,
   upsertSavedJobRecord,
 } from '../repositories/candidate/candidateRepository.js';
+import {
+  normalizeCandidateProfileForPresentation,
+  sanitizeCandidateDisplayField,
+} from './candidateProfileSanitizer.js';
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase();
@@ -81,6 +91,11 @@ function maybeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const PROFILE_PHOTO_PREFIX = 'candidate-profile-photos';
+const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+const PROFILE_PHOTO_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const PROFILE_PHOTO_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
 function maybeJsonArray(value) {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -92,6 +107,97 @@ function maybeJsonArray(value) {
     }
   }
   return [];
+}
+
+function buildProfilePhotoReference(storageProvider, storageKey) {
+  return `private:${storageProvider}:${storageKey}`;
+}
+
+function parseProfilePhotoReference(reference) {
+  const raw = String(reference || '').trim();
+  const match = raw.match(/^private:(local|s3):(.+)$/);
+  if (!match) return null;
+  return {
+    storageProvider: match[1],
+    storageKey: match[2],
+  };
+}
+
+function profilePhotoMimeTypeFromStorageKey(storageKey) {
+  const lower = String(storageKey || '').toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+function isJpegBuffer(buffer) {
+  return buffer?.length >= 3
+    && buffer[0] === 0xff
+    && buffer[1] === 0xd8
+    && buffer[2] === 0xff;
+}
+
+function isPngBuffer(buffer) {
+  return buffer?.length >= 8
+    && buffer[0] === 0x89
+    && buffer[1] === 0x50
+    && buffer[2] === 0x4e
+    && buffer[3] === 0x47
+    && buffer[4] === 0x0d
+    && buffer[5] === 0x0a
+    && buffer[6] === 0x1a
+    && buffer[7] === 0x0a;
+}
+
+function isWebpBuffer(buffer) {
+  return buffer?.length >= 12
+    && buffer.toString('ascii', 0, 4) === 'RIFF'
+    && buffer.toString('ascii', 8, 12) === 'WEBP';
+}
+
+function detectProfilePhotoType(file) {
+  const buffer = file?.buffer;
+  if (isJpegBuffer(buffer)) {
+    return { mimeType: 'image/jpeg', extension: '.jpg' };
+  }
+  if (isPngBuffer(buffer)) {
+    return { mimeType: 'image/png', extension: '.png' };
+  }
+  if (isWebpBuffer(buffer)) {
+    return { mimeType: 'image/webp', extension: '.webp' };
+  }
+  return null;
+}
+
+function validateProfilePhotoFile(file) {
+  if (!file || !file.buffer) {
+    const error = new Error('Please choose a profile photo to upload.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const sizeBytes = Number(file.size || file.buffer.length || 0);
+  if (!sizeBytes) {
+    const error = new Error('The selected profile photo appears to be empty.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (sizeBytes > PROFILE_PHOTO_MAX_BYTES) {
+    const error = new Error('Profile photo must be smaller than 5 MB.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const detectedType = detectProfilePhotoType(file);
+  const extension = `.${String(file.originalname || '').split('.').pop() || ''}`.toLowerCase();
+  if (!detectedType || !PROFILE_PHOTO_ALLOWED_MIME_TYPES.has(detectedType.mimeType) || !PROFILE_PHOTO_ALLOWED_EXTENSIONS.has(extension)) {
+    const error = new Error('Please upload a JPG, PNG, or WebP image.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return detectedType;
 }
 
 function firstNonEmpty(values = []) {
@@ -151,6 +257,7 @@ async function recordCandidateActivity(candidateId, type, metadata = {}) {
       applicationId: metadata.applicationId || null,
       userId: metadata.userId || null,
     });
+    await touchCandidateLastActive(candidateId);
   } catch (error) {
     if (isDeploymentFailure(error)) {
       throw error;
@@ -188,33 +295,47 @@ async function recordCandidateAuditLog(payload, options = {}) {
 }
 
 function profileCompletionSections(profile) {
-  const skillEntries = serializeEntryArray(profile.skillEntries);
-  const hasSkillDepth = maybeArray(profile.skills).length >= 3 || skillEntries.length >= 1;
-  const hasPreferences = maybeArray(profile.preferredRoles).length > 0
-    && maybeArray(profile.preferredLocations).length > 0
-    && maybeArray(profile.workplacePreferences).length > 0
-    && maybeArray(profile.employmentPreferences).length > 0;
+  const safeProfile = normalizeCandidateProfileForPresentation(profile);
+  const skillEntries = serializeEntryArray(safeProfile.skillEntries);
+  const experienceEntries = serializeEntryArray(safeProfile.experienceEntries);
+  const educationEntries = serializeEntryArray(safeProfile.educationEntries);
+  const certificationEntries = serializeEntryArray(safeProfile.certificationEntries);
+  const languageEntries = serializeEntryArray(safeProfile.languageEntries);
+  const projectEntries = serializeEntryArray(safeProfile.projectEntries);
+  const hasSkillDepth = maybeArray(safeProfile.skills).length >= 3 || skillEntries.length >= 1;
+  const hasPreferences = maybeArray(safeProfile.preferredRoles).length > 0
+    && maybeArray(safeProfile.preferredLocations).length > 0
+    && maybeArray(safeProfile.workplacePreferences).length > 0
+    && maybeArray(safeProfile.employmentPreferences).length > 0;
+  const hasExperience = experienceEntries.some((entry) => firstNonEmpty([entry.company, entry.title, entry.jobTitle, entry.designation, entry.summary]));
+  const hasEducation = educationEntries.some((entry) => firstNonEmpty([entry.degree, entry.institution, entry.fieldOfStudy, entry.year]));
+  const hasCertifications = certificationEntries.some((entry) => firstNonEmpty([entry.name, entry.issuingOrganisation]));
+  const hasProjectsOrLanguages = projectEntries.some((entry) => firstNonEmpty([entry.projectName, entry.name, entry.summary]))
+    || languageEntries.some((entry) => firstNonEmpty([entry.language, entry.name]) && firstNonEmpty([entry.proficiency]));
   const sections = [
     {
       key: 'basic_details',
       label: 'Basic details',
-      weight: 20,
-      complete: Boolean(profile.fullName && profile.currentTitle && profile.location),
+      weight: 15,
+      complete: Boolean(safeProfile.fullName && safeProfile.phoneNumber && safeProfile.currentTitle && safeProfile.location),
     },
     {
       key: 'professional_details',
       label: 'Professional details',
-      weight: 15,
+      weight: 10,
+      // totalExperience alone no longer gates this section: a candidate
+      // with zero total experience (a fresher) is not "missing" experience,
+      // so professional identity (headline/summary/current role/employment
+      // status) is evaluated on its own, independent of experience.
       complete: Boolean(
-        profile.totalExperience >= 0
-        && (profile.summary || profile.headline || profile.currentEmployer || profile.currentDesignation || profile.employmentStatus),
+        safeProfile.summary || safeProfile.headline || safeProfile.currentEmployer || safeProfile.currentDesignation || safeProfile.employmentStatus,
       ),
     },
     {
       key: 'resume',
       label: 'Resume availability',
-      weight: 20,
-      complete: Boolean(profile.resumeUrl || profile.latestResumeAssetId),
+      weight: 10,
+      complete: Boolean(safeProfile.resumeUrl || safeProfile.latestResumeAssetId),
     },
     {
       key: 'skills',
@@ -223,16 +344,43 @@ function profileCompletionSections(profile) {
       complete: hasSkillDepth,
     },
     {
+      key: 'experience',
+      label: 'Experience history',
+      weight: 10,
+      // Zero total experience is a complete, correct state for a fresher -
+      // there is no employment history to enter. Only a positive
+      // totalExperience with no real entries counts as incomplete.
+      complete: hasExperience || safeProfile.totalExperience === 0,
+    },
+    {
+      key: 'education',
+      label: 'Education',
+      weight: 8,
+      complete: hasEducation,
+    },
+    {
+      key: 'certifications',
+      label: 'Certifications',
+      weight: 6,
+      complete: hasCertifications,
+    },
+    {
       key: 'preferences',
       label: 'Preferences',
-      weight: 15,
+      weight: 10,
       complete: hasPreferences,
     },
     {
       key: 'summary',
       label: 'Professional summary and links',
-      weight: 15,
-      complete: Boolean(profile.headline && profile.summary && firstNonEmpty([profile.linkedInUrl, profile.portfolioUrl, profile.githubUrl])),
+      weight: 10,
+      complete: Boolean(safeProfile.headline && safeProfile.summary && firstNonEmpty([safeProfile.linkedInUrl, safeProfile.portfolioUrl, safeProfile.githubUrl])),
+    },
+    {
+      key: 'projects_languages',
+      label: 'Projects and languages',
+      weight: 6,
+      complete: hasProjectsOrLanguages,
     },
   ];
 
@@ -240,15 +388,16 @@ function profileCompletionSections(profile) {
 }
 
 function isCandidateOnboardingComplete(profile) {
-  const sections = profileCompletionSections(profile);
+  const safeProfile = normalizeCandidateProfileForPresentation(profile);
+  const sections = profileCompletionSections(safeProfile);
   const requiredBasics = Boolean(
-    profile.fullName
-    && profile.phoneNumber
-    && profile.location
-    && profile.currentTitle
-    && maybeArray(profile.skills).length > 0,
+    safeProfile.fullName
+    && safeProfile.phoneNumber
+    && safeProfile.location
+    && safeProfile.currentTitle
+    && maybeArray(safeProfile.skills).length > 0,
   );
-  const hasResumeSignal = Boolean(profile.latestResumeAssetId || profile.onboardingSkippedResume);
+  const hasResumeSignal = Boolean(safeProfile.latestResumeAssetId || safeProfile.onboardingSkippedResume);
   return requiredBasics && hasResumeSignal && sections.some((section) => section.key === 'preferences' && section.complete);
 }
 
@@ -272,6 +421,93 @@ export function calculateProfileCompletion(profile) {
       weight: section.weight,
       complete: section.complete,
     })),
+  };
+}
+
+function buildResumeStatus(profile, latestResumeAsset = null) {
+  const asset = latestResumeAsset || profile.latestResumeAsset || null;
+  const parsingStatus = asset?.parsingStatus || (profile.latestResumeAssetId ? 'PENDING' : null);
+
+  let label = 'Not uploaded';
+  let message = 'Upload a resume to unlock faster profile completion and recruiter-ready metadata.';
+  if (parsingStatus === 'PENDING') {
+    label = 'Queued for parsing';
+    message = 'Your resume is queued for parsing.';
+  } else if (parsingStatus === 'PROCESSING') {
+    label = 'Parsing resume';
+    message = 'Careeriz is extracting and organizing resume details in the background.';
+  } else if (parsingStatus === 'COMPLETED') {
+    label = 'Parsed successfully';
+    message = 'Resume details are available to review and apply to your profile.';
+  } else if (parsingStatus === 'PARTIAL') {
+    label = 'Needs review';
+    message = 'Careeriz extracted limited resume data and skipped low-confidence updates. Review the resume or retry parsing.';
+  } else if (parsingStatus === 'FAILED') {
+    label = 'Parsing failed';
+    message = "We couldn't fully parse this resume. Your uploaded file is safe. You can retry parsing or update your profile manually.";
+  }
+
+  return {
+    hasResume: Boolean(profile.latestResumeAssetId || asset),
+    primaryResumeId: profile.latestResumeAssetId || asset?.id || null,
+    filename: asset?.originalFilename || null,
+    uploadedAt: asset?.createdAt?.toISOString?.() || asset?.createdAt || null,
+    updatedAt: asset?.updatedAt?.toISOString?.() || asset?.updatedAt || null,
+    parsingStatus,
+    parsingStatusLabel: label,
+    parsingStatusMessage: message,
+    primaryResume: asset ? {
+      id: asset.id,
+      filename: asset.originalFilename,
+      source: asset.source,
+      parsingStatus: asset.parsingStatus,
+      parsingStatusLabel: label,
+      updatedAt: asset.updatedAt?.toISOString?.() || asset.updatedAt || null,
+    } : null,
+  };
+}
+
+function buildResumeSuggestions(latestResumeAsset = null) {
+  const suggestionEntries = latestResumeAsset?.parsedData?.suggestedUpdates || {};
+  const items = Object.entries(suggestionEntries).map(([field, suggestion]) => ({
+    field,
+    currentValue: suggestion?.currentValue ?? null,
+    resumeValue: typeof suggestion?.resumeValue === 'string'
+      ? sanitizeCandidateDisplayField(field, suggestion.resumeValue)
+      : suggestion?.resumeValue ?? null,
+    confidence: suggestion?.confidence ?? 0,
+  })).filter((item) => item.resumeValue != null);
+
+  return {
+    hasSuggestions: items.length > 0,
+    assetId: latestResumeAsset?.id || null,
+    title: 'We found fresh details from your resume',
+    description: 'Review the information we found and update your profile.',
+    items,
+    reviewedAt: latestResumeAsset?.parsedData?.lastReviewedAt || null,
+  };
+}
+
+function buildProfileSnapshot(profile, completion, latestResumeAsset = null) {
+  const safeProfile = normalizeCandidateProfileForPresentation(profile);
+  const resumeStatus = buildResumeStatus(profile, latestResumeAsset);
+  return {
+    completionPercentage: completion.percentage,
+    profileImageUrl: safeProfile.profileImageUrl || null,
+    fullName: safeProfile.fullName,
+    headline: safeProfile.headline || null,
+    currentTitle: safeProfile.currentTitle || null,
+    currentEmployer: safeProfile.currentEmployer || null,
+    currentDesignation: safeProfile.currentDesignation || null,
+    location: safeProfile.location || null,
+    totalExperience: safeProfile.totalExperience,
+    currentCtcLpa: safeProfile.currentCtcLpa ?? null,
+    phoneNumber: safeProfile.phoneNumber || null,
+    email: safeProfile.email || null,
+    noticePeriodDays: safeProfile.noticePeriodDays ?? null,
+    availability: safeProfile.availability || null,
+    updatedAt: safeProfile.updatedAt?.toISOString?.() || safeProfile.updatedAt || null,
+    resumeStatus,
   };
 }
 
@@ -467,14 +703,20 @@ export async function getCandidateSelfProfile(candidateId) {
     throw error;
   }
 
+  const completion = calculateProfileCompletion(profile);
+  const resumeStatus = buildResumeStatus(profile, profile.latestResumeAsset);
+  const resumeSuggestions = buildResumeSuggestions(profile.latestResumeAsset);
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
-    completion: calculateProfileCompletion(profile),
+    completion,
+    snapshot: buildProfileSnapshot(profile, completion, profile.latestResumeAsset),
+    resumeStatus,
+    resumeSuggestions,
   };
 }
 
 export async function updateCandidateSelfProfile(candidateId, payload, requestMeta = {}) {
-  const profile = await updateCandidateProfileWithLatestResume(candidateId, {
+  const updateData = {
     ...payload,
     phoneNumber: payload.phoneNumber || null,
     skills: payload.skills ? normalizeStringArray(payload.skills) : undefined,
@@ -491,7 +733,6 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
     currentDesignation: payload.currentDesignation || null,
     employmentStatus: payload.employmentStatus || null,
     lastWorkingDate: payload.lastWorkingDate !== undefined ? asOptionalDate(payload.lastWorkingDate) : undefined,
-    profileImageUrl: payload.profileImageUrl || null,
     portfolioUrl: payload.portfolioUrl || null,
     linkedInUrl: payload.linkedInUrl || null,
     githubUrl: payload.githubUrl || null,
@@ -500,6 +741,14 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
     salaryVisibleToRecruiters: payload.salaryVisibleToRecruiters ?? undefined,
     resumeVisibleToRecruiters: payload.resumeVisibleToRecruiters ?? undefined,
     onboardingCompletedAt: payload.onboardingCompletedAt === null ? null : undefined,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'profileImageUrl')) {
+    updateData.profileImageUrl = payload.profileImageUrl || null;
+  }
+
+  const profile = await updateCandidateProfileWithLatestResume(candidateId, {
+    ...updateData,
   });
 
   await recordCandidateActivity(candidateId, 'PROFILE_UPDATED');
@@ -520,6 +769,130 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
     completion: calculateProfileCompletion(profile),
+    snapshot: buildProfileSnapshot(profile, calculateProfileCompletion(profile), profile.latestResumeAsset),
+    resumeStatus: buildResumeStatus(profile, profile.latestResumeAsset),
+    resumeSuggestions: buildResumeSuggestions(profile.latestResumeAsset),
+  };
+}
+
+export async function uploadCandidateProfilePhoto(candidateId, file, requestMeta = {}) {
+  const profile = await findCandidateProfileById(candidateId);
+  if (!profile) {
+    const error = new Error('Candidate profile not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const detectedType = validateProfilePhotoFile(file);
+  const basename = String(file.originalname || 'profile-photo').replace(/\.[^.]+$/, '') || 'profile-photo';
+  const normalizedFile = {
+    ...file,
+    originalname: `${basename}${detectedType.extension}`,
+    mimetype: detectedType.mimeType,
+  };
+
+  const stored = await storePrivateFile(normalizedFile, {
+    prefix: PROFILE_PHOTO_PREFIX,
+    metadata: {
+      candidateId,
+      kind: 'candidate-profile-photo',
+    },
+  });
+
+  const nextReference = buildProfilePhotoReference(stored.storageProvider, stored.storageKey);
+  const previousReference = parseProfilePhotoReference(profile.profileImageUrl);
+
+  const updated = await updateCandidateProfileWithLatestResume(candidateId, {
+    profileImageUrl: nextReference,
+  });
+
+  if (previousReference?.storageKey && previousReference.storageKey.startsWith(`${PROFILE_PHOTO_PREFIX}/`) && previousReference.storageKey !== stored.storageKey) {
+    await deletePrivateFile(previousReference.storageProvider, previousReference.storageKey);
+  }
+
+  await recordCandidateActivity(candidateId, 'PROFILE_UPDATED');
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_PROFILE_UPDATED');
+
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.profile-photo.upload',
+      entityType: 'CandidateProfile',
+      entityId: candidateId,
+      metadata: { candidateId, storageKey: stored.storageKey },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    }, { bestEffort: true });
+  }
+
+  const completion = calculateProfileCompletion(updated);
+  return {
+    profile: serializeCandidateProfile(updated, { includePrivate: true }),
+    completion,
+    snapshot: buildProfileSnapshot(updated, completion, updated.latestResumeAsset),
+  };
+}
+
+export async function removeCandidateProfilePhoto(candidateId, requestMeta = {}) {
+  const profile = await findCandidateProfileById(candidateId);
+  if (!profile) {
+    const error = new Error('Candidate profile not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const previousReference = parseProfilePhotoReference(profile.profileImageUrl);
+  const updated = await updateCandidateProfileWithLatestResume(candidateId, {
+    profileImageUrl: null,
+  });
+
+  if (previousReference?.storageKey && previousReference.storageKey.startsWith(`${PROFILE_PHOTO_PREFIX}/`)) {
+    await deletePrivateFile(previousReference.storageProvider, previousReference.storageKey);
+  }
+
+  await recordCandidateActivity(candidateId, 'PROFILE_UPDATED');
+  await markCandidateIntelligenceStale(candidateId, 'CANDIDATE_PROFILE_UPDATED');
+
+  if (requestMeta.actorUserId) {
+    await recordCandidateAuditLog({
+      actorUserId: requestMeta.actorUserId,
+      action: 'candidate.profile-photo.remove',
+      entityType: 'CandidateProfile',
+      entityId: candidateId,
+      metadata: { candidateId },
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    }, { bestEffort: true });
+  }
+
+  const completion = calculateProfileCompletion(updated);
+  return {
+    profile: serializeCandidateProfile(updated, { includePrivate: true }),
+    completion,
+    snapshot: buildProfileSnapshot(updated, completion, updated.latestResumeAsset),
+  };
+}
+
+export async function getCandidateProfilePhotoFile(candidateId) {
+  const profile = await findCandidateProfileById(candidateId);
+  if (!profile?.profileImageUrl) {
+    const error = new Error('Profile photo not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const storedReference = parseProfilePhotoReference(profile.profileImageUrl);
+  if (!storedReference) {
+    const error = new Error('Profile photo is unavailable.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const file = await readPrivateFileNodeStream(storedReference.storageProvider, storedReference.storageKey);
+  return {
+    stream: file.stream,
+    contentLength: file.contentLength,
+    contentType: profilePhotoMimeTypeFromStorageKey(storedReference.storageKey),
   };
 }
 
@@ -918,9 +1291,14 @@ export async function getCandidateDashboard(candidateId, userId) {
   const withdrawnApplicationsCount = applications.filter((item) => item.statusLabel === 'Withdrawn').length;
   const closedApplicationsCount = applications.filter((item) => ['Rejected', 'Selected'].includes(item.statusLabel)).length;
 
+  const latestResumeAsset = resumes[0] || profile.latestResumeAsset || null;
+  const resumeStatus = buildResumeStatus(profile, latestResumeAsset);
+  const resumeSuggestions = buildResumeSuggestions(latestResumeAsset);
+
   return {
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
     completion,
+    snapshot: buildProfileSnapshot(profile, completion, latestResumeAsset),
     metrics: {
       savedJobsCount,
       applicationsCount,
@@ -940,16 +1318,17 @@ export async function getCandidateDashboard(candidateId, userId) {
       completedAt: profile.onboardingCompletedAt?.toISOString?.() || profile.onboardingCompletedAt || null,
     },
     resumeStatus: {
-      hasResume: Boolean(profile.latestResumeAssetId),
-      primaryResumeId: profile.latestResumeAssetId,
-      primaryResume: resumes[0] ? {
-        id: resumes[0].id,
-        filename: resumes[0].originalFilename,
-        source: resumes[0].source,
-        parsingStatus: resumes[0].parsingStatus,
-        updatedAt: resumes[0].updatedAt?.toISOString?.() || resumes[0].updatedAt,
+      ...resumeStatus,
+      primaryResume: latestResumeAsset ? {
+        id: latestResumeAsset.id,
+        filename: latestResumeAsset.originalFilename,
+        source: latestResumeAsset.source,
+        parsingStatus: latestResumeAsset.parsingStatus,
+        parsingStatusLabel: resumeStatus.parsingStatusLabel,
+        updatedAt: latestResumeAsset.updatedAt?.toISOString?.() || latestResumeAsset.updatedAt,
       } : null,
     },
+    resumeSuggestions,
     savedJobs: savedJobs.map((row) => serializeSavedJob(row, { saved: true })),
     recentApplications: applications.map((application) => ({
       id: application.id,
@@ -1008,6 +1387,9 @@ export async function getCandidateOnboardingState(candidateId) {
     currentStep: profile.onboardingStep || 1,
     completion: calculateProfileCompletion(profile),
     profile: serializeCandidateProfile(profile, { includePrivate: true }),
+    snapshot: buildProfileSnapshot(profile, calculateProfileCompletion(profile), profile.resumeAssets[0] || null),
+    resumeStatus: buildResumeStatus(profile, profile.resumeAssets[0] || null),
+    resumeSuggestions: buildResumeSuggestions(profile.resumeAssets[0] || null),
     resumes: profile.resumeAssets.map((resume) => ({
       id: resume.id,
       filename: resume.originalFilename,
@@ -1015,6 +1397,7 @@ export async function getCandidateOnboardingState(candidateId) {
       isPrimary: resume.isPrimary,
       status: resume.status,
       parsingStatus: resume.parsingStatus,
+      parsingStatusLabel: buildResumeStatus(profile, resume).parsingStatusLabel,
     })),
   };
 }

@@ -1,32 +1,53 @@
 import Link from 'next/link';
+import { Bell } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
-import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
 import { clearRecentJobsAction } from '@/app/candidate/actions';
 import { getCandidateDashboard } from '@/lib/api';
 import { candidateNav } from '@/lib/navigation';
 import { PageHeader } from '@/components/ui/page-header';
+import { CandidateProfileSnapshot } from '@/components/sections/candidate-profile-snapshot';
+import { CandidateResumeSuggestionBanner } from '@/components/sections/candidate-resume-suggestion-banner';
 
 export default async function CandidateDashboardPage() {
   const dashboard = await getCandidateDashboard();
-  const resumeStatus = dashboard.resumeStatus || {
-    hasResume: false,
-    primaryResume: null,
-  };
-  const completionUpdatedLabel = dashboard.completion.updatedAt
-    ? new Date(dashboard.completion.updatedAt).toLocaleDateString()
-    : 'Not available';
+  const resumeStatus = dashboard.resumeStatus || { hasResume: false, primaryResume: null };
+  const unreadNotificationsCount = Number(dashboard.metrics?.unreadNotificationsCount || 0);
+  const unreadNotificationsBadge = unreadNotificationsCount > 99 ? '99+' : String(unreadNotificationsCount);
+  const notificationsLabel = unreadNotificationsCount > 0
+    ? `Notifications, ${unreadNotificationsCount} unread`
+    : 'Notifications';
+  const quickLinks = [
+    { id: 'resume', label: 'Resume', href: '/candidate/resumes' },
+    { id: 'resume-headline', label: 'Resume headline', href: '/candidate/profile#resume-headline' },
+    { id: 'key-skills', label: 'Key skills', href: '/candidate/profile#key-skills' },
+    { id: 'employment', label: 'Employment', href: '/candidate/profile#employment' },
+    { id: 'education', label: 'Education', href: '/candidate/profile#education' },
+    { id: 'projects', label: 'Projects', href: '/candidate/profile#projects' },
+    { id: 'profile-summary', label: 'Profile summary', href: '/candidate/profile#professional-story' },
+    { id: 'career-profile', label: 'Career profile', href: '/candidate/profile#preferences' },
+  ];
 
   return (
     <WorkspaceShell brand="Careeriz" items={candidateNav}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader
-          eyebrow="Candidate dashboard"
-          title="Keep your search moving with clear next actions"
-          description="Track applications, profile completion, notifications, saved jobs, and recently viewed roles from one place."
+          title="Candidate dashboard"
           breadcrumb={[{ label: 'Candidate' }, { label: 'Dashboard' }]}
         />
         <div className="flex flex-wrap gap-3 lg:justify-end">
+          <Link
+            href="/candidate/notifications"
+            aria-label={notificationsLabel}
+            className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--color-text)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]"
+          >
+            <Bell size={18} aria-hidden="true" />
+            {unreadNotificationsCount > 0 ? (
+              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--brand)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                {unreadNotificationsBadge}
+              </span>
+            ) : null}
+          </Link>
           {dashboard.quickActions.map((action) => (
             <Link key={action.href} href={action.href} className="rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
               {action.label}
@@ -35,42 +56,17 @@ export default async function CandidateDashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Profile completion" value={`${dashboard.completion.percentage}%`} helper={dashboard.completion.recommendedNextAction} />
-        <StatCard label="Active applications" value={dashboard.metrics.activeApplicationsCount} helper={`${dashboard.metrics.interviewApplicationsCount} in interview stage`} />
-        <StatCard label="Unread notifications" value={dashboard.metrics.unreadNotificationsCount} helper={`${dashboard.metrics.savedJobsCount} saved jobs`} />
-      </div>
-
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="font-[var(--font-display)] text-2xl font-semibold">Profile completion</h2>
-                <p className="mt-2 text-sm text-[var(--muted)]">Updated {completionUpdatedLabel}</p>
-              </div>
-              <div className="rounded-full bg-[var(--soft)] px-4 py-2 text-sm font-semibold text-[var(--brand)]">{dashboard.completion.percentage}%</div>
-            </div>
-            <div className="mt-5 space-y-3">
-              {dashboard.completion.missingSections.length ? dashboard.completion.missingSections.map((section) => (
-                <div key={section} className="rounded-2xl border border-[var(--line)] px-4 py-3 text-sm">
-                  {section}
-                </div>
-              )) : (
-                <p className="text-sm text-[var(--muted)]">Your core profile sections are complete.</p>
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold">Application summary</h2>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Active</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.activeApplicationsCount}</p></div>
-              <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Interviews</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.interviewApplicationsCount}</p></div>
-              <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Closed</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.closedApplicationsCount}</p></div>
-              <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Withdrawn</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.withdrawnApplicationsCount}</p></div>
-            </div>
-          </Card>
+      <CandidateResumeSuggestionBanner suggestions={dashboard.resumeSuggestions} compact />
+      <CandidateProfileSnapshot snapshot={dashboard.snapshot} quickLinks={quickLinks} />
+      <Card>
+        <h2 className="font-[var(--font-display)] text-2xl font-semibold">Application summary</h2>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Active</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.activeApplicationsCount}</p></div>
+          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Interviews</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.interviewApplicationsCount}</p></div>
+          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Closed</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.closedApplicationsCount}</p></div>
+          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Withdrawn</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.withdrawnApplicationsCount}</p></div>
         </div>
+      </Card>
 
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <Card>
@@ -81,7 +77,8 @@ export default async function CandidateDashboardPage() {
             <div className="mt-5 space-y-3 text-sm">
               <p><span className="font-semibold">Resume uploaded:</span> {resumeStatus.hasResume ? 'Yes' : 'No'}</p>
               <p><span className="font-semibold">Primary resume:</span> {resumeStatus.primaryResume?.filename || 'Not set'}</p>
-              <p><span className="font-semibold">Parsing status:</span> {resumeStatus.primaryResume?.parsingStatus || 'Not available'}</p>
+              <p><span className="font-semibold">Parsing status:</span> {resumeStatus.parsingStatusLabel || 'Not available'}</p>
+              <p className="text-[var(--muted)]">{resumeStatus.parsingStatusMessage}</p>
             </div>
           </Card>
 

@@ -12,7 +12,14 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['**/*.js'],
+    // .mjs is Node script scope too (backend/scripts/*.mjs) - widened from
+    // '**/*.js' alone, which left process/console/Buffer/setTimeout/fetch/
+    // FormData/Blob reporting as no-undef in every .mjs file (they were
+    // falling through to js.configs.recommended above with no Node
+    // globals at all). globals.node (the same set already used here)
+    // already defines all of those - confirmed directly against this
+    // project's installed globals package - so no extra entries are added.
+    files: ['**/*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

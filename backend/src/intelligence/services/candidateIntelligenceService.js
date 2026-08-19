@@ -1010,7 +1010,7 @@ export async function runCandidateIntelligenceGenerationTask(task) {
   if (!actorUser) return 'cancelled';
 
   const context = await buildCandidateContext(actorUser, candidateId, 'generate');
-  const state = await upsertCandidateIntelligenceState(context.candidate, {
+  await upsertCandidateIntelligenceState(context.candidate, {
     organisationId: context.permissionContext.organisationId,
     kind: DEFAULT_KIND,
     status: context.aiEnabled ? 'PENDING' : 'DISABLED',

@@ -11,6 +11,11 @@ const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:n
 export function Dialog({ open, onClose, title, description, children, className }) {
   const overlayRef = useRef(null);
   const panelRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -22,7 +27,7 @@ export function Dialog({ open, onClose, title, description, children, className 
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
 
@@ -50,7 +55,7 @@ export function Dialog({ open, onClose, title, description, children, className 
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === 'undefined') {
     return null;
@@ -62,7 +67,7 @@ export function Dialog({ open, onClose, title, description, children, className 
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === overlayRef.current) {
-          onClose?.();
+          onCloseRef.current?.();
         }
       }}
     >
@@ -79,7 +84,7 @@ export function Dialog({ open, onClose, title, description, children, className 
             {title ? <h2 id="dialog-title" className="text-xl font-semibold text-[var(--color-text)]">{title}</h2> : null}
             {description ? <p id="dialog-description" className="text-sm text-[var(--color-text-muted)]">{description}</p> : null}
           </div>
-          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 rounded-full shadow-none" aria-label="Close dialog" onClick={() => onClose?.()}>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 rounded-full shadow-none" aria-label="Close dialog" onClick={() => onCloseRef.current?.()}>
             <X size={16} aria-hidden="true" />
           </Button>
         </div>

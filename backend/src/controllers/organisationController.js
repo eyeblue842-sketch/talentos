@@ -1,5 +1,6 @@
 import {
   addOrganisationMember,
+  createOrganisationPost,
   completeRecruiterWorkspaceOnboarding,
   createOrganisationForUser,
   getCurrentOrganisation,
@@ -102,6 +103,20 @@ export async function getOrganisationAuditLogs(req, res, next) {
   try {
     const logs = await listAuditLogsForOrganisation(req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, logs);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postOrganisationPost(req, res, next) {
+  try {
+    const post = await createOrganisationPost(
+      req.user,
+      req.body,
+      req.user.activeMembership?.organisationId,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    sendSuccess(res, 201, post);
   } catch (error) {
     next(error);
   }

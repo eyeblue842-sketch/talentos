@@ -154,9 +154,10 @@ export async function readPrivateFileNodeStream(storageProvider, storageKey) {
   }
 
   const fullPath = resolveLocalPath(storageKey);
+  const stats = fs.statSync(fullPath);
   return {
     stream: fs.createReadStream(fullPath),
-    contentLength: fs.statSync(fullPath).size,
+    contentLength: stats.size,
     contentType: 'application/octet-stream',
   };
 }

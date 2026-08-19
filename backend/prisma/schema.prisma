@@ -12,11 +12,48 @@ enum UserRole {
   RECRUITER
   CANDIDATE
   ADMIN
+  // Portal-scoped admin roles: CANDIDATE_ADMIN behaves as a normal candidate
+  // everywhere (no elevated access exists to grant yet - reserved for future
+  // candidate-portal-only admin surfaces). RECRUITER_ADMIN gets the existing
+  // recruiter/organisation admin panel scoped to its own organisation, same as
+  // any recruiter OWNER. PLATFORM_ADMIN is an explicit opt-in equivalent of the
+  // legacy org-agnostic ADMIN platform bypass, for optional system-wide access.
+  CANDIDATE_ADMIN
+  RECRUITER_ADMIN
+  PLATFORM_ADMIN
 }
 
 enum OrganisationStatus {
   ACTIVE
   INACTIVE
+}
+
+// CAREERIZ EMPLOYER ACCESS: identity classification, not an entitlement
+// tier - CONSULTANCY and COMPANY organisations receive identical
+// subscriptions/credits/entitlements (see billingService/entitlementService,
+// which are entirely unaware of this field). Nullable and never defaulted so
+// existing (pre-employer-access) organisations stay unclassified until an
+// authorized admin workflow reviews and sets them explicitly.
+enum OrganisationType {
+  CONSULTANCY
+  COMPANY
+}
+
+// Only meaningful when type = COMPANY. A COMPANY organisation's
+// verifiedDomain starts PENDING at self-registration (the domain didn't
+// match any already-verified COMPANY organisation) and is promoted to
+// VERIFIED only through the platform-admin review workflow
+// (organisationVerificationService.js). CONSULTANCY organisations and
+// legacy organisations stay NOT_APPLICABLE.
+enum DomainVerificationStatus {
+  NOT_APPLICABLE
+  PENDING
+  VERIFIED
+}
+
+enum OrganisationPostStatus {
+  DRAFT
+  PUBLISHED
 }
 
 enum OrganisationUnitType {
@@ -98,6 +135,18 @@ enum BackgroundTaskType {
   JOB_CANDIDATE_RANKING_GENERATION
   DATA_EXPORT
   STALE_RESULT_CLEANUP
+  RESUME_SEARCH_INDEX_SYNC
+  SUBSCRIPTION_RENEWAL_REMINDER
+  JOB_AUTO_CLOSE
+}
+
+enum ResumeSearchIndexStatus {
+  PENDING
+  INDEXED
+  RETRY_SCHEDULED
+  FAILED
+  DELETED
+  SKIPPED
 }
 
 enum CandidateIntelligenceKind {
@@ -407,6 +456,43 @@ enum NotificationType {
   INTERVIEW
   FEEDBACK
   SYSTEM
+  NETWORK
+  MESSAGE
+  BILLING
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+enum ConnectionSource {
+  PROFILE
+  PEOPLE_SEARCH
+  JOB
+  COMPANY
+  SUGGESTION
+  MUTUAL_CONNECTION
+}
+
+enum DirectMessageType {
+  TEXT
+  FILE
+  IMAGE
+}
+
+enum ConnectionRequestPermission {
+  EVERYONE
+  RECRUITERS_ONLY
+  NOBODY
+}
+
+enum ConnectionVisibility {
+  EVERYONE
+  CONNECTIONS_ONLY
+  NOBODY
 }
 
 enum OfferStatus {
@@ -636,178 +722,333 @@ enum SemanticSearchExecutionStatus {
 }
 
 model User {
-  id                         String                      @id @default(cuid())
-  email                      String                      @unique
-  passwordHash               String
-  name                       String?
-  phoneNumber                String?
-  role                       UserRole
-  isActive                   Boolean                     @default(true)
-  accountStatus              UserAccountStatus           @default(ACTIVE)
-  sessionVersion             Int                         @default(0)
-  emailVerifiedAt            DateTime?
-  lastLoginAt                DateTime?
-  mfaEnabled                 Boolean                     @default(false)
-  createdAt                  DateTime                    @default(now())
-  updatedAt                  DateTime                    @updatedAt
-  recruiterProfile           RecruiterProfile?
-  candidateProfile           CandidateProfile?
-  jobs                       Job[]                       @relation("PostedJobs")
-  notes                      AtsNote[]                   @relation("NoteAuthor")
-  applicationActivities      ApplicationActivity[]
-  authTokens                 AuthToken[]
-  memberships                OrganisationMembership[]
-  createdRequisitions        JobRequisition[]            @relation("RequisitionCreatedBy")
-  approvedRequisitions       JobRequisition[]            @relation("RequisitionApprovedBy")
-  managedRequisitions        JobRequisition[]            @relation("RequisitionHiringManager")
-  recruitedRequisitions      JobRequisition[]            @relation("RequisitionRecruiter")
-  managedJobs                Job[]                       @relation("JobHiringManager")
-  interviewPlanCreators      InterviewProcess[]          @relation("InterviewPlanCreatedBy")
-  ownedInterviewRounds       InterviewRound[]            @relation("InterviewRoundOwner")
-  interviewPanelMemberships  InterviewPanelMember[]
-  interviewFeedbacks         InterviewFeedback[]         @relation("InterviewFeedbackAuthor")
-  meetingProviderConnections MeetingProviderConnection[] @relation("MeetingProviderConnectedBy")
-  interviewMeetingsCreated   InterviewMeeting[]          @relation("InterviewMeetingCreatedBy")
-  interviewMeetingsUpdated   InterviewMeeting[]          @relation("InterviewMeetingUpdatedBy")
-  meetingParticipants        MeetingParticipant[]
-  meetingRescheduleRequests  InterviewRescheduleRequest[] @relation("InterviewRescheduleRequestedBy")
-  meetingRescheduleReviews   InterviewRescheduleRequest[] @relation("InterviewRescheduleReviewedBy")
-  meetingScheduleHistory     InterviewScheduleHistory[]  @relation("InterviewScheduleHistoryActor")
-  notifications              Notification[]              @relation("NotificationRecipient")
-  auditLogs                  AuditLog[]                  @relation("AuditLogActor")
-  screeningQuestionTemplates ScreeningQuestionTemplate[] @relation("ScreeningQuestionTemplateAuthor")
-  jobScreeningQuestions      JobScreeningQuestion[]      @relation("JobScreeningQuestionAuthor")
-  resumeAssets               ResumeAsset[]               @relation("ResumeAssetOwner")
-  sentOrganisationInvites    OrganisationInvitation[]    @relation("OrganisationInvitationInvitedBy")
-  acceptedOrganisationInvites OrganisationInvitation[]   @relation("OrganisationInvitationAcceptedBy")
-  createdOffers              Offer[]                     @relation("OfferCreatedBy")
-  updatedOffers              Offer[]                     @relation("OfferUpdatedBy")
-  releasedOffers             Offer[]                     @relation("OfferReleasedBy")
-  offerApprovals             OfferApproval[]             @relation("OfferApprover")
-  offerComments              OfferComment[]              @relation("OfferCommentAuthor")
-  createdRoleDefinitions     OrganisationRoleDefinition[] @relation("RoleDefinitionCreatedBy")
-  updatedRoleDefinitions     OrganisationRoleDefinition[] @relation("RoleDefinitionUpdatedBy")
-  updatedNotificationTemplates NotificationTemplate[]    @relation("NotificationTemplateUpdatedBy")
-  updatedFeatureFlags        FeatureFlag[]               @relation("FeatureFlagUpdatedBy")
-  updatedOrganisationSettings OrganisationSettings[]     @relation("OrganisationSettingsUpdatedBy")
-  requestedIntelligenceExecutions IntelligenceExecution[] @relation("IntelligenceExecutionRequestedBy")
-  intelligenceFeedbacks      IntelligenceFeedback[]
-  backgroundTasksCreated     BackgroundTask[]            @relation("BackgroundTaskCreatedBy")
-  backgroundTasksUpdated     BackgroundTask[]            @relation("BackgroundTaskUpdatedBy")
-  createdResumeImportBatches ResumeImportBatch[]         @relation("ResumeImportBatchCreatedBy")
-  importedCandidates         CandidateProfile[]          @relation("CandidateProfileImportedBy")
-  resolvedResumeImportItems  ResumeImportItem[]          @relation("ResumeImportItemResolvedBy")
-  completedPlatformSetupStates PlatformSetupState[]      @relation("PlatformSetupCompletedBy")
-  resetPlatformSetupStates   PlatformSetupState[]        @relation("PlatformSetupResetBy")
-  createdJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftCreatedBy")
-  updatedJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftUpdatedBy")
-  approvedJobDescriptionDrafts JobDescriptionDraft[]     @relation("JobDescriptionDraftApprovedBy")
-  appliedJobDescriptionDrafts JobDescriptionDraft[]      @relation("JobDescriptionDraftAppliedBy")
-  createdJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateCreatedBy")
-  updatedJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateUpdatedBy")
-  activatedJobDescriptionTemplates JobDescriptionTemplate[] @relation("JobDescriptionTemplateActivatedBy")
+  id                                    String                          @id @default(cuid())
+  email                                 String                          @unique
+  passwordHash                          String
+  name                                  String?
+  phoneNumber                           String?
+  role                                  UserRole
+  isActive                              Boolean                         @default(true)
+  accountStatus                         UserAccountStatus               @default(ACTIVE)
+  sessionVersion                        Int                             @default(0)
+  mustChangePassword                    Boolean                         @default(false)
+  emailVerifiedAt                       DateTime?
+  lastLoginAt                           DateTime?
+  mfaEnabled                            Boolean                         @default(false)
+  createdAt                             DateTime                        @default(now())
+  updatedAt                             DateTime                        @updatedAt
+  recruiterProfile                      RecruiterProfile?
+  candidateProfile                      CandidateProfile?
+  jobs                                  Job[]                           @relation("PostedJobs")
+  notes                                 AtsNote[]                       @relation("NoteAuthor")
+  applicationActivities                 ApplicationActivity[]
+  authTokens                            AuthToken[]
+  memberships                           OrganisationMembership[]
+  createdRequisitions                   JobRequisition[]                @relation("RequisitionCreatedBy")
+  approvedRequisitions                  JobRequisition[]                @relation("RequisitionApprovedBy")
+  managedRequisitions                   JobRequisition[]                @relation("RequisitionHiringManager")
+  recruitedRequisitions                 JobRequisition[]                @relation("RequisitionRecruiter")
+  managedJobs                           Job[]                           @relation("JobHiringManager")
+  interviewPlanCreators                 InterviewProcess[]              @relation("InterviewPlanCreatedBy")
+  ownedInterviewRounds                  InterviewRound[]                @relation("InterviewRoundOwner")
+  interviewPanelMemberships             InterviewPanelMember[]
+  interviewFeedbacks                    InterviewFeedback[]             @relation("InterviewFeedbackAuthor")
+  meetingProviderConnections            MeetingProviderConnection[]     @relation("MeetingProviderConnectedBy")
+  interviewMeetingsCreated              InterviewMeeting[]              @relation("InterviewMeetingCreatedBy")
+  interviewMeetingsUpdated              InterviewMeeting[]              @relation("InterviewMeetingUpdatedBy")
+  meetingParticipants                   MeetingParticipant[]
+  meetingRescheduleRequests             InterviewRescheduleRequest[]    @relation("InterviewRescheduleRequestedBy")
+  meetingRescheduleReviews              InterviewRescheduleRequest[]    @relation("InterviewRescheduleReviewedBy")
+  meetingScheduleHistory                InterviewScheduleHistory[]      @relation("InterviewScheduleHistoryActor")
+  notifications                         Notification[]                  @relation("NotificationRecipient")
+  auditLogs                             AuditLog[]                      @relation("AuditLogActor")
+  screeningQuestionTemplates            ScreeningQuestionTemplate[]     @relation("ScreeningQuestionTemplateAuthor")
+  jobScreeningQuestions                 JobScreeningQuestion[]          @relation("JobScreeningQuestionAuthor")
+  resumeAssets                          ResumeAsset[]                   @relation("ResumeAssetOwner")
+  sentOrganisationInvites               OrganisationInvitation[]        @relation("OrganisationInvitationInvitedBy")
+  acceptedOrganisationInvites           OrganisationInvitation[]        @relation("OrganisationInvitationAcceptedBy")
+  createdOffers                         Offer[]                         @relation("OfferCreatedBy")
+  updatedOffers                         Offer[]                         @relation("OfferUpdatedBy")
+  releasedOffers                        Offer[]                         @relation("OfferReleasedBy")
+  offerApprovals                        OfferApproval[]                 @relation("OfferApprover")
+  offerComments                         OfferComment[]                  @relation("OfferCommentAuthor")
+  createdRoleDefinitions                OrganisationRoleDefinition[]    @relation("RoleDefinitionCreatedBy")
+  updatedRoleDefinitions                OrganisationRoleDefinition[]    @relation("RoleDefinitionUpdatedBy")
+  updatedNotificationTemplates          NotificationTemplate[]          @relation("NotificationTemplateUpdatedBy")
+  updatedFeatureFlags                   FeatureFlag[]                   @relation("FeatureFlagUpdatedBy")
+  updatedOrganisationSettings           OrganisationSettings[]          @relation("OrganisationSettingsUpdatedBy")
+  requestedIntelligenceExecutions       IntelligenceExecution[]         @relation("IntelligenceExecutionRequestedBy")
+  intelligenceFeedbacks                 IntelligenceFeedback[]
+  backgroundTasksCreated                BackgroundTask[]                @relation("BackgroundTaskCreatedBy")
+  backgroundTasksUpdated                BackgroundTask[]                @relation("BackgroundTaskUpdatedBy")
+  createdResumeImportBatches            ResumeImportBatch[]             @relation("ResumeImportBatchCreatedBy")
+  importedCandidates                    CandidateProfile[]              @relation("CandidateProfileImportedBy")
+  resolvedResumeImportItems             ResumeImportItem[]              @relation("ResumeImportItemResolvedBy")
+  completedPlatformSetupStates          PlatformSetupState[]            @relation("PlatformSetupCompletedBy")
+  resetPlatformSetupStates              PlatformSetupState[]            @relation("PlatformSetupResetBy")
+  createdJobDescriptionDrafts           JobDescriptionDraft[]           @relation("JobDescriptionDraftCreatedBy")
+  updatedJobDescriptionDrafts           JobDescriptionDraft[]           @relation("JobDescriptionDraftUpdatedBy")
+  approvedJobDescriptionDrafts          JobDescriptionDraft[]           @relation("JobDescriptionDraftApprovedBy")
+  appliedJobDescriptionDrafts           JobDescriptionDraft[]           @relation("JobDescriptionDraftAppliedBy")
+  createdJobDescriptionTemplates        JobDescriptionTemplate[]        @relation("JobDescriptionTemplateCreatedBy")
+  updatedJobDescriptionTemplates        JobDescriptionTemplate[]        @relation("JobDescriptionTemplateUpdatedBy")
+  activatedJobDescriptionTemplates      JobDescriptionTemplate[]        @relation("JobDescriptionTemplateActivatedBy")
   createdJobDescriptionTemplateVersions JobDescriptionTemplateVersion[] @relation("JobDescriptionTemplateVersionCreatedBy")
-  createdMatchScoringProfiles   MatchScoringProfile[]      @relation("MatchScoringProfileCreatedBy")
-  updatedMatchScoringProfiles   MatchScoringProfile[]      @relation("MatchScoringProfileUpdatedBy")
-  activatedMatchScoringProfiles MatchScoringProfile[]      @relation("MatchScoringProfileActivatedBy")
-  createdMatchScoringProfileVersions MatchScoringProfileVersion[] @relation("MatchScoringProfileVersionCreatedBy")
-  createdRecruiterMatchOverrides RecruiterMatchOverride[]  @relation("RecruiterMatchOverrideCreatedBy")
-  triggeredRankingSnapshots     CandidateRankingSnapshot[] @relation("CandidateRankingSnapshotTriggeredBy")
-  semanticSearchQueries         SemanticSearchQuery[]      @relation("SemanticSearchQueryCreatedBy")
-  semanticSearchExecutions      SemanticSearchExecution[]  @relation("SemanticSearchExecutionCreatedBy")
-  ownedSavedCandidateSearches   SavedCandidateSearch[]     @relation("SavedCandidateSearchOwner")
+  createdMatchScoringProfiles           MatchScoringProfile[]           @relation("MatchScoringProfileCreatedBy")
+  updatedMatchScoringProfiles           MatchScoringProfile[]           @relation("MatchScoringProfileUpdatedBy")
+  activatedMatchScoringProfiles         MatchScoringProfile[]           @relation("MatchScoringProfileActivatedBy")
+  createdMatchScoringProfileVersions    MatchScoringProfileVersion[]    @relation("MatchScoringProfileVersionCreatedBy")
+  createdRecruiterMatchOverrides        RecruiterMatchOverride[]        @relation("RecruiterMatchOverrideCreatedBy")
+  triggeredRankingSnapshots             CandidateRankingSnapshot[]      @relation("CandidateRankingSnapshotTriggeredBy")
+  semanticSearchQueries                 SemanticSearchQuery[]           @relation("SemanticSearchQueryCreatedBy")
+  semanticSearchExecutions              SemanticSearchExecution[]       @relation("SemanticSearchExecutionCreatedBy")
+  ownedSavedCandidateSearches           SavedCandidateSearch[]          @relation("SavedCandidateSearchOwner")
+  sentConnections                       UserConnection[]                @relation("UserConnectionRequester")
+  receivedConnections                   UserConnection[]                @relation("UserConnectionReceiver")
+  networkPrivacySettings                NetworkPrivacySettings?
+  blockedUsers                          UserBlock[]                     @relation("UserBlockBlocker")
+  blockedByUsers                        UserBlock[]                     @relation("UserBlockBlocked")
+  companyFollows                        CompanyFollow[]
+  directConversationsA                  DirectConversation[]            @relation("DirectConversationParticipantA")
+  directConversationsB                  DirectConversation[]            @relation("DirectConversationParticipantB")
+  directMessagesSent                    DirectMessage[]                 @relation("DirectMessageSender")
+  organisationPosts                     OrganisationPost[]              @relation("OrganisationPostAuthor")
+  purchasesMade                         Purchase[]                      @relation("PurchasePurchaser")
+  billingProfilesUpdated                CompanyBillingProfile[]         @relation("BillingProfileUpdatedBy")
+  jobCreditLedgerEntriesCreated         JobPostingCreditLedger[]        @relation("JobCreditLedgerCreatedBy")
+  jobAutoCloseOverrides                 Job[]                           @relation("JobAutoCloseOverrideBy")
 }
 
 model Organisation {
-  id                         String                       @id @default(cuid())
-  name                       String
-  slug                       String                       @unique
-  status                     OrganisationStatus           @default(ACTIVE)
-  website                    String?
-  logoUrl                    String?
-  publicDescription          String?
-  industry                   String?
-  organisationSize           String?
-  headquarters               String?
-  publicLocations            String[]                     @default([])
-  cultureSummary             String?
-  benefitsSummary            String?
-  careersEnabled             Boolean                      @default(true)
-  onboardingCompletedAt      DateTime?
-  createdAt                  DateTime                     @default(now())
-  updatedAt                  DateTime                     @updatedAt
-  recruiterProfiles          RecruiterProfile[]
-  memberships                OrganisationMembership[]
-  jobs                       Job[]
-  applications               Application[]
-  notes                      AtsNote[]
-  activities                 ApplicationActivity[]
-  savedCandidates            SavedCandidate[]
-  recruiterSavedSearches     RecruiterSavedSearch[]
-  talentPools                TalentPool[]
-  requisitions               JobRequisition[]
-  interviewPlans             InterviewProcess[]
-  interviewRounds            InterviewRound[]
-  interviewPanels            InterviewPanelMember[]
-  interviewFeedbacks         InterviewFeedback[]
-  meetingProviderConnections MeetingProviderConnection[]
-  interviewMeetings          InterviewMeeting[]
-  meetingParticipants        MeetingParticipant[]
-  rescheduleRequests         InterviewRescheduleRequest[]
-  rescheduleHistory          InterviewScheduleHistory[]
-  meetingReminders           MeetingReminder[]
-  notifications              Notification[]
-  auditLogs                  AuditLog[]
-  screeningQuestionTemplates ScreeningQuestionTemplate[]
-  jobScreeningQuestions      JobScreeningQuestion[]
-  applicationsSubmitted      JobApplication[]
-  applicationFlags           ApplicationFlag[]
-  applicationAnswers         ApplicationScreeningAnswer[]
-  applicationResumeSnapshots ApplicationResumeSnapshot[]
-  applicationTimelines       ApplicationTimeline[]
-  invitations                OrganisationInvitation[]
-  offers                     Offer[]
-  units                      OrganisationUnit[]
-  settings                   OrganisationSettings?
-  roleDefinitions            OrganisationRoleDefinition[]
-  notificationTemplates      NotificationTemplate[]
-  featureFlags               FeatureFlag[]
-  intelligenceExecutions     IntelligenceExecution[]
-  intelligenceResults        IntelligenceResult[]
+  id                          String                       @id @default(cuid())
+  name                        String
+  slug                        String                       @unique
+  status                      OrganisationStatus           @default(ACTIVE)
+  // Employer-access identity classification (see OrganisationType doc
+  // comment above). Nullable/unset for organisations created before this
+  // feature and never auto-backfilled.
+  type                        OrganisationType?
+  // COMPANY-only: the business email domain this organisation registered
+  // or was verified for. Null for CONSULTANCY and legacy organisations.
+  // A hand-written partial unique index (migration
+  // 20260817150000_employer_domain_uniqueness) enforces at most one
+  // COMPANY organisation per normalized domain at the database level -
+  // Prisma's schema DSL has no filtered/partial @@unique, so that
+  // constraint is not representable here and will not appear on
+  // introspection, but IS live and concurrency-safe in Postgres.
+  verifiedDomain              String?
+  domainVerificationStatus    DomainVerificationStatus     @default(NOT_APPLICABLE)
+  website                     String?
+  logoUrl                     String?
+  publicDescription           String?
+  industry                    String?
+  organisationSize            String?
+  headquarters                String?
+  publicLocations             String[]                     @default([])
+  cultureSummary              String?
+  benefitsSummary             String?
+  careersEnabled              Boolean                      @default(true)
+  onboardingCompletedAt       DateTime?
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
+  recruiterProfiles           RecruiterProfile[]
+  memberships                 OrganisationMembership[]
+  jobs                        Job[]
+  applications                Application[]
+  notes                       AtsNote[]
+  activities                  ApplicationActivity[]
+  savedCandidates             SavedCandidate[]
+  recruiterSavedSearches      RecruiterSavedSearch[]
+  talentPools                 TalentPool[]
+  requisitions                JobRequisition[]
+  interviewPlans              InterviewProcess[]
+  interviewRounds             InterviewRound[]
+  interviewPanels             InterviewPanelMember[]
+  interviewFeedbacks          InterviewFeedback[]
+  meetingProviderConnections  MeetingProviderConnection[]
+  interviewMeetings           InterviewMeeting[]
+  meetingParticipants         MeetingParticipant[]
+  rescheduleRequests          InterviewRescheduleRequest[]
+  rescheduleHistory           InterviewScheduleHistory[]
+  meetingReminders            MeetingReminder[]
+  notifications               Notification[]
+  auditLogs                   AuditLog[]
+  screeningQuestionTemplates  ScreeningQuestionTemplate[]
+  jobScreeningQuestions       JobScreeningQuestion[]
+  applicationsSubmitted       JobApplication[]
+  applicationFlags            ApplicationFlag[]
+  applicationAnswers          ApplicationScreeningAnswer[]
+  applicationResumeSnapshots  ApplicationResumeSnapshot[]
+  applicationTimelines        ApplicationTimeline[]
+  invitations                 OrganisationInvitation[]
+  offers                      Offer[]
+  units                       OrganisationUnit[]
+  settings                    OrganisationSettings?
+  roleDefinitions             OrganisationRoleDefinition[]
+  notificationTemplates       NotificationTemplate[]
+  featureFlags                FeatureFlag[]
+  intelligenceExecutions      IntelligenceExecution[]
+  intelligenceResults         IntelligenceResult[]
   candidateIntelligenceStates CandidateIntelligenceState[]
-  candidateJobMatchStates    CandidateJobMatchState[]
-  candidateRankingSnapshots  CandidateRankingSnapshot[]
-  candidateRankingEntries    CandidateRankingEntry[]
-  matchScoringProfiles       MatchScoringProfile[]
+  candidateJobMatchStates     CandidateJobMatchState[]
+  candidateRankingSnapshots   CandidateRankingSnapshot[]
+  candidateRankingEntries     CandidateRankingEntry[]
+  matchScoringProfiles        MatchScoringProfile[]
   matchScoringProfileVersions MatchScoringProfileVersion[]
-  recruiterMatchOverrides    RecruiterMatchOverride[]
-  jobDescriptionStates       JobDescriptionState[]
-  backgroundTasks            BackgroundTask[]
-  resumeImportBatches        ResumeImportBatch[]
-  importedCandidates         CandidateProfile[]
-  resumeImportItems          ResumeImportItem[]
-  jobDescriptionDrafts       JobDescriptionDraft[]
-  jobDescriptionTemplates    JobDescriptionTemplate[]
-  semanticSearchQueries      SemanticSearchQuery[]
-  semanticSearchExecutions   SemanticSearchExecution[]
-  savedCandidateSearches     SavedCandidateSearch[]
+  recruiterMatchOverrides     RecruiterMatchOverride[]
+  jobDescriptionStates        JobDescriptionState[]
+  backgroundTasks             BackgroundTask[]
+  resumeImportBatches         ResumeImportBatch[]
+  importedCandidates          CandidateProfile[]
+  resumeImportItems           ResumeImportItem[]
+  jobDescriptionDrafts        JobDescriptionDraft[]
+  jobDescriptionTemplates     JobDescriptionTemplate[]
+  semanticSearchQueries       SemanticSearchQuery[]
+  semanticSearchExecutions    SemanticSearchExecution[]
+  savedCandidateSearches      SavedCandidateSearch[]
+  followers                   CompanyFollow[]
+  posts                       OrganisationPost[]
+  billingProfile              CompanyBillingProfile?
+  purchases                   Purchase[]
+  subscriptions               CompanySubscription[]
+  jobCreditLedgerEntries      JobPostingCreditLedger[]
+  invoices                    Invoice[]
 
   @@index([status])
+  @@index([type, verifiedDomain])
+}
+
+model OrganisationPost {
+  id             String                 @id @default(cuid())
+  organisationId String
+  authorUserId   String
+  content        String
+  imageUrl       String?
+  status         OrganisationPostStatus @default(PUBLISHED)
+  publishedAt    DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organisation   Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  authorUser     User                   @relation("OrganisationPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status, publishedAt])
+  @@index([authorUserId, createdAt])
+}
+
+model NetworkPrivacySettings {
+  id                          String                      @id @default(cuid())
+  userId                      String                      @unique
+  allowConnectionRequestsFrom ConnectionRequestPermission @default(EVERYONE)
+  connectionVisibility        ConnectionVisibility        @default(CONNECTIONS_ONLY)
+  showInPeopleSearch          Boolean                     @default(true)
+  showRecruiterIdentity       Boolean                     @default(true)
+  createdAt                   DateTime                    @default(now())
+  updatedAt                   DateTime                    @updatedAt
+  user                        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([showInPeopleSearch])
+}
+
+model UserConnection {
+  id              String           @id @default(cuid())
+  requesterUserId String
+  receiverUserId  String
+  pairKey         String           @unique
+  status          ConnectionStatus @default(PENDING)
+  source          ConnectionSource @default(PROFILE)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  acceptedAt      DateTime?
+  requesterUser   User             @relation("UserConnectionRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  receiverUser    User             @relation("UserConnectionReceiver", fields: [receiverUserId], references: [id], onDelete: Cascade)
+
+  @@index([requesterUserId, status, createdAt])
+  @@index([receiverUserId, status, createdAt])
+  @@index([status, acceptedAt])
+}
+
+model UserBlock {
+  id            String   @id @default(cuid())
+  blockerUserId String
+  blockedUserId String
+  createdAt     DateTime @default(now())
+  blockerUser   User     @relation("UserBlockBlocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
+  blockedUser   User     @relation("UserBlockBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerUserId, blockedUserId])
+  @@index([blockedUserId, blockerUserId])
+}
+
+model CompanyFollow {
+  id             String       @id @default(cuid())
+  userId         String
+  organisationId String
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organisationId])
+  @@index([organisationId, createdAt])
+}
+
+model DirectConversation {
+  id                      String          @id @default(cuid())
+  participantAUserId      String
+  participantBUserId      String
+  pairKey                 String          @unique
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  lastMessageAt           DateTime?
+  lastMessagePreview      String?
+  participantALastReadAt  DateTime?
+  participantBLastReadAt  DateTime?
+  participantAUnreadCount Int             @default(0)
+  participantBUnreadCount Int             @default(0)
+  participantAUser        User            @relation("DirectConversationParticipantA", fields: [participantAUserId], references: [id], onDelete: Cascade)
+  participantBUser        User            @relation("DirectConversationParticipantB", fields: [participantBUserId], references: [id], onDelete: Cascade)
+  messages                DirectMessage[]
+
+  @@index([participantAUserId, lastMessageAt(sort: Desc)])
+  @@index([participantBUserId, lastMessageAt(sort: Desc)])
+}
+
+model DirectMessage {
+  id                        String             @id @default(cuid())
+  conversationId            String
+  senderUserId              String
+  type                      DirectMessageType  @default(TEXT)
+  content                   String?
+  attachmentOriginalName    String?
+  attachmentStorageKey      String?
+  attachmentStorageProvider String?
+  attachmentMimeType        String?
+  attachmentSizeBytes       Int?
+  attachmentChecksumSha256  String?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  editedAt                  DateTime?
+  deletedAt                 DateTime?
+  conversation              DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser                User               @relation("DirectMessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderUserId, createdAt(sort: Desc)])
+  @@index([conversationId, deletedAt, createdAt(sort: Desc)])
 }
 
 model OrganisationMembership {
-  id             String           @id @default(cuid())
-  organisationId String
-  userId         String
-  role           OrganisationRole
-  status         MembershipStatus @default(ACTIVE)
+  id                     String                      @id @default(cuid())
+  organisationId         String
+  userId                 String
+  role                   OrganisationRole
+  status                 MembershipStatus            @default(ACTIVE)
   customRoleDefinitionId String?
-  invitedById    String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  organisation   Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  customRoleDefinition OrganisationRoleDefinition? @relation(fields: [customRoleDefinitionId], references: [id], onDelete: SetNull)
+  invitedById            String?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  organisation           Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user                   User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRoleDefinition   OrganisationRoleDefinition? @relation(fields: [customRoleDefinitionId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, userId])
   @@index([userId, status])
@@ -838,48 +1079,48 @@ model OrganisationUnit {
 }
 
 model OrganisationSettings {
-  id                    String        @id @default(cuid())
-  organisationId        String        @unique
-  timezone              String?
-  currency              String?
-  language              String?
-  dateFormat            String?
-  employmentTypes       Json?
-  workModes             Json?
-  experienceBands       Json?
-  defaultHiringWorkflow Json?
-  defaultOfferWorkflow  Json?
-  interviewTemplates    Json?
+  id                          String       @id @default(cuid())
+  organisationId              String       @unique
+  timezone                    String?
+  currency                    String?
+  language                    String?
+  dateFormat                  String?
+  employmentTypes             Json?
+  workModes                   Json?
+  experienceBands             Json?
+  defaultHiringWorkflow       Json?
+  defaultOfferWorkflow        Json?
+  interviewTemplates          Json?
   interviewSchedulingSettings Json?
-  offerTemplates        Json?
-  careerPageSettings    Json?
-  emailBranding         Json?
-  notificationDefaults  Json?
-  lookupSettings        Json?
-  updatedByUserId       String?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  organisation          Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  updatedByUser         User?         @relation("OrganisationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  offerTemplates              Json?
+  careerPageSettings          Json?
+  emailBranding               Json?
+  notificationDefaults        Json?
+  lookupSettings              Json?
+  updatedByUserId             String?
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
+  organisation                Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedByUser               User?        @relation("OrganisationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 }
 
 model OrganisationRoleDefinition {
-  id              String                    @id @default(cuid())
+  id              String                   @id @default(cuid())
   organisationId  String
   name            String
   slug            String
   description     String?
-  isSystem        Boolean                   @default(false)
+  isSystem        Boolean                  @default(false)
   baseRole        OrganisationRole?
   permissions     Json
   archivedAt      DateTime?
   createdByUserId String?
   updatedByUserId String?
-  createdAt       DateTime                  @default(now())
-  updatedAt       DateTime                  @updatedAt
-  organisation    Organisation              @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdByUser   User?                     @relation("RoleDefinitionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedByUser   User?                     @relation("RoleDefinitionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  organisation    Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByUser   User?                    @relation("RoleDefinitionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser   User?                    @relation("RoleDefinitionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   memberships     OrganisationMembership[]
 
   @@unique([organisationId, slug])
@@ -887,89 +1128,89 @@ model OrganisationRoleDefinition {
 }
 
 model NotificationTemplate {
-  id              String        @id @default(cuid())
+  id              String           @id @default(cuid())
   organisationId  String
   key             String
   category        NotificationType
   channel         String
   subject         String
   body            String
-  enabled         Boolean       @default(true)
+  enabled         Boolean          @default(true)
   updatedByUserId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  organisation    Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  updatedByUser   User?         @relation("NotificationTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  organisation    Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedByUser   User?            @relation("NotificationTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, key, channel])
   @@index([organisationId, category, enabled])
 }
 
 model FeatureFlag {
-  id              String        @id @default(cuid())
+  id              String       @id @default(cuid())
   organisationId  String
   key             String
   description     String?
-  enabled         Boolean       @default(false)
+  enabled         Boolean      @default(false)
   updatedByUserId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  organisation    Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  updatedByUser   User?         @relation("FeatureFlagUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organisation    Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedByUser   User?        @relation("FeatureFlagUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, key])
   @@index([organisationId, enabled])
 }
 
 model PlatformSetupState {
-  id                 String    @id @default("platform-setup")
-  setupCompleted     Boolean   @default(false)
-  setupVersion       String?
-  setupCompletedAt   DateTime?
-  setupCompletedBy   String?
-  lastResetAt        DateTime?
-  lastResetBy        String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  completedByUser    User?     @relation("PlatformSetupCompletedBy", fields: [setupCompletedBy], references: [id], onDelete: SetNull)
-  resetByUser        User?     @relation("PlatformSetupResetBy", fields: [lastResetBy], references: [id], onDelete: SetNull)
+  id               String    @id @default("platform-setup")
+  setupCompleted   Boolean   @default(false)
+  setupVersion     String?
+  setupCompletedAt DateTime?
+  setupCompletedBy String?
+  lastResetAt      DateTime?
+  lastResetBy      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  completedByUser  User?     @relation("PlatformSetupCompletedBy", fields: [setupCompletedBy], references: [id], onDelete: SetNull)
+  resetByUser      User?     @relation("PlatformSetupResetBy", fields: [lastResetBy], references: [id], onDelete: SetNull)
 
   @@index([setupCompleted, setupCompletedAt])
 }
 
 model IntelligenceExecution {
-  id                  String                      @id @default(cuid())
-  organisationId      String
-  requestedByUserId   String?
-  feature             IntelligenceFeature
-  promptKey           String
-  promptVersion       String
-  provider            IntelligenceProvider
-  model               String?
-  status              IntelligenceExecutionStatus @default(PENDING)
-  inputFingerprint    String
-  inputCharacterCount Int                         @default(0)
-  outputCharacterCount Int                        @default(0)
-  promptTokens        Int?
-  completionTokens    Int?
-  estimatedCost       Decimal?                    @db.Decimal(12, 6)
-  latencyMs           Int?
-  errorCode           String?
-  humanReviewed       Boolean                     @default(false)
-  cacheHit            Boolean                     @default(false)
-  retries             Int                         @default(0)
-  metadata            Json?
-  createdAt           DateTime                    @default(now())
-  completedAt         DateTime?
-  organisation        Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  requestedByUser     User?                       @relation("IntelligenceExecutionRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
-  results             IntelligenceResult[]
-  feedback            IntelligenceFeedback[]
+  id                          String                       @id @default(cuid())
+  organisationId              String
+  requestedByUserId           String?
+  feature                     IntelligenceFeature
+  promptKey                   String
+  promptVersion               String
+  provider                    IntelligenceProvider
+  model                       String?
+  status                      IntelligenceExecutionStatus  @default(PENDING)
+  inputFingerprint            String
+  inputCharacterCount         Int                          @default(0)
+  outputCharacterCount        Int                          @default(0)
+  promptTokens                Int?
+  completionTokens            Int?
+  estimatedCost               Decimal?                     @db.Decimal(12, 6)
+  latencyMs                   Int?
+  errorCode                   String?
+  humanReviewed               Boolean                      @default(false)
+  cacheHit                    Boolean                      @default(false)
+  retries                     Int                          @default(0)
+  metadata                    Json?
+  createdAt                   DateTime                     @default(now())
+  completedAt                 DateTime?
+  organisation                Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  requestedByUser             User?                        @relation("IntelligenceExecutionRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  results                     IntelligenceResult[]
+  feedback                    IntelligenceFeedback[]
   candidateIntelligenceStates CandidateIntelligenceState[]
-  candidateJobMatchStates CandidateJobMatchState[]
-  candidateRankingSnapshots CandidateRankingSnapshot[]
-  jobDescriptionStates JobDescriptionState[]
-  jobDescriptionDrafts JobDescriptionDraft[]
+  candidateJobMatchStates     CandidateJobMatchState[]
+  candidateRankingSnapshots   CandidateRankingSnapshot[]
+  jobDescriptionStates        JobDescriptionState[]
+  jobDescriptionDrafts        JobDescriptionDraft[]
 
   @@index([organisationId, feature, createdAt])
   @@index([organisationId, status, createdAt])
@@ -978,30 +1219,30 @@ model IntelligenceExecution {
 }
 
 model IntelligenceResult {
-  id                String                 @id @default(cuid())
-  organisationId    String
-  executionId       String
-  entityType        String
-  entityId          String
-  sourceFingerprint String
-  resultVersion     String
-  promptVersion     String
-  normalizedOutput  Json
-  explanation       String?
-  confidence        Decimal?               @db.Decimal(5, 2)
-  isMachineGenerated Boolean               @default(true)
-  dismissedAt       DateTime?
-  expiresAt         DateTime?
-  supersededAt      DateTime?
-  createdAt         DateTime               @default(now())
-  organisation      Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  execution         IntelligenceExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
-  candidateIntelligenceStates CandidateIntelligenceState[]
-  candidateJobMatchStates CandidateJobMatchState[]
-  candidateRankingEntries CandidateRankingEntry[]
-  recruiterMatchOverrides RecruiterMatchOverride[]
-  jobDescriptionStates JobDescriptionState[]
-  jobDescriptionDrafts JobDescriptionDraft[]
+  id                             String                          @id @default(cuid())
+  organisationId                 String
+  executionId                    String
+  entityType                     String
+  entityId                       String
+  sourceFingerprint              String
+  resultVersion                  String
+  promptVersion                  String
+  normalizedOutput               Json
+  explanation                    String?
+  confidence                     Decimal?                        @db.Decimal(5, 2)
+  isMachineGenerated             Boolean                         @default(true)
+  dismissedAt                    DateTime?
+  expiresAt                      DateTime?
+  supersededAt                   DateTime?
+  createdAt                      DateTime                        @default(now())
+  organisation                   Organisation                    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  execution                      IntelligenceExecution           @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  candidateIntelligenceStates    CandidateIntelligenceState[]
+  candidateJobMatchStates        CandidateJobMatchState[]
+  candidateRankingEntries        CandidateRankingEntry[]
+  recruiterMatchOverrides        RecruiterMatchOverride[]
+  jobDescriptionStates           JobDescriptionState[]
+  jobDescriptionDrafts           JobDescriptionDraft[]
   jobDescriptionTemplateVersions JobDescriptionTemplateVersion[]
 
   @@index([organisationId, entityType, entityId, createdAt])
@@ -1010,17 +1251,17 @@ model IntelligenceResult {
 }
 
 model IntelligenceFeedback {
-  id             String                 @id @default(cuid())
+  id             String                @id @default(cuid())
   executionId    String
   userId         String
   rating         Int?
   useful         Boolean
   feedback       String?
   overrideReason String?
-  dismissed      Boolean                @default(false)
-  createdAt      DateTime               @default(now())
-  execution      IntelligenceExecution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
-  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dismissed      Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  execution      IntelligenceExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([executionId, createdAt])
   @@index([userId, createdAt])
@@ -1041,6 +1282,9 @@ model BackgroundTask {
   lastErrorMessage String?
   lastAttemptAt    DateTime?
   nextAttemptAt    DateTime?
+  leaseOwnerId     String?
+  leaseExpiresAt   DateTime?
+  lastHeartbeatAt  DateTime?
   createdByUserId  String?
   updatedByUserId  String?
   createdAt        DateTime             @default(now())
@@ -1053,6 +1297,32 @@ model BackgroundTask {
   @@index([organisationId, type, status])
   @@index([status, nextAttemptAt])
   @@index([entityType, entityId])
+  @@index([status, leaseExpiresAt])
+}
+
+enum WorkerHeartbeatStatus {
+  IDLE
+  PROCESSING
+  STOPPING
+  STOPPED
+}
+
+model WorkerHeartbeat {
+  id              String                @id @default(cuid())
+  workerId        String                @unique
+  workerType      String                @default("BACKGROUND_WORKER")
+  hostname        String?
+  processId       Int?
+  startedAt       DateTime
+  lastHeartbeatAt DateTime
+  status          WorkerHeartbeatStatus @default(IDLE)
+  currentTaskId   String?
+  parserVersion   String?
+  concurrency     Int                   @default(1)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([lastHeartbeatAt])
 }
 
 model OrganisationInvitation {
@@ -1079,8 +1349,8 @@ model OrganisationInvitation {
 }
 
 model RecruiterProfile {
-  id                   String           @id @default(cuid())
-  userId               String           @unique
+  id                   String                 @id @default(cuid())
+  userId               String                 @unique
   organisationId       String?
   companyEmailDomain   String
   companyName          String?
@@ -1097,9 +1367,9 @@ model RecruiterProfile {
   workingSince         Int?
   companySize          String?
   website              String?
-  profileCompleted     Boolean          @default(false)
-  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organisation         Organisation?    @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  profileCompleted     Boolean                @default(false)
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation         Organisation?          @relation(fields: [organisationId], references: [id], onDelete: SetNull)
   savedProfiles        SavedCandidate[]
   savedSearches        RecruiterSavedSearch[]
   createdTalentPools   TalentPool[]
@@ -1108,133 +1378,134 @@ model RecruiterProfile {
 }
 
 model CandidateProfile {
-  id                          String                 @id @default(cuid())
-  userId                      String?                @unique
-  organisationId              String?
-  importBatchId               String?
-  importedByUserId            String?
-  source                      CandidateProfileSource @default(DIRECT_SIGNUP)
-  profileStatus               CandidateProfileStatus @default(ACTIVE)
-  fullName                    String
-  email                       String?
-  phoneNumber                 String?
-  normalizedPhoneNumber       String?
-  headline                    String?
-  currentTitle                String?
-  currentEmployer             String?
-  currentDesignation          String?
-  location                    String?
-  currentCity                 String?
-  currentState                String?
-  currentCountry              String?
-  postalCode                  String?
-  preferredLocations          String[]
-  preferredRoles              String[]               @default([])
-  totalExperience             Int                    @default(0)
-  workplacePreferences        WorkplaceType[]        @default([])
-  employmentPreferences       EmploymentType[]       @default([])
-  currentCtcLpa               Int?
-  expectedCtcLpa              Int?
-  availability                AvailabilityStatus     @default(IMMEDIATE)
-  noticePeriodDays            Int?
-  employmentStatus            CandidateEmploymentStatus?
-  lastWorkingDate             DateTime?
-  skills                      String[]
-  functionalSkills            String[]               @default([])
-  tools                       String[]               @default([])
-  frameworks                  String[]               @default([])
-  cloudPlatforms              String[]               @default([])
-  databases                   String[]               @default([])
-  softSkills                  String[]               @default([])
-  skillEntries                Json?
-  experienceEntries           Json?
-  educationEntries            Json?
-  certificationEntries        Json?
-  languageEntries             Json?
-  projectEntries              Json?
-  portfolioLinks              Json?
-  summary                     String?
-  resumeUrl                   String?
-  latestResumeAssetId         String?
-  profileImageUrl             String?
-  portfolioUrl                String?
-  linkedInUrl                 String?
-  linkedInUrlNormalized       String?
-  githubUrl                   String?
-  profileVisibility           ProfileVisibility      @default(PRIVATE)
-  recommendationEnabled       Boolean                @default(true)
-  notifyForSavedJobUpdates    Boolean                @default(true)
-  notifyForRecommendations    Boolean                @default(true)
-  notifyForInterviews         Boolean                @default(true)
-  notifyForApplicationUpdates Boolean                @default(true)
-  notifyForOffers             Boolean                @default(true)
-  notifyForProfileReminders   Boolean                @default(true)
-  notifyForMarketing          Boolean                @default(false)
-  willingToRelocate           Boolean                @default(false)
-  minExpectedSalary           Int?
-  preferredCurrency           String?
-  workAuthorization           String?
-  requiresVisaSponsorship     Boolean                @default(false)
-  preferredIndustries         String[]               @default([])
-  preferredCompanySizes       String[]               @default([])
-  travelWillingness           String?
-  jobAlertEnabled             Boolean                @default(true)
-  jobAlertFrequency           JobAlertFrequency      @default(WEEKLY)
-  searchableProfile           Boolean                @default(false)
-  phoneVisibleToRecruiters    Boolean                @default(false)
-  salaryVisibleToRecruiters   Boolean                @default(false)
-  resumeVisibleToRecruiters   Boolean                @default(true)
-  onboardingStep              Int                    @default(0)
-  onboardingLastSavedAt       DateTime?
-  onboardingCompletedAt       DateTime?
-  onboardingSkippedResume     Boolean                @default(false)
-  notificationPreferences     Json?
-  accountLifecycleStatus      AccountLifecycleStatus @default(ACTIVE)
+  id                             String                       @id @default(cuid())
+  userId                         String?                      @unique
+  organisationId                 String?
+  importBatchId                  String?
+  importedByUserId               String?
+  source                         CandidateProfileSource       @default(DIRECT_SIGNUP)
+  profileStatus                  CandidateProfileStatus       @default(ACTIVE)
+  fullName                       String
+  email                          String?
+  phoneNumber                    String?
+  normalizedPhoneNumber          String?
+  headline                       String?
+  currentTitle                   String?
+  currentEmployer                String?
+  currentDesignation             String?
+  location                       String?
+  currentCity                    String?
+  currentState                   String?
+  currentCountry                 String?
+  postalCode                     String?
+  preferredLocations             String[]
+  preferredRoles                 String[]                     @default([])
+  totalExperience                Int                          @default(0)
+  workplacePreferences           WorkplaceType[]              @default([])
+  employmentPreferences          EmploymentType[]             @default([])
+  currentCtcLpa                  Float?
+  expectedCtcLpa                 Float?
+  availability                   AvailabilityStatus           @default(IMMEDIATE)
+  noticePeriodDays               Int?
+  employmentStatus               CandidateEmploymentStatus?
+  lastWorkingDate                DateTime?
+  skills                         String[]
+  functionalSkills               String[]                     @default([])
+  tools                          String[]                     @default([])
+  frameworks                     String[]                     @default([])
+  cloudPlatforms                 String[]                     @default([])
+  databases                      String[]                     @default([])
+  softSkills                     String[]                     @default([])
+  skillEntries                   Json?
+  experienceEntries              Json?
+  educationEntries               Json?
+  certificationEntries           Json?
+  languageEntries                Json?
+  projectEntries                 Json?
+  portfolioLinks                 Json?
+  summary                        String?
+  resumeUrl                      String?
+  latestResumeAssetId            String?
+  profileImageUrl                String?
+  portfolioUrl                   String?
+  linkedInUrl                    String?
+  linkedInUrlNormalized          String?
+  githubUrl                      String?
+  profileVisibility              ProfileVisibility            @default(PRIVATE)
+  recommendationEnabled          Boolean                      @default(true)
+  notifyForSavedJobUpdates       Boolean                      @default(true)
+  notifyForRecommendations       Boolean                      @default(true)
+  notifyForInterviews            Boolean                      @default(true)
+  notifyForApplicationUpdates    Boolean                      @default(true)
+  notifyForOffers                Boolean                      @default(true)
+  notifyForProfileReminders      Boolean                      @default(true)
+  notifyForMarketing             Boolean                      @default(false)
+  willingToRelocate              Boolean                      @default(false)
+  minExpectedSalary              Int?
+  preferredCurrency              String?
+  workAuthorization              String?
+  requiresVisaSponsorship        Boolean                      @default(false)
+  preferredIndustries            String[]                     @default([])
+  preferredCompanySizes          String[]                     @default([])
+  travelWillingness              String?
+  jobAlertEnabled                Boolean                      @default(true)
+  jobAlertFrequency              JobAlertFrequency            @default(WEEKLY)
+  searchableProfile              Boolean                      @default(false)
+  phoneVisibleToRecruiters       Boolean                      @default(false)
+  salaryVisibleToRecruiters      Boolean                      @default(false)
+  resumeVisibleToRecruiters      Boolean                      @default(true)
+  onboardingStep                 Int                          @default(0)
+  onboardingLastSavedAt          DateTime?
+  onboardingCompletedAt          DateTime?
+  onboardingSkippedResume        Boolean                      @default(false)
+  notificationPreferences        Json?
+  accountLifecycleStatus         AccountLifecycleStatus       @default(ACTIVE)
   accountDeactivationRequestedAt DateTime?
-  accountDeactivatedAt        DateTime?
-  accountDeactivationReason   String?
-  invitationSentAt            DateTime?
-  invitedAt                   DateTime?
-  activatedAt                 DateTime?
-  importedAt                  DateTime?
-  dataExportRequestedAt       DateTime?
-  dataExportCompletedAt       DateTime?
-  sharedResumeSlug            String?                @unique
-  profileViews                Int                    @default(0)
-  rawResumeText               String?
-  parserVersion               String?
-  parserMetadata              Json?
-  profileCompletenessScore    Int?
-  consentMetadata             Json?
-  provenanceMetadata          Json?
-  lastActiveAt                DateTime?
-  createdAt                   DateTime               @default(now())
-  updatedAt                   DateTime               @updatedAt
-  user                        User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
-  organisation                Organisation?          @relation(fields: [organisationId], references: [id], onDelete: SetNull)
-  importBatch                 ResumeImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  importedByUser              User?                  @relation("CandidateProfileImportedBy", fields: [importedByUserId], references: [id], onDelete: SetNull)
-  applications                Application[]
-  submittedApplications       JobApplication[]
-  resumeBuilder               ResumeBuilder?
-  savedByRecruiters           SavedCandidate[]
-  talentPoolMemberships       TalentPoolCandidate[]
-  savedJobs                   SavedJob[]
-  jobViews                    CandidateJobView[]
-  activities                  CandidateActivity[]
-  resumeAssets                ResumeAsset[]       @relation("CandidateResumeAssets")
-  latestResumeAsset           ResumeAsset?        @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
-  offers                      Offer[]
-  meetingParticipants         MeetingParticipant[]
-  rescheduleRequests          InterviewRescheduleRequest[]
-  duplicateImportItems        ResumeImportItem[]     @relation("ResumeImportDuplicateCandidate")
-  importedFromItems           ResumeImportItem[]     @relation("ResumeImportCreatedCandidate")
-  intelligenceStates          CandidateIntelligenceState[]
-  candidateJobMatchStates     CandidateJobMatchState[]
-  recruiterMatchOverrides     RecruiterMatchOverride[]
-  candidateRankingEntries     CandidateRankingEntry[]
-  sourceSemanticSearchQueries SemanticSearchQuery[]  @relation("SemanticSearchSourceCandidate")
-  sourceSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchSourceCandidate")
+  accountDeactivatedAt           DateTime?
+  accountDeactivationReason      String?
+  invitationSentAt               DateTime?
+  invitedAt                      DateTime?
+  activatedAt                    DateTime?
+  importedAt                     DateTime?
+  dataExportRequestedAt          DateTime?
+  dataExportCompletedAt          DateTime?
+  sharedResumeSlug               String?                      @unique
+  profileViews                   Int                          @default(0)
+  rawResumeText                  String?
+  parserVersion                  String?
+  parserMetadata                 Json?
+  profileCompletenessScore       Int?
+  consentMetadata                Json?
+  provenanceMetadata             Json?
+  lastActiveAt                   DateTime?
+  createdAt                      DateTime                     @default(now())
+  updatedAt                      DateTime                     @updatedAt
+  user                           User?                        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organisation                   Organisation?                @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  importBatch                    ResumeImportBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  importedByUser                 User?                        @relation("CandidateProfileImportedBy", fields: [importedByUserId], references: [id], onDelete: SetNull)
+  applications                   Application[]
+  submittedApplications          JobApplication[]
+  resumeBuilder                  ResumeBuilder?
+  savedByRecruiters              SavedCandidate[]
+  talentPoolMemberships          TalentPoolCandidate[]
+  savedJobs                      SavedJob[]
+  jobViews                       CandidateJobView[]
+  activities                     CandidateActivity[]
+  resumeAssets                   ResumeAsset[]                @relation("CandidateResumeAssets")
+  latestResumeAsset              ResumeAsset?                 @relation("CandidateLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  offers                         Offer[]
+  meetingParticipants            MeetingParticipant[]
+  rescheduleRequests             InterviewRescheduleRequest[]
+  duplicateImportItems           ResumeImportItem[]           @relation("ResumeImportDuplicateCandidate")
+  resumeSearchIndexStates        ResumeSearchIndexState[]
+  importedFromItems              ResumeImportItem[]           @relation("ResumeImportCreatedCandidate")
+  intelligenceStates             CandidateIntelligenceState[]
+  candidateJobMatchStates        CandidateJobMatchState[]
+  recruiterMatchOverrides        RecruiterMatchOverride[]
+  candidateRankingEntries        CandidateRankingEntry[]
+  sourceSemanticSearchQueries    SemanticSearchQuery[]        @relation("SemanticSearchSourceCandidate")
+  sourceSavedCandidateSearches   SavedCandidateSearch[]       @relation("SavedCandidateSearchSourceCandidate")
 
   @@index([organisationId, profileStatus, createdAt])
   @@index([organisationId, source, createdAt])
@@ -1245,46 +1516,46 @@ model CandidateProfile {
 }
 
 model CandidateIntelligenceState {
-  id                 String                    @id @default(cuid())
-  organisationId     String
-  candidateId        String
-  kind               CandidateIntelligenceKind
-  status             CandidateIntelligenceStatus @default(PENDING)
-  latestExecutionId  String?
-  latestResultId     String?
-  latestResumeAssetId String?
-  latestImportItemId String?
-  sourceFingerprint  String
-  sourceVersion      String
-  parserVersion      String?
-  schemaVersion      String
-  promptKey          String
-  promptVersion      String
-  resultVersion      String
-  provider           IntelligenceProvider?
-  providerVersion    String?
-  model              String?
-  modelVersion       String?
-  latencyMs          Int?
-  inputTokens        Int?
-  outputTokens       Int?
-  estimatedCost      Decimal?                 @db.Decimal(12, 6)
-  generatedAt        DateTime?
-  lastGeneratedAt    DateTime?
-  lastSourceChangedAt DateTime?
-  staleReason        String?
-  lastErrorCode      String?
-  lastErrorMessage   String?
-  aiEnabled          Boolean                  @default(false)
-  metadata           Json?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  organisation       Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  candidate          CandidateProfile         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  latestExecution    IntelligenceExecution?   @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
-  latestResult       IntelligenceResult?      @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
-  latestResumeAsset  ResumeAsset?             @relation(fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
-  latestImportItem   ResumeImportItem?        @relation(fields: [latestImportItemId], references: [id], onDelete: SetNull)
+  id                      String                      @id @default(cuid())
+  organisationId          String
+  candidateId             String
+  kind                    CandidateIntelligenceKind
+  status                  CandidateIntelligenceStatus @default(PENDING)
+  latestExecutionId       String?
+  latestResultId          String?
+  latestResumeAssetId     String?
+  latestImportItemId      String?
+  sourceFingerprint       String
+  sourceVersion           String
+  parserVersion           String?
+  schemaVersion           String
+  promptKey               String
+  promptVersion           String
+  resultVersion           String
+  provider                IntelligenceProvider?
+  providerVersion         String?
+  model                   String?
+  modelVersion            String?
+  latencyMs               Int?
+  inputTokens             Int?
+  outputTokens            Int?
+  estimatedCost           Decimal?                    @db.Decimal(12, 6)
+  generatedAt             DateTime?
+  lastGeneratedAt         DateTime?
+  lastSourceChangedAt     DateTime?
+  staleReason             String?
+  lastErrorCode           String?
+  lastErrorMessage        String?
+  aiEnabled               Boolean                     @default(false)
+  metadata                Json?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  organisation            Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  candidate               CandidateProfile            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  latestExecution         IntelligenceExecution?      @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  latestResult            IntelligenceResult?         @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
+  latestResumeAsset       ResumeAsset?                @relation(fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  latestImportItem        ResumeImportItem?           @relation(fields: [latestImportItemId], references: [id], onDelete: SetNull)
   candidateJobMatchStates CandidateJobMatchState[]
 
   @@unique([organisationId, candidateId, kind])
@@ -1293,11 +1564,11 @@ model CandidateIntelligenceState {
 }
 
 model CandidateJobMatchState {
-  id                           String                  @id @default(cuid())
+  id                           String                      @id @default(cuid())
   organisationId               String
   candidateId                  String
   jobId                        String
-  status                       CandidateJobMatchStatus @default(PENDING)
+  status                       CandidateJobMatchStatus     @default(PENDING)
   latestExecutionId            String?
   latestResultId               String?
   candidateIntelligenceStateId String?
@@ -1316,25 +1587,25 @@ model CandidateJobMatchState {
   latencyMs                    Int?
   inputTokens                  Int?
   outputTokens                 Int?
-  estimatedCost                Decimal?               @db.Decimal(12, 6)
+  estimatedCost                Decimal?                    @db.Decimal(12, 6)
   generatedAt                  DateTime?
   lastGeneratedAt              DateTime?
   lastSourceChangedAt          DateTime?
   staleReason                  String?
   lastErrorCode                String?
   lastErrorMessage             String?
-  aiEnabled                    Boolean                @default(false)
+  aiEnabled                    Boolean                     @default(false)
   metadata                     Json?
-  createdAt                    DateTime               @default(now())
-  updatedAt                    DateTime               @updatedAt
-  organisation                 Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  candidate                    CandidateProfile       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  job                          Job                    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  latestExecution              IntelligenceExecution? @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
-  latestResult                 IntelligenceResult?    @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
+  organisation                 Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  candidate                    CandidateProfile            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job                          Job                         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  latestExecution              IntelligenceExecution?      @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  latestResult                 IntelligenceResult?         @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
   candidateIntelligenceState   CandidateIntelligenceState? @relation(fields: [candidateIntelligenceStateId], references: [id], onDelete: SetNull)
-  jobDescriptionState          JobDescriptionState?   @relation(fields: [jobDescriptionStateId], references: [id], onDelete: SetNull)
-  latestResumeAsset            ResumeAsset?           @relation("CandidateJobMatchLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
+  jobDescriptionState          JobDescriptionState?        @relation(fields: [jobDescriptionStateId], references: [id], onDelete: SetNull)
+  latestResumeAsset            ResumeAsset?                @relation("CandidateJobMatchLatestResumeAsset", fields: [latestResumeAssetId], references: [id], onDelete: SetNull)
   recruiterMatchOverrides      RecruiterMatchOverride[]
   candidateRankingEntries      CandidateRankingEntry[]
 
@@ -1345,12 +1616,12 @@ model CandidateJobMatchState {
 }
 
 model MatchScoringProfile {
-  id                String                     @id @default(cuid())
+  id                String                       @id @default(cuid())
   organisationId    String
   key               String
   name              String
   description       String?
-  isActive          Boolean                    @default(true)
+  isActive          Boolean                      @default(true)
   activeVersionId   String?
   createdByUserId   String?
   updatedByUserId   String?
@@ -1358,21 +1629,21 @@ model MatchScoringProfile {
   activatedAt       DateTime?
   archivedAt        DateTime?
   metadata          Json?
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
-  organisation      Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  activeVersion     MatchScoringProfileVersion? @relation("MatchScoringProfileActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  organisation      Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  activeVersion     MatchScoringProfileVersion?  @relation("MatchScoringProfileActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
   versions          MatchScoringProfileVersion[] @relation("MatchScoringProfileVersions")
-  createdByUser     User?                      @relation("MatchScoringProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedByUser     User?                      @relation("MatchScoringProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  activatedByUser   User?                      @relation("MatchScoringProfileActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+  createdByUser     User?                        @relation("MatchScoringProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser     User?                        @relation("MatchScoringProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  activatedByUser   User?                        @relation("MatchScoringProfileActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, key])
   @@index([organisationId, isActive, archivedAt])
 }
 
 model MatchScoringProfileVersion {
-  id                   String                       @id @default(cuid())
+  id                   String                           @id @default(cuid())
   organisationId       String
   profileId            String
   version              Int
@@ -1389,19 +1660,19 @@ model MatchScoringProfileVersion {
   resultVersion        String
   metadata             Json?
   createdByUserId      String?
-  createdAt            DateTime                     @default(now())
-  organisation         Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  profile              MatchScoringProfile          @relation("MatchScoringProfileVersions", fields: [profileId], references: [id], onDelete: Cascade)
-  activeForProfiles    MatchScoringProfile[]        @relation("MatchScoringProfileActiveVersion")
+  createdAt            DateTime                         @default(now())
+  organisation         Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  profile              MatchScoringProfile              @relation("MatchScoringProfileVersions", fields: [profileId], references: [id], onDelete: Cascade)
+  activeForProfiles    MatchScoringProfile[]            @relation("MatchScoringProfileActiveVersion")
   rankingSnapshots     CandidateRankingSnapshot[]
-  createdByUser        User?                        @relation("MatchScoringProfileVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByUser        User?                            @relation("MatchScoringProfileVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@unique([profileId, version])
   @@index([organisationId, status, createdAt])
 }
 
 model RecruiterMatchOverride {
-  id                     String                      @id @default(cuid())
+  id                     String                     @id @default(cuid())
   organisationId         String
   candidateId            String
   jobId                  String
@@ -1416,14 +1687,14 @@ model RecruiterMatchOverride {
   notes                  String?
   createdByUserId        String
   metadata               Json?
-  createdAt              DateTime                    @default(now())
-  organisation           Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  candidate              CandidateProfile            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  job                    Job                         @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  matchState             CandidateJobMatchState      @relation(fields: [matchStateId], references: [id], onDelete: Cascade)
-  matchResult            IntelligenceResult?         @relation(fields: [matchResultId], references: [id], onDelete: SetNull)
-  rankingSnapshot        CandidateRankingSnapshot?   @relation(fields: [rankingSnapshotId], references: [id], onDelete: SetNull)
-  createdByUser          User                        @relation("RecruiterMatchOverrideCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt              DateTime                   @default(now())
+  organisation           Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  candidate              CandidateProfile           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job                    Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  matchState             CandidateJobMatchState     @relation(fields: [matchStateId], references: [id], onDelete: Cascade)
+  matchResult            IntelligenceResult?        @relation(fields: [matchResultId], references: [id], onDelete: SetNull)
+  rankingSnapshot        CandidateRankingSnapshot?  @relation(fields: [rankingSnapshotId], references: [id], onDelete: SetNull)
+  createdByUser          User                       @relation("RecruiterMatchOverrideCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@index([organisationId, jobId, candidateId, createdAt])
   @@index([matchStateId, createdAt])
@@ -1431,40 +1702,40 @@ model RecruiterMatchOverride {
 }
 
 model CandidateRankingSnapshot {
-  id                      String                  @id @default(cuid())
-  organisationId          String
-  jobId                   String
-  status                  CandidateRankingStatus  @default(PENDING)
+  id                       String                      @id @default(cuid())
+  organisationId           String
+  jobId                    String
+  status                   CandidateRankingStatus      @default(PENDING)
   candidatePoolFingerprint String
-  sourceFingerprint       String
-  sourceVersion           String
-  schemaVersion           String
-  scoringProfileVersionId String?
-  latestExecutionId       String?
-  triggeredByUserId       String?
-  generatedAt             DateTime?
-  completedAt             DateTime?
-  staleReason             String?
-  totalCandidates         Int                     @default(0)
-  processedCandidates     Int                     @default(0)
-  failedCandidates        Int                     @default(0)
-  metadata                Json?
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
-  organisation            Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  job                     Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  scoringProfileVersion   MatchScoringProfileVersion? @relation(fields: [scoringProfileVersionId], references: [id], onDelete: SetNull)
-  latestExecution         IntelligenceExecution?  @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
-  triggeredByUser         User?                   @relation("CandidateRankingSnapshotTriggeredBy", fields: [triggeredByUserId], references: [id], onDelete: SetNull)
-  entries                 CandidateRankingEntry[]
-  overrides               RecruiterMatchOverride[]
+  sourceFingerprint        String
+  sourceVersion            String
+  schemaVersion            String
+  scoringProfileVersionId  String?
+  latestExecutionId        String?
+  triggeredByUserId        String?
+  generatedAt              DateTime?
+  completedAt              DateTime?
+  staleReason              String?
+  totalCandidates          Int                         @default(0)
+  processedCandidates      Int                         @default(0)
+  failedCandidates         Int                         @default(0)
+  metadata                 Json?
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+  organisation             Organisation                @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job                      Job                         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  scoringProfileVersion    MatchScoringProfileVersion? @relation(fields: [scoringProfileVersionId], references: [id], onDelete: SetNull)
+  latestExecution          IntelligenceExecution?      @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  triggeredByUser          User?                       @relation("CandidateRankingSnapshotTriggeredBy", fields: [triggeredByUserId], references: [id], onDelete: SetNull)
+  entries                  CandidateRankingEntry[]
+  overrides                RecruiterMatchOverride[]
 
   @@index([organisationId, jobId, status, createdAt])
   @@index([jobId, createdAt])
 }
 
 model CandidateRankingEntry {
-  id                      String                 @id @default(cuid())
+  id                      String                   @id @default(cuid())
   snapshotId              String
   organisationId          String
   jobId                   String
@@ -1474,23 +1745,23 @@ model CandidateRankingEntry {
   rank                    Int
   generatedOverallScore   Int
   effectiveOverallScore   Int
-  confidenceScore         Decimal?               @db.Decimal(5, 2)
+  confidenceScore         Decimal?                 @db.Decimal(5, 2)
   generatedRecommendation String
   effectiveRecommendation String
   fitBand                 String
   strengthSummary         String?
   gapSummary              String?
-  isKnockedOut            Boolean                @default(false)
-  hasOverride             Boolean                @default(false)
+  isKnockedOut            Boolean                  @default(false)
+  hasOverride             Boolean                  @default(false)
   metadata                Json?
-  createdAt               DateTime               @default(now())
-  updatedAt               DateTime               @updatedAt
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
   snapshot                CandidateRankingSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
-  organisation            Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  job                     Job                    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  candidate               CandidateProfile       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  matchState              CandidateJobMatchState @relation(fields: [matchStateId], references: [id], onDelete: Restrict)
-  matchResult             IntelligenceResult     @relation(fields: [matchResultId], references: [id], onDelete: Restrict)
+  organisation            Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job                     Job                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate               CandidateProfile         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  matchState              CandidateJobMatchState   @relation(fields: [matchStateId], references: [id], onDelete: Restrict)
+  matchResult             IntelligenceResult       @relation(fields: [matchResultId], references: [id], onDelete: Restrict)
 
   @@unique([snapshotId, candidateId])
   @@unique([snapshotId, rank])
@@ -1500,38 +1771,38 @@ model CandidateRankingEntry {
 }
 
 model JobDescriptionState {
-  id                String                        @id @default(cuid())
-  organisationId    String
-  jobId             String
-  kind              JobDescriptionGenerationKind
-  status            JobDescriptionGenerationStatus @default(PENDING)
-  latestExecutionId String?
-  latestResultId    String?
-  sourceFingerprint String
-  sourceVersion     String
-  schemaVersion     String
-  promptKey         String
-  promptVersion     String
-  resultVersion     String
-  provider          IntelligenceProvider?
-  providerVersion   String?
-  model             String?
-  modelVersion      String?
-  latencyMs         Int?
-  inputTokens       Int?
-  outputTokens      Int?
-  estimatedCost     Decimal?                     @db.Decimal(12, 6)
-  generatedAt       DateTime?
-  staleReason       String?
-  metadata          Json?
-  createdAt         DateTime                     @default(now())
-  updatedAt         DateTime                     @updatedAt
-  organisation      Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  job               Job                          @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  latestExecution   IntelligenceExecution?       @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
-  latestResult      IntelligenceResult?          @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
+  id                      String                         @id @default(cuid())
+  organisationId          String
+  jobId                   String
+  kind                    JobDescriptionGenerationKind
+  status                  JobDescriptionGenerationStatus @default(PENDING)
+  latestExecutionId       String?
+  latestResultId          String?
+  sourceFingerprint       String
+  sourceVersion           String
+  schemaVersion           String
+  promptKey               String
+  promptVersion           String
+  resultVersion           String
+  provider                IntelligenceProvider?
+  providerVersion         String?
+  model                   String?
+  modelVersion            String?
+  latencyMs               Int?
+  inputTokens             Int?
+  outputTokens            Int?
+  estimatedCost           Decimal?                       @db.Decimal(12, 6)
+  generatedAt             DateTime?
+  staleReason             String?
+  metadata                Json?
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+  organisation            Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job                     Job                            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  latestExecution         IntelligenceExecution?         @relation(fields: [latestExecutionId], references: [id], onDelete: SetNull)
+  latestResult            IntelligenceResult?            @relation(fields: [latestResultId], references: [id], onDelete: SetNull)
   candidateJobMatchStates CandidateJobMatchState[]
-  drafts            JobDescriptionDraft[]
+  drafts                  JobDescriptionDraft[]
 
   @@unique([organisationId, jobId, kind])
   @@index([organisationId, status, updatedAt])
@@ -1539,14 +1810,14 @@ model JobDescriptionState {
 }
 
 model JobDescriptionDraft {
-  id                 String                     @id @default(cuid())
+  id                 String                         @id @default(cuid())
   organisationId     String
   jobId              String
   versionGroupId     String
   version            Int
   previousVersionId  String?
-  status             JobDescriptionDraftStatus @default(DRAFT)
-  isLatestVersion    Boolean                    @default(true)
+  status             JobDescriptionDraftStatus      @default(DRAFT)
+  isLatestVersion    Boolean                        @default(true)
   title              String?
   content            Json
   jobSnapshot        Json?
@@ -1562,21 +1833,21 @@ model JobDescriptionDraft {
   appliedJobSnapshot Json?
   createdByUserId    String?
   updatedByUserId    String?
-  createdAt          DateTime                   @default(now())
-  updatedAt          DateTime                   @updatedAt
-  organisation       Organisation               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  job                Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  previousVersion    JobDescriptionDraft?       @relation("JobDescriptionDraftVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
-  nextVersions       JobDescriptionDraft[]      @relation("JobDescriptionDraftVersionChain")
-  sourceState        JobDescriptionState?       @relation(fields: [sourceStateId], references: [id], onDelete: SetNull)
-  sourceExecution    IntelligenceExecution?     @relation(fields: [sourceExecutionId], references: [id], onDelete: SetNull)
-  sourceResult       IntelligenceResult?        @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
-  template           JobDescriptionTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  organisation       Organisation                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job                Job                            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  previousVersion    JobDescriptionDraft?           @relation("JobDescriptionDraftVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions       JobDescriptionDraft[]          @relation("JobDescriptionDraftVersionChain")
+  sourceState        JobDescriptionState?           @relation(fields: [sourceStateId], references: [id], onDelete: SetNull)
+  sourceExecution    IntelligenceExecution?         @relation(fields: [sourceExecutionId], references: [id], onDelete: SetNull)
+  sourceResult       IntelligenceResult?            @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
+  template           JobDescriptionTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
   templateVersion    JobDescriptionTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
-  approvedByUser     User?                      @relation("JobDescriptionDraftApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  appliedByUser      User?                      @relation("JobDescriptionDraftAppliedBy", fields: [appliedByUserId], references: [id], onDelete: SetNull)
-  createdByUser      User?                      @relation("JobDescriptionDraftCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedByUser      User?                      @relation("JobDescriptionDraftUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  approvedByUser     User?                          @relation("JobDescriptionDraftApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  appliedByUser      User?                          @relation("JobDescriptionDraftAppliedBy", fields: [appliedByUserId], references: [id], onDelete: SetNull)
+  createdByUser      User?                          @relation("JobDescriptionDraftCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser      User?                          @relation("JobDescriptionDraftUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([versionGroupId, version])
   @@index([organisationId, jobId, isLatestVersion, createdAt])
@@ -1586,13 +1857,13 @@ model JobDescriptionDraft {
 }
 
 model JobDescriptionTemplate {
-  id                String                      @id @default(cuid())
+  id                String                          @id @default(cuid())
   organisationId    String?
-  scope             JobDescriptionTemplateScope @default(ORGANISATION)
+  scope             JobDescriptionTemplateScope     @default(ORGANISATION)
   key               String
   name              String
   description       String?
-  isActive          Boolean                     @default(true)
+  isActive          Boolean                         @default(true)
   activeVersionId   String?
   createdByUserId   String?
   updatedByUserId   String?
@@ -1600,15 +1871,15 @@ model JobDescriptionTemplate {
   activatedAt       DateTime?
   archivedAt        DateTime?
   metadata          Json?
-  createdAt         DateTime                    @default(now())
-  updatedAt         DateTime                    @updatedAt
-  organisation      Organisation?               @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  activeVersion     JobDescriptionTemplateVersion? @relation("JobDescriptionTemplateActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                        @default(now())
+  updatedAt         DateTime                        @updatedAt
+  organisation      Organisation?                   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  activeVersion     JobDescriptionTemplateVersion?  @relation("JobDescriptionTemplateActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
   versions          JobDescriptionTemplateVersion[] @relation("JobDescriptionTemplateVersions")
   drafts            JobDescriptionDraft[]
-  createdByUser     User?                       @relation("JobDescriptionTemplateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedByUser     User?                       @relation("JobDescriptionTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  activatedByUser   User?                       @relation("JobDescriptionTemplateActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
+  createdByUser     User?                           @relation("JobDescriptionTemplateCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser     User?                           @relation("JobDescriptionTemplateUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  activatedByUser   User?                           @relation("JobDescriptionTemplateActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, key])
   @@index([scope, isActive, archivedAt])
@@ -1616,86 +1887,99 @@ model JobDescriptionTemplate {
 }
 
 model JobDescriptionTemplateVersion {
-  id              String                   @id @default(cuid())
-  templateId      String
-  version         Int
-  title           String?
-  content         Json
-  schemaVersion   String
-  promptKey       String?
-  promptVersion   String?
-  sourceResultId  String?
-  metadata        Json?
-  createdByUserId String?
-  createdAt       DateTime                 @default(now())
-  template        JobDescriptionTemplate   @relation("JobDescriptionTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  id                String                   @id @default(cuid())
+  templateId        String
+  version           Int
+  title             String?
+  content           Json
+  schemaVersion     String
+  promptKey         String?
+  promptVersion     String?
+  sourceResultId    String?
+  metadata          Json?
+  createdByUserId   String?
+  createdAt         DateTime                 @default(now())
+  template          JobDescriptionTemplate   @relation("JobDescriptionTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
   activeForTemplate JobDescriptionTemplate[] @relation("JobDescriptionTemplateActiveVersion")
-  sourceResult    IntelligenceResult?      @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
-  drafts          JobDescriptionDraft[]
-  createdByUser   User?                    @relation("JobDescriptionTemplateVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  sourceResult      IntelligenceResult?      @relation(fields: [sourceResultId], references: [id], onDelete: SetNull)
+  drafts            JobDescriptionDraft[]
+  createdByUser     User?                    @relation("JobDescriptionTemplateVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@unique([templateId, version])
   @@index([templateId, createdAt])
 }
 
 model Job {
-  id                    String                 @id @default(cuid())
-  organisationId        String?
-  recruiterId           String
-  requisitionId         String?
-  hiringManagerId       String?
-  title                 String
-  slug                  String                 @unique
-  description           String
-  skillsRequired        String[]
-  experienceMin         Int
-  experienceMax         Int
-  salaryMin             Int?
-  salaryMax             Int?
-  currency              String?
-  isPublic              Boolean                @default(false)
-  publicSalaryEnabled   Boolean                @default(false)
-  featuredInPortal      Boolean                @default(false)
-  visibility            JobVisibility          @default(EXTERNAL)
-  location              String
-  employmentType        EmploymentType         @default(FULL_TIME)
-  workplaceType         WorkplaceType?
-  numberOfOpenings      Int                    @default(1)
-  department            String?
-  businessUnit          String?
-  responsibilities      String[]               @default([])
-  requirements          String[]               @default([])
-  benefits              String[]               @default([])
-  applicationDeadline   DateTime?
-  applicationOpensAt    DateTime?
-  applicationClosesAt   DateTime?
-  maxApplications       Int?
-  targetHires           Int?
-  autoCloseOnTargetHire Boolean                @default(false)
-  status                JobStatus              @default(OPEN)
-  archivedAt            DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  organisation          Organisation?          @relation(fields: [organisationId], references: [id], onDelete: SetNull)
-  recruiter             User                   @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
-  hiringManager         User?                  @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
-  requisition           JobRequisition?        @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
-  jobDescriptionStates  JobDescriptionState[]
-  candidateJobMatchStates CandidateJobMatchState[]
-  candidateRankingSnapshots CandidateRankingSnapshot[]
-  candidateRankingEntries CandidateRankingEntry[]
-  recruiterMatchOverrides RecruiterMatchOverride[]
-  jobDescriptionDrafts  JobDescriptionDraft[]
-  sourceSemanticSearchQueries SemanticSearchQuery[]   @relation("SemanticSearchSourceJob")
-  jobContextSemanticSearchQueries SemanticSearchQuery[] @relation("SemanticSearchJobContext")
-  sourceSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchSourceJob")
-  jobContextSavedCandidateSearches SavedCandidateSearch[] @relation("SavedCandidateSearchJobContext")
-  applications          Application[]
-  savedJobs             SavedJob[]
-  candidateViews        CandidateJobView[]
-  screeningQuestions    JobScreeningQuestion[]
-  submittedApplications JobApplication[]
-  offers                Offer[]
+  id                               String                     @id @default(cuid())
+  organisationId                   String?
+  recruiterId                      String
+  requisitionId                    String?
+  hiringManagerId                  String?
+  title                            String
+  slug                             String                     @unique
+  description                      String
+  skillsRequired                   String[]
+  experienceMin                    Int
+  experienceMax                    Int
+  salaryMin                        Int?
+  salaryMax                        Int?
+  currency                         String?
+  isPublic                         Boolean                    @default(false)
+  publicSalaryEnabled              Boolean                    @default(false)
+  featuredInPortal                 Boolean                    @default(false)
+  visibility                       JobVisibility              @default(EXTERNAL)
+  location                         String
+  employmentType                   EmploymentType             @default(FULL_TIME)
+  workplaceType                    WorkplaceType?
+  numberOfOpenings                 Int                        @default(1)
+  department                       String?
+  businessUnit                     String?
+  responsibilities                 String[]                   @default([])
+  requirements                     String[]                   @default([])
+  benefits                         String[]                   @default([])
+  applicationNotificationEmail     String?
+  applicationDeadline              DateTime?
+  applicationOpensAt               DateTime?
+  applicationClosesAt              DateTime?
+  maxApplications                  Int?
+  targetHires                      Int?
+  autoCloseOnTargetHire            Boolean                    @default(false)
+  status                           JobStatus                  @default(OPEN)
+  archivedAt                       DateTime?
+  // Billing/job-credit entitlement fields (feature/subscriptions-billing-entitlements):
+  // activatedAt/activeUntil are stamped only when a job is published through the
+  // credit-consuming publish flow (jobService.publishJobWithEntitlement), never on
+  // plain field edits, so scheduler auto-close can rely on activeUntil alone.
+  activatedAt                      DateTime?
+  activeUntil                      DateTime?
+  autoClosedAt                     DateTime?
+  autoCloseOverrideByUserId        String?
+  autoCloseOverrideReason          String?
+  autoCloseOverrideAt              DateTime?
+  createdAt                        DateTime                   @default(now())
+  updatedAt                        DateTime                   @updatedAt
+  organisation                     Organisation?              @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  recruiter                        User                       @relation("PostedJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
+  hiringManager                    User?                      @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
+  requisition                      JobRequisition?            @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  autoCloseOverrideByUser          User?                      @relation("JobAutoCloseOverrideBy", fields: [autoCloseOverrideByUserId], references: [id], onDelete: SetNull)
+  creditLedgerEntries              JobPostingCreditLedger[]
+  jobDescriptionStates             JobDescriptionState[]
+  candidateJobMatchStates          CandidateJobMatchState[]
+  candidateRankingSnapshots        CandidateRankingSnapshot[]
+  candidateRankingEntries          CandidateRankingEntry[]
+  recruiterMatchOverrides          RecruiterMatchOverride[]
+  jobDescriptionDrafts             JobDescriptionDraft[]
+  sourceSemanticSearchQueries      SemanticSearchQuery[]      @relation("SemanticSearchSourceJob")
+  jobContextSemanticSearchQueries  SemanticSearchQuery[]      @relation("SemanticSearchJobContext")
+  sourceSavedCandidateSearches     SavedCandidateSearch[]     @relation("SavedCandidateSearchSourceJob")
+  jobContextSavedCandidateSearches SavedCandidateSearch[]     @relation("SavedCandidateSearchJobContext")
+  applications                     Application[]
+  savedJobs                        SavedJob[]
+  candidateViews                   CandidateJobView[]
+  screeningQuestions               JobScreeningQuestion[]
+  submittedApplications            JobApplication[]
+  offers                           Offer[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status])
@@ -1705,6 +1989,7 @@ model Job {
   @@index([hiringManagerId])
   @@index([applicationDeadline])
   @@index([status, visibility, applicationOpensAt, applicationClosesAt])
+  @@index([status, activeUntil])
 }
 
 model SavedJob {
@@ -1810,35 +2095,36 @@ model JobScreeningQuestion {
 }
 
 model ResumeAsset {
-  id                 String                       @id @default(cuid())
-  candidateId        String
-  ownerUserId        String
-  kind               ResumeAssetKind              @default(RESUME)
-  status             ResumeAssetStatus            @default(ACTIVE)
-  source             ResumeAssetSource            @default(UPLOAD)
-  isPrimary          Boolean                      @default(false)
-  storageKey         String
-  storageProvider    String
-  originalFilename   String
-  mimeType           String
-  sizeBytes          Int
-  externalResumeId   String?
-  externalResumeUrl  String?
-  externalResumeVersion String?
-  lastSynchronizedAt DateTime?
-  parsingStatus      ResumeParseStatus            @default(PENDING)
-  parsedText         String?
-  parsedData         Json?
-  archivedAt         DateTime?
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
-  candidate          CandidateProfile             @relation("CandidateResumeAssets", fields: [candidateId], references: [id], onDelete: Cascade)
-  ownerUser          User                         @relation("ResumeAssetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  resumeSnapshots    ApplicationResumeSnapshot[]
-  answerFiles        ApplicationScreeningAnswer[] @relation("ScreeningAnswerFileAsset")
-  latestForCandidate CandidateProfile[]           @relation("CandidateLatestResumeAsset")
+  id                          String                       @id @default(cuid())
+  candidateId                 String
+  ownerUserId                 String
+  kind                        ResumeAssetKind              @default(RESUME)
+  status                      ResumeAssetStatus            @default(ACTIVE)
+  source                      ResumeAssetSource            @default(UPLOAD)
+  isPrimary                   Boolean                      @default(false)
+  storageKey                  String
+  storageProvider             String
+  originalFilename            String
+  mimeType                    String
+  sizeBytes                   Int
+  externalResumeId            String?
+  externalResumeUrl           String?
+  externalResumeVersion       String?
+  lastSynchronizedAt          DateTime?
+  parsingStatus               ResumeParseStatus            @default(PENDING)
+  parsedText                  String?
+  parsedData                  Json?
+  archivedAt                  DateTime?
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
+  candidate                   CandidateProfile             @relation("CandidateResumeAssets", fields: [candidateId], references: [id], onDelete: Cascade)
+  ownerUser                   User                         @relation("ResumeAssetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  resumeSnapshots             ApplicationResumeSnapshot[]
+  answerFiles                 ApplicationScreeningAnswer[] @relation("ScreeningAnswerFileAsset")
+  latestForCandidate          CandidateProfile[]           @relation("CandidateLatestResumeAsset")
   candidateIntelligenceStates CandidateIntelligenceState[]
-  candidateJobMatchStates    CandidateJobMatchState[] @relation("CandidateJobMatchLatestResumeAsset")
+  candidateJobMatchStates     CandidateJobMatchState[]     @relation("CandidateJobMatchLatestResumeAsset")
+  resumeSearchIndexStates     ResumeSearchIndexState[]
 
   @@index([candidateId, kind, createdAt])
   @@index([candidateId, kind, status, createdAt])
@@ -1847,26 +2133,50 @@ model ResumeAsset {
   @@index([source, parsingStatus, createdAt])
 }
 
+model ResumeSearchIndexState {
+  id                    String                  @id @default(cuid())
+  candidateId           String
+  resumeId              String?
+  sourceVersion         String
+  indexSchemaVersion    String
+  status                ResumeSearchIndexStatus @default(PENDING)
+  attemptCount          Int                     @default(0)
+  lastAttemptAt         DateTime?
+  indexedAt             DateTime?
+  lastErrorCode         String?
+  lastErrorAt           DateTime?
+  engineDocumentVersion String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  candidate             CandidateProfile        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  resume                ResumeAsset?            @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, indexSchemaVersion])
+  @@index([status, updatedAt])
+  @@index([resumeId])
+  @@index([lastErrorAt])
+}
+
 model ResumeImportBatch {
-  id                String                 @id @default(cuid())
-  organisationId    String
-  createdByUserId   String
-  originalFileCount Int                    @default(0)
-  totalItemCount    Int                    @default(0)
-  processedCount    Int                    @default(0)
-  successCount      Int                    @default(0)
-  duplicateCount    Int                    @default(0)
-  reviewCount       Int                    @default(0)
-  failedCount       Int                    @default(0)
-  status            ResumeImportBatchStatus @default(QUEUED)
-  startedAt         DateTime?
-  completedAt       DateTime?
-  metadata          Json?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  organisation      Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdByUser     User                   @relation("ResumeImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  items             ResumeImportItem[]
+  id                 String                  @id @default(cuid())
+  organisationId     String
+  createdByUserId    String
+  originalFileCount  Int                     @default(0)
+  totalItemCount     Int                     @default(0)
+  processedCount     Int                     @default(0)
+  successCount       Int                     @default(0)
+  duplicateCount     Int                     @default(0)
+  reviewCount        Int                     @default(0)
+  failedCount        Int                     @default(0)
+  status             ResumeImportBatchStatus @default(QUEUED)
+  startedAt          DateTime?
+  completedAt        DateTime?
+  metadata           Json?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  organisation       Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByUser      User                    @relation("ResumeImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  items              ResumeImportItem[]
   importedCandidates CandidateProfile[]
 
   @@index([organisationId, status, createdAt])
@@ -1885,7 +2195,7 @@ model ResumeImportItem {
   fileExtension               String
   fileSizeBytes               Int
   checksumSha256              String?
-  status                      ResumeImportItemStatus         @default(QUEUED)
+  status                      ResumeImportItemStatus          @default(QUEUED)
   extractedText               String?
   parsedData                  Json?
   parserVersion               String?
@@ -2157,7 +2467,7 @@ model RecruiterSavedSearch {
 }
 
 model SemanticSearchQuery {
-  id                String             @id @default(cuid())
+  id                String                    @id @default(cuid())
   organisationId    String
   createdByUserId   String?
   rawQuery          String?
@@ -2173,12 +2483,12 @@ model SemanticSearchQuery {
   schemaVersion     String
   parserVersion     String
   expansionVersion  String
-  createdAt         DateTime           @default(now())
-  organisation      Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdByUser     User?              @relation("SemanticSearchQueryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  sourceCandidate   CandidateProfile?  @relation("SemanticSearchSourceCandidate", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
-  sourceJob         Job?               @relation("SemanticSearchSourceJob", fields: [sourceJobId], references: [id], onDelete: SetNull)
-  jobContext        Job?               @relation("SemanticSearchJobContext", fields: [jobContextId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                  @default(now())
+  organisation      Organisation              @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByUser     User?                     @relation("SemanticSearchQueryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  sourceCandidate   CandidateProfile?         @relation("SemanticSearchSourceCandidate", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
+  sourceJob         Job?                      @relation("SemanticSearchSourceJob", fields: [sourceJobId], references: [id], onDelete: SetNull)
+  jobContext        Job?                      @relation("SemanticSearchJobContext", fields: [jobContextId], references: [id], onDelete: SetNull)
   executions        SemanticSearchExecution[]
 
   @@index([organisationId, createdAt])
@@ -2241,28 +2551,28 @@ model SavedCandidateSearch {
 }
 
 model TalentPool {
-  id                  String                @id @default(cuid())
-  organisationId      String
+  id                   String                @id @default(cuid())
+  organisationId       String
   createdByRecruiterId String
-  name                String
-  description         String?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  organisation        Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdByRecruiter  RecruiterProfile      @relation(fields: [createdByRecruiterId], references: [id], onDelete: Cascade)
-  candidates          TalentPoolCandidate[]
+  name                 String
+  description          String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  organisation         Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdByRecruiter   RecruiterProfile      @relation(fields: [createdByRecruiterId], references: [id], onDelete: Cascade)
+  candidates           TalentPoolCandidate[]
 
   @@unique([organisationId, name])
   @@index([organisationId, updatedAt])
 }
 
 model TalentPoolCandidate {
-  id            String           @id @default(cuid())
-  talentPoolId  String
-  candidateId   String
-  createdAt     DateTime         @default(now())
-  talentPool    TalentPool       @relation(fields: [talentPoolId], references: [id], onDelete: Cascade)
-  candidate     CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  id           String           @id @default(cuid())
+  talentPoolId String
+  candidateId  String
+  createdAt    DateTime         @default(now())
+  talentPool   TalentPool       @relation(fields: [talentPoolId], references: [id], onDelete: Cascade)
+  candidate    CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@unique([talentPoolId, candidateId])
   @@index([candidateId, createdAt])
@@ -2324,42 +2634,42 @@ model InterviewProcess {
 }
 
 model InterviewRound {
-  id                 String                 @id @default(cuid())
-  organisationId     String
-  interviewProcessId String
-  roundName          String
-  sequence           Int
-  interviewType      InterviewType
-  status             InterviewStatus        @default(PLANNED)
-  durationMinutes    Int?
-  ownerUserId        String?
-  timezone           String?
-  meetingMode        MeetingMode?
-  scheduledStartAt   DateTime?
-  scheduledEndAt     DateTime?
-  meetingLocation    String?
-  meetingLink        String?
-  officeAddress      String?
+  id                    String                 @id @default(cuid())
+  organisationId        String
+  interviewProcessId    String
+  roundName             String
+  sequence              Int
+  interviewType         InterviewType
+  status                InterviewStatus        @default(PLANNED)
+  durationMinutes       Int?
+  ownerUserId           String?
+  timezone              String?
+  meetingMode           MeetingMode?
+  scheduledStartAt      DateTime?
+  scheduledEndAt        DateTime?
+  meetingLocation       String?
+  meetingLink           String?
+  officeAddress         String?
   candidateInstructions String?
-  instructions       String?
-  internalNotes      String?
-  cancelReason       String?
-  scorecardCriteria  Json?
-  feedbackLockedAt   DateTime?
-  decision           InterviewDecision?
-  decisionReason     String?
-  completedAt        DateTime?
-  calendarProvider   String?                @default("ICS")
-  rescheduleCount    Int                    @default(0)
-  lastRescheduledAt  DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  organisation       Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  interviewProcess   InterviewProcess       @relation(fields: [interviewProcessId], references: [id], onDelete: Cascade)
-  owner              User?                  @relation("InterviewRoundOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  panelMembers       InterviewPanelMember[]
-  feedbacks          InterviewFeedback[]
-  meeting            InterviewMeeting?
+  instructions          String?
+  internalNotes         String?
+  cancelReason          String?
+  scorecardCriteria     Json?
+  feedbackLockedAt      DateTime?
+  decision              InterviewDecision?
+  decisionReason        String?
+  completedAt           DateTime?
+  calendarProvider      String?                @default("ICS")
+  rescheduleCount       Int                    @default(0)
+  lastRescheduledAt     DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  organisation          Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  interviewProcess      InterviewProcess       @relation(fields: [interviewProcessId], references: [id], onDelete: Cascade)
+  owner                 User?                  @relation("InterviewRoundOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  panelMembers          InterviewPanelMember[]
+  feedbacks             InterviewFeedback[]
+  meeting               InterviewMeeting?
 
   @@unique([interviewProcessId, sequence])
   @@index([organisationId, status])
@@ -2385,103 +2695,103 @@ model InterviewPanelMember {
 }
 
 model InterviewFeedback {
-  id               String                  @id @default(cuid())
-  organisationId   String
-  interviewRoundId String
-  interviewerId    String
-  submittedAt      DateTime?
-  recommendation   FeedbackRecommendation?
-  overallScore     Int?
-  technicalRating  Int?
-  communicationRating Int?
+  id                   String                  @id @default(cuid())
+  organisationId       String
+  interviewRoundId     String
+  interviewerId        String
+  submittedAt          DateTime?
+  recommendation       FeedbackRecommendation?
+  overallScore         Int?
+  technicalRating      Int?
+  communicationRating  Int?
   problemSolvingRating Int?
-  cultureFitRating Int?
-  strengths        String?
-  weaknesses       String?
-  detailedNotes    String?
-  comments         String?
-  criteriaScores   Json?
-  finalizedAt      DateTime?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-  organisation     Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  interviewRound   InterviewRound          @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
-  interviewer      User                    @relation("InterviewFeedbackAuthor", fields: [interviewerId], references: [id], onDelete: Cascade)
+  cultureFitRating     Int?
+  strengths            String?
+  weaknesses           String?
+  detailedNotes        String?
+  comments             String?
+  criteriaScores       Json?
+  finalizedAt          DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  organisation         Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  interviewRound       InterviewRound          @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
+  interviewer          User                    @relation("InterviewFeedbackAuthor", fields: [interviewerId], references: [id], onDelete: Cascade)
 
   @@unique([interviewRoundId, interviewerId])
   @@index([organisationId, interviewerId, submittedAt])
 }
 
 model MeetingProviderConnection {
-  id                   String                  @id @default(cuid())
-  organisationId       String
-  provider             MeetingProvider
-  status               MeetingConnectionStatus @default(DISCONNECTED)
-  connectedAccountId   String?
-  connectedEmail       String?
+  id                    String                  @id @default(cuid())
+  organisationId        String
+  provider              MeetingProvider
+  status                MeetingConnectionStatus @default(DISCONNECTED)
+  connectedAccountId    String?
+  connectedEmail        String?
   encryptedRefreshToken String?
-  encryptedAccessToken String?
-  accessTokenExpiresAt DateTime?
-  scopes               Json?
-  calendarId           String?
-  providerMetadata     Json?
-  lastValidatedAt      DateTime?
-  lastErrorCode        String?
-  connectedByUserId    String?
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  organisation         Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  connectedByUser      User?                   @relation("MeetingProviderConnectedBy", fields: [connectedByUserId], references: [id], onDelete: SetNull)
+  encryptedAccessToken  String?
+  accessTokenExpiresAt  DateTime?
+  scopes                Json?
+  calendarId            String?
+  providerMetadata      Json?
+  lastValidatedAt       DateTime?
+  lastErrorCode         String?
+  connectedByUserId     String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  organisation          Organisation            @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  connectedByUser       User?                   @relation("MeetingProviderConnectedBy", fields: [connectedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organisationId, provider])
   @@index([organisationId, status])
 }
 
 model InterviewMeeting {
-  id                    String                 @id @default(cuid())
-  organisationId        String
-  interviewRoundId      String                 @unique
-  provider              MeetingProvider?
-  mode                  MeetingMode
-  status                InterviewMeetingStatus @default(DRAFT)
-  externalMeetingId     String?
+  id                      String                       @id @default(cuid())
+  organisationId          String
+  interviewRoundId        String                       @unique
+  provider                MeetingProvider?
+  mode                    MeetingMode
+  status                  InterviewMeetingStatus       @default(DRAFT)
+  externalMeetingId       String?
   externalCalendarEventId String?
-  conferenceId          String?
-  safeJoinUrl           String?
-  encryptedHostUrl      String?
-  passcodeMetadata      Json?
-  timezone              String
-  scheduledStartUtc     DateTime
-  scheduledEndUtc       DateTime
-  durationMinutes       Int
-  location              String?
-  officeAddress         String?
-  dialInInformation     String?
-  providerDisplayName   String?
-  instructions          String?
-  candidateInstructions String?
-  internalNotes         String?
-  providerMetadata      Json?
-  providerOperationKey  String?
-  operationVersion      Int                    @default(1)
-  rescheduleCount       Int                    @default(0)
-  lastRescheduledAt     DateTime?
-  providerLastSyncedAt  DateTime?
-  providerFailureCode   String?
-  providerFailureMessage String?
-  providerCancelledAt   DateTime?
-  createdByUserId       String?
-  updatedByUserId       String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  organisation          Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  interviewRound        InterviewRound         @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
-  createdByUser         User?                  @relation("InterviewMeetingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedByUser         User?                  @relation("InterviewMeetingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  participants          MeetingParticipant[]
-  rescheduleRequests    InterviewRescheduleRequest[]
-  scheduleHistory       InterviewScheduleHistory[]
-  reminders             MeetingReminder[]
+  conferenceId            String?
+  safeJoinUrl             String?
+  encryptedHostUrl        String?
+  passcodeMetadata        Json?
+  timezone                String
+  scheduledStartUtc       DateTime
+  scheduledEndUtc         DateTime
+  durationMinutes         Int
+  location                String?
+  officeAddress           String?
+  dialInInformation       String?
+  providerDisplayName     String?
+  instructions            String?
+  candidateInstructions   String?
+  internalNotes           String?
+  providerMetadata        Json?
+  providerOperationKey    String?
+  operationVersion        Int                          @default(1)
+  rescheduleCount         Int                          @default(0)
+  lastRescheduledAt       DateTime?
+  providerLastSyncedAt    DateTime?
+  providerFailureCode     String?
+  providerFailureMessage  String?
+  providerCancelledAt     DateTime?
+  createdByUserId         String?
+  updatedByUserId         String?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  organisation            Organisation                 @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  interviewRound          InterviewRound               @relation(fields: [interviewRoundId], references: [id], onDelete: Cascade)
+  createdByUser           User?                        @relation("InterviewMeetingCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser           User?                        @relation("InterviewMeetingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  participants            MeetingParticipant[]
+  rescheduleRequests      InterviewRescheduleRequest[]
+  scheduleHistory         InterviewScheduleHistory[]
+  reminders               MeetingReminder[]
 
   @@index([organisationId, status, scheduledStartUtc])
   @@index([organisationId, provider, status])
@@ -2516,40 +2826,40 @@ model MeetingParticipant {
 }
 
 model InterviewRescheduleRequest {
-  id                String                           @id @default(cuid())
-  organisationId    String
+  id                 String                           @id @default(cuid())
+  organisationId     String
   interviewMeetingId String
-  requestedByType   InterviewRescheduleRequesterType
-  requestedByUserId String?
-  candidateId       String?
-  reasonCode        String?
-  reasonText        String?
-  preferredTimezone String?
-  status            InterviewRescheduleRequestStatus @default(PENDING)
-  reviewedByUserId  String?
-  reviewedAt        DateTime?
-  decisionReason    String?
-  createdAt         DateTime                         @default(now())
-  updatedAt         DateTime                         @updatedAt
-  organisation      Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  meeting           InterviewMeeting                @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
-  requestedByUser   User?                            @relation("InterviewRescheduleRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
-  reviewedByUser    User?                            @relation("InterviewRescheduleReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  candidate         CandidateProfile?                @relation(fields: [candidateId], references: [id], onDelete: SetNull)
-  options           InterviewRescheduleOption[]
+  requestedByType    InterviewRescheduleRequesterType
+  requestedByUserId  String?
+  candidateId        String?
+  reasonCode         String?
+  reasonText         String?
+  preferredTimezone  String?
+  status             InterviewRescheduleRequestStatus @default(PENDING)
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  decisionReason     String?
+  createdAt          DateTime                         @default(now())
+  updatedAt          DateTime                         @updatedAt
+  organisation       Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting            InterviewMeeting                 @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
+  requestedByUser    User?                            @relation("InterviewRescheduleRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  reviewedByUser     User?                            @relation("InterviewRescheduleReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  candidate          CandidateProfile?                @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  options            InterviewRescheduleOption[]
 
   @@index([organisationId, status, createdAt])
   @@index([interviewMeetingId, status])
 }
 
 model InterviewRescheduleOption {
-  id               String                    @id @default(cuid())
+  id               String                     @id @default(cuid())
   requestId        String
   proposedStartUtc DateTime
   proposedEndUtc   DateTime
   timezone         String
-  priority         Int                       @default(1)
-  createdAt        DateTime                  @default(now())
+  priority         Int                        @default(1)
+  createdAt        DateTime                   @default(now())
   request          InterviewRescheduleRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@index([requestId, priority])
@@ -2582,21 +2892,21 @@ model InterviewScheduleHistory {
 }
 
 model MeetingReminder {
-  id               String                @id @default(cuid())
-  organisationId   String
+  id                 String                @id @default(cuid())
+  organisationId     String
   interviewMeetingId String
-  participantId    String
-  reminderType     String
-  scheduledFor     DateTime
-  status           MeetingReminderStatus @default(SCHEDULED)
-  backgroundTaskId String?               @unique
-  sentAt           DateTime?
-  failureReason    String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  organisation     Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  meeting          InterviewMeeting      @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
-  participant      MeetingParticipant    @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  participantId      String
+  reminderType       String
+  scheduledFor       DateTime
+  status             MeetingReminderStatus @default(SCHEDULED)
+  backgroundTaskId   String?               @unique
+  sentAt             DateTime?
+  failureReason      String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  organisation       Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  meeting            InterviewMeeting      @relation(fields: [interviewMeetingId], references: [id], onDelete: Cascade)
+  participant        MeetingParticipant    @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@unique([participantId, reminderType, scheduledFor])
   @@index([organisationId, scheduledFor, status])
@@ -2623,78 +2933,78 @@ model Notification {
 }
 
 model Offer {
-  id                      String        @id @default(cuid())
-  organisationId          String
-  applicationId           String
-  jobId                   String
-  candidateId             String
-  previousOfferId         String?
-  supersededByOfferId     String?
-  referenceNumber         String        @unique
-  version                 Int
-  status                  OfferStatus   @default(DRAFT)
-  currency                String
-  annualCompensation      Decimal?      @db.Decimal(14, 2)
-  fixedCompensation       Decimal?      @db.Decimal(14, 2)
-  variableCompensation    Decimal?      @db.Decimal(14, 2)
-  joiningBonus            Decimal?      @db.Decimal(14, 2)
-  retentionBonus          Decimal?      @db.Decimal(14, 2)
-  allowancesAmount        Decimal?      @db.Decimal(14, 2)
-  otherCompensation       Decimal?      @db.Decimal(14, 2)
-  totalCompensation       Decimal?      @db.Decimal(14, 2)
-  benefitsSummary         String?
-  compensationNotes       String?
-  proposedJoiningDate     DateTime?
-  actualJoiningDate       DateTime?
-  probationPeriodMonths   Int?
-  noticeOrBuyoutNote      String?
-  workMode                WorkplaceType?
-  workLocation            String?
-  reportingManagerName    String?
-  departmentSnapshot      String?
-  employmentTypeSnapshot  EmploymentType?
-  recruiterNameSnapshot   String?
+  id                        String             @id @default(cuid())
+  organisationId            String
+  applicationId             String
+  jobId                     String
+  candidateId               String
+  previousOfferId           String?
+  supersededByOfferId       String?
+  referenceNumber           String             @unique
+  version                   Int
+  status                    OfferStatus        @default(DRAFT)
+  currency                  String
+  annualCompensation        Decimal?           @db.Decimal(14, 2)
+  fixedCompensation         Decimal?           @db.Decimal(14, 2)
+  variableCompensation      Decimal?           @db.Decimal(14, 2)
+  joiningBonus              Decimal?           @db.Decimal(14, 2)
+  retentionBonus            Decimal?           @db.Decimal(14, 2)
+  allowancesAmount          Decimal?           @db.Decimal(14, 2)
+  otherCompensation         Decimal?           @db.Decimal(14, 2)
+  totalCompensation         Decimal?           @db.Decimal(14, 2)
+  benefitsSummary           String?
+  compensationNotes         String?
+  proposedJoiningDate       DateTime?
+  actualJoiningDate         DateTime?
+  probationPeriodMonths     Int?
+  noticeOrBuyoutNote        String?
+  workMode                  WorkplaceType?
+  workLocation              String?
+  reportingManagerName      String?
+  departmentSnapshot        String?
+  employmentTypeSnapshot    EmploymentType?
+  recruiterNameSnapshot     String?
   hiringManagerNameSnapshot String?
-  offerExpiryDays         Int?
-  expiryAt                DateTime?
-  approvalRequestedAt     DateTime?
-  approvedAt              DateTime?
-  releasedAt              DateTime?
-  viewedAt                DateTime?
-  acceptedAt              DateTime?
-  rejectedAt              DateTime?
-  withdrawnAt             DateTime?
-  supersededAt            DateTime?
-  joiningConfirmedAt      DateTime?
-  deferredAt              DateTime?
-  noShowAt                DateTime?
-  revisionReason          String?
-  candidateResponseReason String?
-  withdrawalReason        String?
-  deferredReason          String?
-  noShowReason            String?
-  termsAndConditions      String?
-  internalNotes           String?
-  createdByUserId         String
-  updatedByUserId         String
-  releasedByUserId        String?
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
-  organisation            Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  application             Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  job                     Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  candidate               CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  previousOffer           Offer?        @relation("OfferRevisionChain", fields: [previousOfferId], references: [id], onDelete: SetNull)
-  supersededByOffer       Offer?        @relation("OfferSupersededBy", fields: [supersededByOfferId], references: [id], onDelete: SetNull)
-  revisionChildren        Offer[]       @relation("OfferRevisionChain")
-  supersededOffers        Offer[]       @relation("OfferSupersededBy")
-  createdBy               User          @relation("OfferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  updatedBy               User          @relation("OfferUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
-  releasedBy              User?         @relation("OfferReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
-  components              OfferComponent[]
-  approvals               OfferApproval[]
-  accessTokens            OfferAccessToken[]
-  comments                OfferComment[]
+  offerExpiryDays           Int?
+  expiryAt                  DateTime?
+  approvalRequestedAt       DateTime?
+  approvedAt                DateTime?
+  releasedAt                DateTime?
+  viewedAt                  DateTime?
+  acceptedAt                DateTime?
+  rejectedAt                DateTime?
+  withdrawnAt               DateTime?
+  supersededAt              DateTime?
+  joiningConfirmedAt        DateTime?
+  deferredAt                DateTime?
+  noShowAt                  DateTime?
+  revisionReason            String?
+  candidateResponseReason   String?
+  withdrawalReason          String?
+  deferredReason            String?
+  noShowReason              String?
+  termsAndConditions        String?
+  internalNotes             String?
+  createdByUserId           String
+  updatedByUserId           String
+  releasedByUserId          String?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  organisation              Organisation       @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  application               Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  job                       Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate                 CandidateProfile   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  previousOffer             Offer?             @relation("OfferRevisionChain", fields: [previousOfferId], references: [id], onDelete: SetNull)
+  supersededByOffer         Offer?             @relation("OfferSupersededBy", fields: [supersededByOfferId], references: [id], onDelete: SetNull)
+  revisionChildren          Offer[]            @relation("OfferRevisionChain")
+  supersededOffers          Offer[]            @relation("OfferSupersededBy")
+  createdBy                 User               @relation("OfferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy                 User               @relation("OfferUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  releasedBy                User?              @relation("OfferReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
+  components                OfferComponent[]
+  approvals                 OfferApproval[]
+  accessTokens              OfferAccessToken[]
+  comments                  OfferComment[]
 
   @@unique([applicationId, version])
   @@index([organisationId, status, updatedAt])
@@ -2709,13 +3019,13 @@ model OfferComponent {
   offerId      String
   type         String
   label        String
-  amount       Decimal                @db.Decimal(14, 2)
+  amount       Decimal                 @db.Decimal(14, 2)
   frequency    OfferComponentFrequency @default(ONE_TIME)
-  taxable      Boolean                @default(true)
-  displayOrder Int                    @default(0)
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  offer        Offer                  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  taxable      Boolean                 @default(true)
+  displayOrder Int                     @default(0)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  offer        Offer                   @relation(fields: [offerId], references: [id], onDelete: Cascade)
 
   @@index([offerId, displayOrder])
 }
@@ -2740,30 +3050,30 @@ model OfferApproval {
 }
 
 model OfferAccessToken {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   offerId    String
-  tokenHash  String   @unique
+  tokenHash  String    @unique
   expiresAt  DateTime
   consumedAt DateTime?
   revokedAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  offer      Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  offer      Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
 
   @@index([offerId, expiresAt])
   @@index([offerId, revokedAt, consumedAt])
 }
 
 model OfferComment {
-  id          String                 @id @default(cuid())
-  offerId     String
+  id           String                 @id @default(cuid())
+  offerId      String
   authorUserId String?
-  authorType  OfferActorType
-  visibility  OfferCommentVisibility @default(INTERNAL)
-  comment     String
-  createdAt   DateTime               @default(now())
-  offer       Offer                  @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  authorUser  User?                  @relation("OfferCommentAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorType   OfferActorType
+  visibility   OfferCommentVisibility @default(INTERNAL)
+  comment      String
+  createdAt    DateTime               @default(now())
+  offer        Offer                  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  authorUser   User?                  @relation("OfferCommentAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
 
   @@index([offerId, visibility, createdAt])
 }
@@ -2801,4 +3111,314 @@ model AuthToken {
   user       User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
+}
+
+// =====================================================================
+// Subscriptions, Billing, Job Credits and Payment Gateway
+// (feature/subscriptions-billing-entitlements)
+//
+// All monetary fields on these models are integer paise (never floats).
+// This is a deliberate departure from Job.salaryMin/Max (whole-rupee Int)
+// and Offer.*Compensation (Decimal(14,2)) elsewhere in this schema -
+// Razorpay's API is paise-native and money math here must stay exact
+// integer arithmetic, so the convention is scoped to this module only.
+//
+// SubscriptionAuditLog from the spec is intentionally NOT a separate
+// model: every billing mutation is written through the existing
+// AuditLog model (see auditLogService.recordAuditLog) with
+// entityType in {'Purchase','CompanySubscription','JobPostingCreditLedger',
+// 'ProductPlan','CompanyBillingProfile'}, reusing the org/actor-scoped
+// audit trail and admin UI that already exists rather than duplicating it.
+// =====================================================================
+
+enum BillingProductCode {
+  JOB_POST_45D
+  ATS_DB_1M
+  ATS_DB_6M
+  ATS_DB_12M
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  CANCELLED
+  PAYMENT_FAILED
+  REFUNDED
+  SUSPENDED
+}
+
+enum JobCreditSource {
+  SUBSCRIPTION_GRANT
+  PURCHASED_CREDIT
+  ADMIN_ADJUSTMENT
+}
+
+enum JobCreditLedgerEntryType {
+  GRANT
+  CONSUME
+  REVERSAL
+  EXPIRY
+  ADMIN_ADJUSTMENT
+}
+
+enum PaymentWebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum GstSupplyType {
+  INTRA_STATE
+  INTER_STATE
+  // Seller and/or customer state code was not configured at invoice time -
+  // the CGST/SGST-vs-IGST split cannot be determined. totalTaxPaise is
+  // still always correct (18%); only the split is withheld. Pairs with
+  // InvoiceStatus.REVIEW_REQUIRED (B1 hardening, section 9: "do not issue/
+  // finalise an invoice with an assumed CGST/SGST or IGST split").
+  UNKNOWN
+}
+
+enum InvoiceStatus {
+  FINAL
+  REVIEW_REQUIRED
+}
+
+// Server-authoritative product catalogue (section 3). Prices/GST/duration/
+// credits are only ever read from here - never trusted from the client.
+// A new price or benefit change is a NEW row (code + version bump), so
+// historical Purchases can keep an immutable snapshot of what was actually
+// bought without this table's current price retroactively changing history.
+model ProductPlan {
+  id                 String             @id @default(cuid())
+  code               BillingProductCode
+  version            Int                @default(1)
+  name               String
+  description        String?
+  currency           String             @default("INR")
+  baseAmountPaise    Int
+  gstRatePercent     Int                @default(18)
+  gstAmountPaise     Int
+  totalAmountPaise   Int
+  durationMonths     Int?
+  includedJobCredits Int                @default(0)
+  jobActiveDays      Int                @default(45)
+  isActive           Boolean            @default(true)
+  razorpayButtonId   String?
+  effectiveFrom      DateTime           @default(now())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  purchases          Purchase[]
+
+  @@unique([code, version])
+  @@index([code, isActive])
+}
+
+// One purchase attempt/payment per row. Created PENDING before the Razorpay
+// Order exists on the customer's device, so entitlement can never be
+// activated from client-only state (section 5/6).
+model Purchase {
+  id                   String                   @id @default(cuid())
+  organisationId       String
+  purchaserUserId      String
+  productPlanId        String
+  productCode          BillingProductCode
+  productVersion       Int
+  productSnapshot      Json
+  provider             String                   @default("RAZORPAY")
+  providerOrderId      String?                  @unique
+  providerPaymentId    String?                  @unique
+  status               PurchaseStatus           @default(PENDING)
+  currency             String                   @default("INR")
+  amountPaise          Int
+  idempotencyKey       String                   @unique
+  notesSnapshot        Json?
+  paidAt               DateTime?
+  failedAt             DateTime?
+  refundedAt           DateTime?
+  cancelledAt          DateTime?
+  failureReason        String?
+  disputeStatus        String?
+  requiresManualReview Boolean                  @default(false)
+  manualReviewReason   String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  organisation         Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchaserUser        User                     @relation("PurchasePurchaser", fields: [purchaserUserId], references: [id], onDelete: Restrict)
+  productPlan          ProductPlan              @relation(fields: [productPlanId], references: [id], onDelete: Restrict)
+  subscription         CompanySubscription?
+  invoice              Invoice?
+  creditLedgerEntries  JobPostingCreditLedger[]
+  webhookEvents        PaymentWebhookEvent[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([purchaserUserId, createdAt])
+  @@index([productCode, status])
+}
+
+// Company-level (tenant-level) subscription record. One immutable row per
+// paid subscription purchase - renewals create a new row rather than
+// mutating the old one, preserving purchase history (section 4/7).
+model CompanySubscription {
+  id                      String                   @id @default(cuid())
+  organisationId          String
+  purchaseId              String                   @unique
+  productCode             BillingProductCode
+  productVersion          Int
+  planSnapshot            Json
+  status                  SubscriptionStatus       @default(PENDING_PAYMENT)
+  startsAt                DateTime
+  expiresAt               DateTime
+  atsAccess               Boolean                  @default(false)
+  resumeDatabaseAccess    Boolean                  @default(false)
+  includedJobCredits      Int                      @default(0)
+  renewalReminderSentAt   DateTime?
+  renewalReminderFailedAt DateTime?
+  cancelledAt             DateTime?
+  cancellationReason      String?
+  suspendedAt             DateTime?
+  suspensionReason        String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  organisation            Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase                Purchase                 @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  creditLedgerEntries     JobPostingCreditLedger[]
+
+  @@index([organisationId, status])
+  @@index([status, expiresAt])
+}
+
+// Immutable, append-only ledger. Available credits are ALWAYS derived by
+// summing rows live (see entitlementService.getAvailableJobCredits) - there
+// is deliberately no mutable "availableCredits" counter column anywhere,
+// per section 7. GRANT rows with an expired expiresAt stop counting toward
+// the live sum automatically (real-time server-clock comparison), which is
+// also what makes scheduler-delay-proof expiry (section 8/11) fall out for
+// free on the read path, independent of the EXPIRY sweep's timing.
+model JobPostingCreditLedger {
+  id              String                   @id @default(cuid())
+  organisationId  String
+  entryType       JobCreditLedgerEntryType
+  source          JobCreditSource?
+  amount          Int
+  purchaseId      String?
+  subscriptionId  String?
+  jobId           String?
+  // GRANT rows only. NULL = usable immediately. Set to a future date for a
+  // subscription-included-credit grant issued by an early renewal, so the
+  // new term's credits do not become usable (or stack with still-valid
+  // credits from the prior term) before the prior term's expiresAt -
+  // "early renewal begins after the current paid term ends" (B1 hardening,
+  // section 5). getAvailableJobCredits excludes GRANT rows where
+  // validFrom is in the future, exactly mirroring how it already excludes
+  // GRANT rows past expiresAt.
+  validFrom       DateTime?
+  expiresAt       DateTime?
+  reason          String?
+  idempotencyKey  String                   @unique
+  createdByUserId String?
+  createdAt       DateTime                 @default(now())
+  organisation    Organisation             @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase        Purchase?                @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  subscription    CompanySubscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  job             Job?                     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdByUser   User?                    @relation("JobCreditLedgerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([organisationId, entryType, expiresAt])
+  @@index([jobId])
+}
+
+// One row per received Razorpay webhook delivery, keyed by a dedupe key
+// (the x-razorpay-event-id header when present, else a hash of the raw
+// body) so replay/out-of-order delivery can never double-apply an event
+// (section 6/14).
+model PaymentWebhookEvent {
+  id                String                    @id @default(cuid())
+  provider          String                    @default("RAZORPAY")
+  eventType         String
+  dedupeKey         String                    @unique
+  status            PaymentWebhookEventStatus @default(RECEIVED)
+  relatedPurchaseId String?
+  summary           Json?
+  processingError   String?
+  receivedAt        DateTime                  @default(now())
+  processedAt       DateTime?
+  relatedPurchase   Purchase?                 @relation(fields: [relatedPurchaseId], references: [id], onDelete: SetNull)
+
+  @@index([provider, eventType, receivedAt])
+  @@index([relatedPurchaseId])
+}
+
+// Invoice-ready billing/GST details for a company (section 13). Optional -
+// checkout is not blocked on this being filled in, but invoices generated
+// before it exists cannot allocate CGST/SGST vs IGST correctly (see
+// Invoice.placeOfSupplyAssumed).
+model CompanyBillingProfile {
+  id               String       @id @default(cuid())
+  organisationId   String       @unique
+  legalCompanyName String
+  billingEmail     String
+  billingPhone     String?
+  addressLine1     String
+  addressLine2     String?
+  city             String
+  state            String
+  stateCode        String
+  postalCode       String
+  country          String       @default("IN")
+  gstin            String?
+  updatedByUserId  String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organisation     Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  updatedByUser    User?        @relation("BillingProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+}
+
+// One invoice per paid purchase, with an immutable snapshot of the billing
+// profile and product at invoice time (section 13). Total GST is always
+// 18%, but the CGST/SGST vs IGST split depends on place-of-supply and is
+// NOT statutory-review-complete (see CAREERIZ_BILLING_MODULE.md in this
+// worktree for the explicit disclaimer).
+model Invoice {
+  id                     String        @id @default(cuid())
+  organisationId         String
+  purchaseId             String        @unique
+  invoiceNumber          String        @unique
+  invoiceDate            DateTime      @default(now())
+  billingProfileSnapshot Json?
+  productSnapshot        Json
+  supplyType             GstSupplyType
+  // FINAL only when both the seller's and the customer's GST state codes
+  // were known at invoice time, so the CGST/SGST-vs-IGST split is real, not
+  // guessed. REVIEW_REQUIRED invoices still have a correct totalTaxPaise
+  // (18%) and totalPayablePaise, but cgst/sgst/igst are all 0 pending an
+  // operator supplying the missing jurisdiction data and regenerating the
+  // split (B1 hardening, section 9).
+  status                 InvoiceStatus @default(FINAL)
+  taxableValuePaise      Int
+  gstRatePercent         Int
+  cgstPaise              Int           @default(0)
+  sgstPaise              Int           @default(0)
+  igstPaise              Int           @default(0)
+  totalTaxPaise          Int
+  totalPayablePaise      Int
+  providerReference      String?
+  createdAt              DateTime      @default(now())
+  organisation           Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  purchase               Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, invoiceDate])
+  @@index([organisationId, status])
 }

@@ -20,6 +20,7 @@ import {
   getResumeImportBatchItem,
   getResumeImportBatchItems,
   getResumeImports,
+  getResumeImportWorkerStatus,
   patchResumeImportBatchItem,
   postResumeImportBatch,
   postResumeImportBatchItemConfirm,
@@ -42,6 +43,7 @@ export const resumeImportRouter = Router();
 
 resumeImportRouter.use(auth(['RECRUITER', 'ADMIN']));
 resumeImportRouter.post('/', upload.array('files', env.resumeImportMaxFiles), postResumeImportBatch);
+resumeImportRouter.get('/worker-status', getResumeImportWorkerStatus);
 resumeImportRouter.get('/', validateSchema(resumeImportListQuerySchema.partial(), 'query'), getResumeImports);
 resumeImportRouter.get('/:batchId', getResumeImport);
 resumeImportRouter.get('/:batchId/items', validateSchema(resumeImportItemListQuerySchema.partial(), 'query'), getResumeImportBatchItems);

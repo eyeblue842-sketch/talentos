@@ -12,6 +12,10 @@ let confirmResumeImportItem;
 let retryResumeImportItem;
 let rejectResumeImportItem;
 let getResumeImportFailureReport;
+let processBackgroundTask;
+let resetIntelligenceProvider;
+let resetDocumentProcessorCircuitBreaker;
+const originalFetch = global.fetch;
 
 let state;
 let idCounter = 1;
@@ -40,6 +44,85 @@ function bufferFromPdf(text) {
     doc.text(text);
     doc.end();
   });
+}
+
+function scaffoldCanonicalDocument(overrides = {}) {
+  return {
+    schemaVersion: '1.0.0',
+    parserVersion: 'document-processor-0.1.0',
+    correlationId: 'corr-import-1',
+    engineVersions: { docling: '2.119.0', paddleocr: null },
+    selectedRoute: 'DOCLING_STRUCTURE',
+    fallbackReasons: [],
+    documentMetadata: {
+      pageCount: 1,
+      fileSizeBytes: 10,
+      mimeType: 'application/pdf',
+      sniffedMimeType: 'application/pdf',
+      originalFilename: 'candidate.pdf',
+    },
+    pages: [{ pageNumber: 1, nativeTextPresent: true }],
+    textBlocks: [
+      {
+        page: 1,
+        text: 'Processor Person\nprocessor@example.com\n+1 555 999 0101',
+        readingOrder: 1,
+        engine: 'docling',
+        engineConfidence: 0.98,
+      },
+    ],
+    tables: [],
+    images: [],
+    readingOrderApplied: true,
+    extractionConfidence: 0.96,
+    qualityWarnings: [],
+    processingDurations: { totalMs: 12, validationMs: 2, extractionMs: 10 },
+    error: null,
+    preprocessing: [],
+    ocrTextBlocks: [],
+    ocrPages: [],
+    reconciliation: [],
+    ...overrides,
+  };
+}
+
+function readyResponse(doclingState = 'READY') {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      status: 'ready',
+      engines: { paddleocr: { available: true, reason: null, version: '3.7.0' } },
+      docling: {
+        state: doclingState,
+        engineVersion: '2.119.0',
+        degradedReason: null,
+        activeConversions: 0,
+        queuedRequests: 0,
+        queueCapacity: 2,
+      },
+      preprocessing: { available: true, version: '1.0.0', reason: null },
+      ocr: {
+        state: 'READY',
+        engineVersion: '3.7.0',
+        degradedReason: null,
+        activeConversions: 0,
+        queuedRequests: 0,
+        queueCapacity: 2,
+      },
+      activeRequests: 0,
+      maxConcurrentRequests: 2,
+    }),
+  };
+}
+
+function mockDocumentProcessor(postHandler, { doclingState = 'READY' } = {}) {
+  return async (url, init) => {
+    if (String(url).endsWith('/health/ready')) {
+      return readyResponse(doclingState);
+    }
+    return postHandler(url, init);
+  };
 }
 
 function seedState() {
@@ -76,6 +159,7 @@ function matchesWhere(row, where = {}) {
     }
     if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
       if ('in' in value) return value.in.includes(row[key]);
+      if ('notIn' in value) return !value.notIn.includes(row[key]);
       if ('not' in value) return row[key] !== value.not;
       if ('equals' in value) return String(row[key] || '').toLowerCase() === String(value.equals || '').toLowerCase();
       if ('contains' in value) return String(row[key] || '').toLowerCase().includes(String(value.contains || '').toLowerCase());
@@ -153,6 +237,11 @@ function installPrismaMocks() {
     applyData(item, clone(data));
     return clone(item);
   };
+  prisma.resumeImportItem.updateMany = async ({ where = {}, data }) => {
+    const matches = state.items.filter((item) => matchesWhere(item, where));
+    matches.forEach((item) => applyData(item, clone(data)));
+    return { count: matches.length };
+  };
   prisma.resumeImportItem.findUnique = async ({ where } = {}) => clone(state.items.find((item) => item.id === where.id) || null);
   prisma.resumeImportItem.findFirst = async ({ where = {} } = {}) => clone(state.items.find((item) => matchesWhere(item, where)) || null);
   prisma.resumeImportItem.findMany = async ({ where = {} } = {}) => state.items.filter((item) => matchesWhere(item, where)).map(clone);
@@ -165,13 +254,28 @@ function installPrismaMocks() {
       error.code = 'P2002';
       throw error;
     }
-    const task = { id: nextId('task'), createdAt: now(), updatedAt: now(), ...clone(data) };
+    const task = { id: nextId('task'), createdAt: now(), updatedAt: now(), attemptCount: 0, ...clone(data) };
     state.backgroundTasks.push(task);
     return clone(task);
   };
   prisma.backgroundTask.findUnique = async ({ where } = {}) => clone(
     state.backgroundTasks.find((item) => item.id === where.id || item.idempotencyKey === where.idempotencyKey) || null
   );
+  prisma.backgroundTask.findFirst = async ({ where = {}, orderBy } = {}) => {
+    const matches = state.backgroundTasks.filter((item) => matchesWhere(item, where));
+    if (orderBy?.createdAt === 'desc') matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return clone(matches[0] || null);
+  };
+  prisma.backgroundTask.update = async ({ where, data }) => {
+    const task = state.backgroundTasks.find((item) => item.id === where.id);
+    applyData(task, clone(data));
+    return clone(task);
+  };
+  prisma.backgroundTask.updateMany = async ({ where = {}, data }) => {
+    const matches = state.backgroundTasks.filter((item) => matchesWhere(item, where));
+    matches.forEach((item) => applyData(item, clone(data)));
+    return { count: matches.length };
+  };
 
   prisma.auditLog.create = async ({ data }) => {
     const auditLog = { id: nextId('audit'), createdAt: now(), ...clone(data) };
@@ -217,6 +321,9 @@ before(async () => {
     rejectResumeImportItem,
     getResumeImportFailureReport,
   } = await import('../services/resumeImportService.js'));
+  ({ processBackgroundTask } = await import('../services/backgroundTaskHandlers.js'));
+  ({ resetIntelligenceProvider } = await import('../intelligence/services/providerService.js'));
+  ({ resetDocumentProcessorCircuitBreaker } = await import('../services/documentProcessor/documentProcessorClient.js'));
 });
 
 beforeEach(() => {
@@ -233,14 +340,34 @@ beforeEach(() => {
   env.resumeImportMaxUncompressedMb = 500;
   env.resumeImportMaxTextChars = 120000;
   env.resumeImportMaxRetries = 3;
+  env.resumeImportBlockedBatchIds = [];
+  env.documentProcessorEnabled = false;
+  env.documentProcessorIntegrationEnabled = false;
+  env.documentProcessorAllowedBatchIds = [];
+  env.documentProcessorAllowedCompanyIds = [];
+  env.documentProcessorUrl = 'http://127.0.0.1:8081';
+  env.documentProcessorConnectTimeoutMs = 50;
+  env.documentProcessorResponseTimeoutMs = 50;
+  env.documentProcessorMaxRetries = 1;
+  env.documentProcessorCircuitBreakerThreshold = 3;
+  env.documentProcessorCircuitBreakerCooldownMs = 1000;
+  env.intelligenceEnabled = false;
+  env.intelligenceProvider = 'DISABLED';
+  env.intelligenceModel = null;
+  env.intelligenceBaseUrl = 'https://example.test';
+  env.intelligenceApiKey = 'test-key';
+  resetIntelligenceProvider();
+  resetDocumentProcessorCircuitBreaker();
   const fullPath = path.resolve(process.cwd(), env.localStoragePath);
   fs.rmSync(fullPath, { recursive: true, force: true });
+  global.fetch = originalFetch;
 });
 
 afterEach(() => {
   const fullPath = path.resolve(process.cwd(), env.localStoragePath);
   fs.rmSync(fullPath, { recursive: true, force: true });
   env.localStoragePath = originalStoragePath;
+  global.fetch = originalFetch;
 });
 
 test('valid multi-file upload creates a batch, items, stored files, and background tasks', async () => {
@@ -282,6 +409,732 @@ test('processing a successful resume item extracts text and leaves the item read
   assert.match(updated.extractedText, /ready@example.com/);
   assert.equal(updated.requiresManualReview, false);
   assert.equal(state.batches.find((entry) => entry.id === batch.id).processedCount, 1);
+});
+
+test('processResumeImportItem skips blocked batches before any processing state changes', async () => {
+  const file = {
+    originalname: 'blocked.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Blocked Candidate\nblocked@example.com\n+1 555 999 0002'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  const originalStatus = item.status;
+  env.resumeImportBlockedBatchIds = [item.batchId];
+
+  const result = await processResumeImportItem(item.id, 'worker-guard');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(result, 'cancelled');
+  assert.equal(updated.status, originalStatus);
+  assert.equal(updated.processingStartedAt ?? null, null);
+  assert.equal(updated.processingCompletedAt ?? null, null);
+  assert.equal(updated.extractedText ?? null, null);
+});
+
+test('processResumeImportItem preserves the existing deterministic-only path when document processor integration is disabled', async () => {
+  const file = {
+    originalname: 'disabled-path.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Deterministic Person\ndeterministic@example.com\n+1 555 999 0004'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('document processor should not be called');
+  };
+
+  await processResumeImportItem(item.id, 'worker-disabled');
+
+  const updated = state.items.find((entry) => entry.id === item.id);
+  assert.equal(updated.status, 'READY');
+  assert.equal(fetchCalled, false);
+  assert.equal(updated.metadata.documentProcessor.used, false);
+  assert.equal(updated.metadata.documentProcessor.attempted, false);
+  assert.match(updated.extractedText, /deterministic@example.com/);
+});
+
+test('an allowlisted batch calls the document processor and persists hybrid reconciliation metadata', async () => {
+  const file = {
+    originalname: 'processor.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Processor Person\nprocessor@example.com\n+1 555 999 0101'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  let analyseCalls = 0;
+  global.fetch = mockDocumentProcessor(async (url) => {
+    analyseCalls += 1;
+    assert.equal(String(url), 'http://127.0.0.1:8081/v1/documents/analyse');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => scaffoldCanonicalDocument(),
+    };
+  });
+
+  await processResumeImportItem(item.id, 'worker-hybrid');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(analyseCalls, 1);
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.used, true);
+  assert.equal(updated.metadata.documentProcessor.rolloutMatched, true);
+  assert.equal(updated.metadata.documentProcessor.selectedRoute, 'DOCLING_STRUCTURE');
+  assert.equal(updated.parsedData.metadata.documentProcessor.used, true);
+  assert.equal(updated.parsedData.metadata.reconciliation.reviewRequired, false);
+  assert.equal(updated.parsedData.candidate.email.alternatives.pythonExtracted.value, 'processor@example.com');
+  assert.equal(updated.parsedData.candidate.email.alternatives.deterministic.value, 'processor@example.com');
+  assert.equal(updated.parsedData.candidate.email.value, 'processor@example.com');
+  assert.equal(updated.parsedData.candidate.email.source, 'document_processor');
+  assert.equal(updated.parsedData.candidate.email.evidence.page, 1);
+});
+
+test('a non-allowlisted batch does not call the document processor even when integration is enabled', async () => {
+  const file = {
+    originalname: 'not-allowlisted.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('No Processor\nnoprocessor@example.com\n+1 555 999 0005'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = ['fictional-batch-only'];
+
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('should not be called');
+  };
+
+  await processResumeImportItem(item.id, 'worker-not-allowlisted');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(fetchCalled, false);
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.attempted, false);
+  assert.equal(updated.metadata.documentProcessor.rolloutMatched, false);
+});
+
+test('integration enabled without any batch or company allowlist keeps the legacy parser path unchanged', async () => {
+  const file = {
+    originalname: 'no-allowlist.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Legacy Only\nlegacy.only@example.com\n+1 555 999 1010'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [];
+  env.documentProcessorAllowedCompanyIds = [];
+
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('should not be called without an allowlist');
+  };
+
+  await processResumeImportItem(item.id, 'worker-no-allowlist');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(fetchCalled, false);
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.used, false);
+  assert.equal(updated.metadata.documentProcessor.attempted, false);
+  assert.equal(updated.metadata.documentProcessor.rolloutMatched, false);
+  assert.match(updated.extractedText, /legacy\.only@example\.com/);
+});
+
+test('an allowlisted organisation can invoke the document processor even when the batch is not explicitly allowlisted', async () => {
+  const file = {
+    originalname: 'company-allowlisted.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Company Allowlisted\ncompany.allowlisted@example.com\n+1 555 999 0008'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedCompanyIds = ['org-1'];
+
+  let analyseCalls = 0;
+  global.fetch = mockDocumentProcessor(async () => {
+    analyseCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => scaffoldCanonicalDocument({
+        correlationId: 'corr-company-allow',
+        textBlocks: [{
+          page: 1,
+          text: 'Company Allowlisted\ncompany.allowlisted@example.com\n+1 555 999 0008',
+          readingOrder: 1,
+          engine: 'docling',
+          engineConfidence: 0.98,
+        }],
+      }),
+    };
+  });
+
+  await processResumeImportItem(item.id, 'worker-company-allow');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(analyseCalls, 1);
+  assert.equal(updated.metadata.documentProcessor.used, true);
+  assert.equal(updated.metadata.documentProcessor.rolloutMatched, true);
+});
+
+test('document processor partial-page warnings preserve usable text and route the item to review', async () => {
+  const file = {
+    originalname: 'partial.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Legacy Partial\nlegacy.partial@example.com\n+1 555 999 0006'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      documentMetadata: {
+        pageCount: 2,
+        fileSizeBytes: 10,
+        mimeType: 'application/pdf',
+        sniffedMimeType: 'application/pdf',
+        originalFilename: 'partial.pdf',
+      },
+      pages: [{ pageNumber: 1, nativeTextPresent: true }, { pageNumber: 2, nativeTextPresent: false }],
+      textBlocks: [{
+        page: 1,
+        text: 'Partial Person\npartial@example.com\n+1 555 999 1000',
+        readingOrder: 1,
+        engine: 'docling',
+        engineConfidence: 0.95,
+      }],
+      ocrPages: [{
+        pageNumber: 2,
+        sourceType: 'PDF_RENDERED',
+        extractionRoute: 'OCR_RENDERED_PDF_PAGE',
+        lowConfidence: false,
+        emptyOutput: true,
+        warnings: ['PAGE_RENDER_FAILED'],
+        meanConfidence: null,
+        orientation: null,
+      }],
+      qualityWarnings: ['partial_page_failure'],
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-partial');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.equal(updated.metadata.documentProcessor.used, true);
+  assert.equal(updated.parsedData.metadata.documentProcessor.document.failedPageCount, 1);
+  assert.match(updated.extractedText, /partial@example.com/);
+});
+
+test('a document processor connection failure falls back to deterministic parsing and records the fallback reason', async () => {
+  const file = {
+    originalname: 'processor-fallback.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Fallback Person\nfallback.person@example.com\n+1 555 999 0007'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => {
+    throw new Error('ECONNREFUSED');
+  });
+
+  await processResumeImportItem(item.id, 'worker-fallback');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.used, false);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_CONNECTION_ERROR');
+  assert.match(updated.extractedText, /fallback\.person@example\.com/);
+});
+
+test('a document processor 4xx rejection falls back to deterministic parsing and persists the structured fallback reason', async () => {
+  const file = {
+    originalname: 'processor-4xx.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Client Reject\nclient.reject@example.com\n+1 555 999 0009'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: false,
+    status: 422,
+    json: async () => ({ code: 'UNSUPPORTED_MIME_TYPE', message: 'bad mime', retryable: false }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-4xx');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.used, false);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'UNSUPPORTED_MIME_TYPE');
+  assert.equal(updated.metadata.documentProcessor.retryable, false);
+});
+
+test('a document processor 5xx rejection falls back to deterministic parsing and persists the retryable fallback reason', async () => {
+  const file = {
+    originalname: 'processor-5xx.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Server Retry\nserver.retry@example.com\n+1 555 999 0010'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ code: 'SERVICE_BUSY', message: 'busy', retryable: true }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-5xx');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.used, false);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'SERVICE_BUSY');
+  assert.equal(updated.metadata.documentProcessor.retryable, true);
+});
+
+test('a malformed document processor response falls back to deterministic parsing and persists the invalid-response reason', async () => {
+  const file = {
+    originalname: 'processor-malformed.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Malformed Response\nmalformed.response@example.com\n+1 555 999 0011'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new Error('Unexpected token in JSON');
+    },
+  }));
+
+  await processResumeImportItem(item.id, 'worker-malformed');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_INVALID_RESPONSE');
+});
+
+test('an unsupported schema version falls back safely and persists the schema mismatch reason', async () => {
+  const file = {
+    originalname: 'processor-schema.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Schema Mismatch\nschema.mismatch@example.com\n+1 555 999 0012'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({ schemaVersion: '99.0.0' }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-schema');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_SCHEMA_MISMATCH');
+});
+
+test('an invalid page reference falls back safely and routes the item to review', async () => {
+  const file = {
+    originalname: 'processor-bad-page.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Bad Page\nbad.page@example.com\n+1 555 999 0013'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      pages: [{ pageNumber: 1, nativeTextPresent: true }],
+      textBlocks: [{
+        page: 2,
+        text: 'Impossible page reference',
+        readingOrder: 1,
+        engine: 'docling',
+        engineConfidence: 0.95,
+      }],
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-bad-page');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_INVALID_PAGE_REFERENCE');
+});
+
+test('an invalid confidence falls back safely and routes the item to review', async () => {
+  const file = {
+    originalname: 'processor-bad-confidence.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Bad Confidence\nbad.confidence@example.com\n+1 555 999 0014'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      extractionConfidence: 1.5,
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-bad-confidence');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_INVALID_CONFIDENCE');
+});
+
+test('all-pages failure without usable legacy text routes the item to review rather than persisting success', async () => {
+  const file = {
+    originalname: 'all-pages-failed.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf(null),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      textBlocks: [],
+      ocrTextBlocks: [],
+      ocrPages: [{
+        pageNumber: 1,
+        sourceType: 'PDF_RENDERED',
+        extractionRoute: 'OCR_RENDERED_PDF_PAGE',
+        lowConfidence: true,
+        emptyOutput: true,
+        warnings: ['ALL_PAGES_FAILED'],
+        meanConfidence: null,
+        orientation: null,
+      }],
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-all-pages-failed');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.equal(updated.extractedText, '');
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_EMPTY_OUTPUT');
+});
+
+test('empty Python output with usable legacy text falls back audibly, preserves the deterministic result, and remains reviewable', async () => {
+  const file = {
+    originalname: 'empty-output-fallback.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Legacy Empty Output\nlegacy.empty@example.com\n+1 555 999 0015'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      textBlocks: [],
+      pages: [{ pageNumber: 1, nativeTextPresent: false }],
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-empty-output');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.match(updated.extractedText, /legacy\.empty@example\.com/);
+  assert.equal(updated.metadata.documentProcessor.fallbackReason, 'DOCUMENT_PROCESSOR_EMPTY_OUTPUT');
+});
+
+test('deterministic and Python disagreement remains available for review instead of silently overwriting the stronger value', async () => {
+  const file = {
+    originalname: 'processor-disagreement.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Legacy Winner\nlegacy.winner@example.com\n+1 555 999 0016'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+
+  global.fetch = mockDocumentProcessor(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => scaffoldCanonicalDocument({
+      textBlocks: [{
+        page: 1,
+        text: 'Processor Challenger\nprocessor.challenger@example.com\n+1 555 999 0016',
+        readingOrder: 1,
+        engine: 'docling',
+        engineConfidence: 0.95,
+      }],
+    }),
+  }));
+
+  await processResumeImportItem(item.id, 'worker-disagreement');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.requiresManualReview, true);
+  assert.equal(updated.parsedData.candidate.email.alternatives.deterministic.value, 'legacy.winner@example.com');
+  assert.equal(updated.parsedData.candidate.email.alternatives.pythonExtracted.value, 'processor.challenger@example.com');
+  assert.equal(updated.parsedData.metadata.reconciliation.reviewRequired, true);
+});
+
+test('AI may fill a missing field only when the value is supported by document text evidence', async () => {
+  const file = {
+    originalname: 'processor-ai-supported.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Evidence Person\nevidence.person@example.com\nBackend engineer building APIs.'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+  env.intelligenceEnabled = true;
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-test';
+  resetIntelligenceProvider();
+
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.endsWith('/health/ready')) {
+      return readyResponse('READY');
+    }
+    if (target === 'http://127.0.0.1:8081/v1/documents/analyse') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => scaffoldCanonicalDocument({
+          textBlocks: [{
+            page: 1,
+            text: 'Evidence Person\nevidence.person@example.com\nBackend engineer building APIs.',
+            readingOrder: 1,
+            engine: 'docling',
+            engineConfidence: 0.98,
+          }],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        model: 'gpt-test',
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              candidate: {
+                summary: { value: 'Backend engineer building APIs.', confidence: 0.86, source: 'ai' },
+              },
+              metadata: { parser: 'ai-test' },
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  await processResumeImportItem(item.id, 'worker-ai-supported');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'READY');
+  assert.equal(updated.parsedData.candidate.summary.value, 'Backend engineer building APIs.');
+  assert.equal(updated.parsedData.candidate.summary.source, 'ai_with_text_evidence');
+});
+
+test('unsupported AI-only values on a review-sensitive field are rejected and propagated as review warnings instead of becoming selected candidate data', async () => {
+  const file = {
+    originalname: 'processor-ai-unsupported.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Unsupported AI\nunsupported.ai@example.com'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  env.documentProcessorEnabled = true;
+  env.documentProcessorIntegrationEnabled = true;
+  env.documentProcessorAllowedBatchIds = [item.batchId];
+  env.intelligenceEnabled = true;
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-test';
+  resetIntelligenceProvider();
+
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.endsWith('/health/ready')) {
+      return readyResponse('READY');
+    }
+    if (target === 'http://127.0.0.1:8081/v1/documents/analyse') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => scaffoldCanonicalDocument({
+          textBlocks: [{
+            page: 1,
+            text: 'Unsupported AI\nunsupported.ai@example.com',
+            readingOrder: 1,
+            engine: 'docling',
+            engineConfidence: 0.98,
+          }],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        model: 'gpt-test',
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              candidate: {
+                currentTitle: { value: 'Invented Principal Architect', confidence: 0.91, source: 'ai' },
+              },
+              metadata: { parser: 'ai-test' },
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  await processResumeImportItem(item.id, 'worker-ai-unsupported');
+  const updated = state.items.find((entry) => entry.id === item.id);
+
+  assert.equal(updated.status, 'REVIEW_REQUIRED');
+  assert.equal(updated.parsedData.candidate.currentTitle.value, null);
+  assert.match(JSON.stringify(updated.parsedData.metadata.reconciliation.warnings), /rejected unsupported AI-only value/i);
+});
+
+test('resume import background task is cancelled for a blocked batch before processResumeImportItem runs', async () => {
+  const file = {
+    originalname: 'guarded.pdf',
+    mimetype: 'application/pdf',
+    buffer: await bufferFromPdf('Guarded Candidate\nguarded@example.com\n+1 555 999 0003'),
+  };
+  file.size = file.buffer.length;
+
+  await createResumeImportBatch(actor(), [file], 'org-1', {});
+  const item = state.items[0];
+  const originalStatus = item.status;
+  env.resumeImportBlockedBatchIds = [item.batchId];
+  const task = state.backgroundTasks[0];
+  task.status = 'RUNNING';
+  task.leaseOwnerId = 'worker-guard';
+  task.entityId = item.id;
+  task.payload = { itemId: item.id };
+
+  const result = await processBackgroundTask(task);
+  const updatedItem = state.items.find((entry) => entry.id === item.id);
+  const updatedTask = state.backgroundTasks.find((entry) => entry.id === task.id);
+
+  assert.equal(result, 'cancelled');
+  assert.equal(updatedItem.status, originalStatus);
+  assert.equal(updatedTask.status, 'CANCELLED');
+  assert.match(updatedTask.lastErrorMessage, /blocked by configuration/i);
 });
 
 test('confirmation creates an imported candidate, while duplicate email detection requires review', async () => {

@@ -1,3 +1,4 @@
+import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getHomeRouteForRole } from '@/lib/roles';
@@ -28,14 +29,20 @@ async function parseJson(response) {
 export async function requestBackend(path, options = {}, token) {
   const cookieStore = await cookies();
   const activeOrganisationId = cookieStore.get(ORGANISATION_COOKIE)?.value || null;
+  const isMultipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeOrganisationId ? { 'x-organisation-id': activeOrganisationId } : {}),
+    ...(options.headers || {}),
+  };
+
+  if (!isMultipart && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${BACKEND_API_BASE_URL}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(activeOrganisationId ? { 'x-organisation-id': activeOrganisationId } : {}),
-      ...(options.headers || {}),
-    },
+    headers,
     cache: 'no-store',
   });
 
@@ -82,6 +89,15 @@ export async function requireUser(role) {
     redirect('/auth');
   }
 
+  // Server-side enforcement lives in the backend auth() middleware; this
+  // redirect only keeps the UX honest by sending the user to the right page
+  // instead of letting every protected page 403 individually. The
+  // change-password page itself calls getCurrentUser() directly, not
+  // requireUser(), so it never redirects to itself.
+  if (user.mustChangePassword) {
+    redirect('/change-password');
+  }
+
   const requiredRoles = Array.isArray(role) ? role : role ? [role] : [];
   if (requiredRoles.length && !requiredRoles.includes(user.role)) {
     redirect(getHomeRouteForRole(user.role));
@@ -93,6 +109,10 @@ export async function requireUser(role) {
 export async function redirectIfAuthenticated() {
   const user = await getCurrentUser();
   if (!user) return null;
+
+  if (user.mustChangePassword) {
+    redirect('/change-password');
+  }
 
   redirect(getHomeRouteForRole(user.role));
 }

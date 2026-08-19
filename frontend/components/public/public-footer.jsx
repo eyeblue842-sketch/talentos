@@ -17,8 +17,8 @@ const footerGroups = [
       { label: 'Career Tools', href: '/career-tools' },
       { label: 'Candidate Sign In', href: '/auth/candidate/login' },
       { label: 'Create Profile', href: '/auth/candidate/register' },
-      { label: 'Employer Sign In', href: '/hire/login' },
-      { label: 'Create Workspace', href: '/hire/register' },
+      { label: 'Employer Sign In', href: '/hire' },
+      { label: 'Create Workspace', href: '/hire' },
     ],
   },
 ];

@@ -1,0 +1,8 @@
+# Kept as the file requirements-dev.txt and CI reference for local/dev
+# installs. The actual human-maintained dependency list -- including the
+# CPU-only torch/torchvision direct-URL+hash pins (see that file's header
+# for why) -- now lives in requirements.in, which requirements-lock.txt is
+# generated from (pip-compile --generate-hashes). Kept as a separate file
+# rather than merged so `-r requirements.in` here is a one-line, low-risk
+# delegation instead of a second copy that could drift out of sync.
+-r requirements.in

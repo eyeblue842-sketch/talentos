@@ -1,7 +1,7 @@
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
-import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
-import { RecruiterSemanticSearchWorkspace } from '@/components/sections/recruiter-semantic-search-workspace';
+import { RecruiterResumeSearchPage } from '@/components/sections/recruiter-resume-search-page';
+import { RecruiterResumeSearchV2Page } from '@/components/sections/recruiter-resume-search-v2-page';
 import { recruiterNav } from '@/lib/navigation';
 import {
   getCurrentOrganisation,
@@ -10,11 +10,17 @@ import {
 import { getCurrentUser } from '@/lib/auth';
 import { hasUserPermission } from '@/lib/enterprise-permissions';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { buildInitialResumeSearchV2State } from '@/lib/recruiter-resume-search-v2';
+import { isResumeSearchV2RolloutEnabledForServer } from '@/lib/resume-search-v2-rollout.server';
 import { buildInitialSemanticSearchState } from '@/lib/semantic-search';
 
 export default async function RecruiterDatabasePage({ searchParams }) {
   const rawParams = await searchParams;
-  const initialState = buildInitialSemanticSearchState(rawParams || {});
+  const initialState = {
+    ...buildInitialSemanticSearchState(rawParams || {}),
+    // Criteria is a review-only page. Search execution happens on the results route.
+    deferSearch: true,
+  };
 
   let organisation = null;
   let currentUser = null;
@@ -23,11 +29,7 @@ export default async function RecruiterDatabasePage({ searchParams }) {
   const semanticSearchEnabled = isFeatureEnabled('semanticSearch');
   const semanticSearchHistoryEnabled = isFeatureEnabled('searchHistory');
   const semanticSearchSavedEnabled = isFeatureEnabled('savedSearches');
-  const semanticSearchSuggestionsEnabled = isFeatureEnabled('searchSuggestions');
-  const similarCandidateSearchEnabled = isFeatureEnabled('similarCandidateSearch');
-  const similarJobSearchEnabled = isFeatureEnabled('similarJobSearch');
-  const candidateIntelligenceEnabled = isFeatureEnabled('candidateIntelligence');
-  const candidateMatchingEnabled = isFeatureEnabled('candidateMatching');
+  const resumeSearchV2Enabled = isFeatureEnabled('resumeSearchV2');
 
   try {
     [organisation, jobs, currentUser] = await Promise.all([
@@ -44,44 +46,45 @@ export default async function RecruiterDatabasePage({ searchParams }) {
   const canReadSearchHistory = hasUserPermission(currentUser, 'intelligence.search.history.read');
   const canReadSavedSearches = hasUserPermission(currentUser, 'intelligence.saved_search.read');
   const canManageSavedSearches = hasUserPermission(currentUser, 'intelligence.saved_search.manage');
-  const canReadCandidateIntelligence = hasUserPermission(currentUser, 'intelligence.candidate.read');
-  const canReadCandidateMatch = hasUserPermission(currentUser, 'intelligence.match.read');
-
+  const canUseSalaryFilters = hasUserPermission(currentUser, 'intelligence.search.salary.filter');
+  const resumeSearchV2RolloutEnabled = isResumeSearchV2RolloutEnabledForServer({ user: currentUser, organisation });
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
-      <PageHeader
-        eyebrow={organisation?.slug || 'Careeriz Hire'}
-        title="Resume Search"
-        description="Recruiter-grade semantic candidate discovery with structured filters, saved searches, live preview, and optional AI match enrichment."
-        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search' }]}
-      />
-
+    <WorkspaceShell
+      brand={organisation?.name || 'Careeriz Hire'}
+      items={recruiterNav}
+      maxWidthClassName="max-w-none"
+      paddingClassName="px-4 py-4 sm:px-6 sm:py-5 lg:px-6 lg:py-6"
+      sidebarCollapsible
+    >
       {errorMessage ? (
         <Card>
           <h2 className="text-xl font-semibold text-[var(--color-text)]">Resume Search unavailable</h2>
           <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{errorMessage}</p>
         </Card>
       ) : (
-        <RecruiterSemanticSearchWorkspace
-          initialState={initialState}
-          organisationName={organisation?.name || 'Careeriz Hire'}
-          jobs={jobs}
-          featureEnabled={semanticSearchEnabled}
-          canRead={canReadSemanticSearch}
-          canExecute={canExecuteSemanticSearch}
-          canReadHistory={canReadSearchHistory}
-          canReadSavedSearches={canReadSavedSearches}
-          canManageSavedSearches={canManageSavedSearches}
-          canReadCandidateIntelligence={canReadCandidateIntelligence}
-          canReadCandidateMatch={canReadCandidateMatch}
-          candidateIntelligenceEnabled={candidateIntelligenceEnabled}
-          candidateMatchingEnabled={candidateMatchingEnabled}
-          searchSuggestionsEnabled={semanticSearchSuggestionsEnabled}
-          savedSearchesEnabled={semanticSearchSavedEnabled}
-          searchHistoryEnabled={semanticSearchHistoryEnabled}
-          similarCandidateSearchEnabled={similarCandidateSearchEnabled}
-          similarJobSearchEnabled={similarJobSearchEnabled}
-        />
+        resumeSearchV2RolloutEnabled ? (
+          <RecruiterResumeSearchV2Page
+            initialState={buildInitialResumeSearchV2State(rawParams || {})}
+            featureEnabled={resumeSearchV2Enabled}
+            canRead={canReadSemanticSearch}
+            canExecute={canExecuteSemanticSearch}
+            canUseSalaryFilters={canUseSalaryFilters}
+            view="criteria"
+          />
+        ) : (
+          <RecruiterResumeSearchPage
+            initialState={initialState}
+            jobs={jobs}
+            featureEnabled={semanticSearchEnabled}
+            canRead={canReadSemanticSearch}
+            canExecute={canExecuteSemanticSearch}
+            canReadHistory={canReadSearchHistory}
+            canReadSavedSearches={canReadSavedSearches}
+            canManageSavedSearches={canManageSavedSearches}
+            searchHistoryEnabled={semanticSearchHistoryEnabled}
+            savedSearchesEnabled={semanticSearchSavedEnabled}
+          />
+        )
       )}
     </WorkspaceShell>
   );

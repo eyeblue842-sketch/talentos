@@ -710,6 +710,7 @@ export function ResumeImportBatchDetailExperience({
   const [meta, setMeta] = useState(initialMeta);
   const [loading, setLoading] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState(new Date().toISOString());
+  const [workerOnline, setWorkerOnline] = useState(null);
   const [query, setQuery] = useState({
     search: initialQuery.search || '',
     status: initialQuery.status || '',
@@ -742,6 +743,36 @@ export function ResumeImportBatchDetailExperience({
     intervalMs: 5000,
     onPoll: () => refreshData({ silent: true }),
   });
+
+  async function pollWorkerStatus() {
+    try {
+      const payload = await jsonRequest('/api/resume-imports/worker-status');
+      setWorkerOnline(Boolean(payload.data.online));
+    } catch {
+      setWorkerOnline(null);
+    }
+  }
+
+  usePagePolling({
+    enabled: !RESUME_IMPORT_TERMINAL_BATCH_STATUSES.has(batch?.status),
+    intervalMs: 15000,
+    onPoll: pollWorkerStatus,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await jsonRequest('/api/resume-imports/worker-status');
+        if (!cancelled) setWorkerOnline(Boolean(payload.data.online));
+      } catch {
+        if (!cancelled) setWorkerOnline(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const progress = calculateBatchProgress(batch);
   const statusCounts = useMemo(() => {
@@ -793,6 +824,15 @@ export function ResumeImportBatchDetailExperience({
 
   return (
     <div className="grid gap-6">
+      {workerOnline === false && !RESUME_IMPORT_TERMINAL_BATCH_STATUSES.has(batch?.status) ? (
+        <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert" aria-live="polite">
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-semibold">Resume-processing worker is offline</p>
+            <p className="mt-1">No worker has reported a heartbeat recently. Items in this batch will not progress until the background worker process is running.</p>
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
         <SummaryCard label="Total" value={batch.totalItemCount} helper="Items in this batch" />
         <SummaryCard label="Imported" value={batch.successCount} helper="Candidate profiles created or linked" />

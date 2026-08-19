@@ -30,6 +30,7 @@ export function extractSearchIntent(parsedQuery, { semanticEnabled = false } = {
     minExperience: parsedQuery.filters.minExperience ?? deterministic.minExperience ?? null,
     maxExperience: parsedQuery.filters.maxExperience ?? deterministic.maxExperience ?? null,
     location: nullableString(parsedQuery.filters.location ?? deterministic.location ?? null),
+    locations: uniqueStrings(parsedQuery.filters.locations || []),
     workMode: nullableString(parsedQuery.filters.workMode ?? deterministic.workMode ?? null),
     role: nullableString(parsedQuery.filters.role ?? deterministic.currentTitle ?? null),
     noticePeriodDaysMax: parsedQuery.filters.noticePeriodDaysMax ?? deterministic.noticePeriodDaysMax ?? null,

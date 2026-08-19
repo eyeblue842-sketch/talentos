@@ -14,9 +14,12 @@ import { buildPathWithParams, candidateAuthRoutes, employerAuthRoutes } from '@/
 
 const passwordHelpText = 'Use at least 8 characters. Choose a password you do not reuse elsewhere.';
 
-function getOAuthHref(provider, mode, nextHref) {
+function getOAuthHref(provider, mode, nextHref, role = 'CANDIDATE', employerType) {
   const url = new URL(`/api/auth/${provider}`, 'http://localhost');
-  url.searchParams.set('role', 'CANDIDATE');
+  url.searchParams.set('role', role);
+  if (role === 'RECRUITER' && employerType) {
+    url.searchParams.set('employerType', employerType);
+  }
   url.searchParams.set('mode', mode);
   if (nextHref) {
     url.searchParams.set('next', nextHref);
@@ -39,7 +42,7 @@ async function postJson(path, payload) {
   return body;
 }
 
-function SocialButtons({ mode, nextHref, providers }) {
+function SocialButtons({ mode, nextHref, providers, role = 'CANDIDATE', employerType }) {
   if (providers.googleVisible === false && !providers.linkedinConfigured) {
     return null;
   }
@@ -47,12 +50,12 @@ function SocialButtons({ mode, nextHref, providers }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {providers.googleVisible !== false ? (
-        <Button as="a" href={getOAuthHref('google', mode, nextHref)} variant="outline" className="justify-center">
+        <Button as="a" href={getOAuthHref('google', mode, nextHref, role, employerType)} variant="outline" className="justify-center">
           Continue with Google
         </Button>
       ) : null}
       {providers.linkedinConfigured ? (
-        <Button as="a" href={getOAuthHref('linkedin', mode, nextHref)} variant="outline" className="justify-center">
+        <Button as="a" href={getOAuthHref('linkedin', mode, nextHref, role, employerType)} variant="outline" className="justify-center">
           Continue with LinkedIn
         </Button>
       ) : null}
@@ -189,8 +192,13 @@ export function AuthExperience({
   );
   const [isResetFlow, setIsResetFlow] = useState(initialSearchParams.authStatus === 'password-reset-ready');
 
+  const employerType = useMemo(() => {
+    const requested = String(initialSearchParams.employerType || '').toUpperCase();
+    return requested === 'COMPANY' ? 'COMPANY' : 'CONSULTANCY';
+  }, [initialSearchParams.employerType]);
+
   const nextHref = useMemo(
-    () => safeInternalPath(initialSearchParams.next, audience === 'employer' ? '/recruiter' : '/candidate/dashboard'),
+    () => safeInternalPath(initialSearchParams.next, audience === 'employer' ? '/recruiter/home' : '/candidate/dashboard'),
     [audience, initialSearchParams.next],
   );
 
@@ -210,15 +218,24 @@ export function AuthExperience({
         role: audience === 'employer' ? 'RECRUITER' : 'CANDIDATE',
       };
 
+      if (audience === 'employer') {
+        payload.employerType = employerType;
+      }
+
       if (audience === 'candidate' && registerForm.fullName.trim()) {
         payload.fullName = registerForm.fullName.trim();
       }
 
       const response = await postJson('/api/auth/signup', payload);
+      const pendingDomainReview = audience === 'employer'
+        && employerType === 'COMPANY'
+        && response.data.user?.recruiterProfile?.organisation?.domainVerificationStatus === 'PENDING';
       setStatusMessage(
-        response.data.emailVerificationRequired
-          ? 'Account created. Check your email to verify the account before signing in.'
-          : 'Account created.'
+        pendingDomainReview
+          ? 'Account created. Check your email to verify the account. Your company domain is pending platform review before it is fully verified.'
+          : response.data.emailVerificationRequired
+            ? 'Account created. Check your email to verify the account before signing in.'
+            : 'Account created.'
       );
       setLoginForm({ email: registerForm.email, password: '' });
     } catch (error) {
@@ -236,7 +253,9 @@ export function AuthExperience({
     try {
       const response = await postJson('/api/auth/login', loginForm);
       const user = response.data.user;
-      const target = resolvePostAuthRoute(user.role, nextHref);
+      const target = user.mustChangePassword
+        ? `/change-password${nextHref ? `?next=${encodeURIComponent(nextHref)}` : ''}`
+        : resolvePostAuthRoute(user.role, nextHref);
       window.location.assign(target);
     } catch (error) {
       setErrorMessage(error.message);
@@ -332,15 +351,21 @@ export function AuthExperience({
             {mode === 'register' ? (
               <FormSection
                 className="mt-6 border-none bg-transparent p-0 shadow-none"
-                title={audience === 'candidate' ? 'Create profile' : 'Create employer account'}
+                title={audience === 'candidate'
+                  ? 'Create profile'
+                  : `Create ${employerType === 'COMPANY' ? 'Company Recruiter' : 'Consultancy Recruiter'} account`}
                 description={audience === 'candidate'
                   ? 'Detailed profile completion happens after registration.'
                   : 'Only account fields supported by the current backend are submitted here.'}
               >
-                {audience === 'candidate' ? (
-                  <SocialButtons mode="signup" nextHref={nextHref} providers={providers} />
-                ) : null}
-                {audience === 'candidate' && (providers.googleVisible !== false || providers.linkedinConfigured) ? (
+                <SocialButtons
+                  mode="signup"
+                  nextHref={nextHref}
+                  providers={providers}
+                  role={audience === 'employer' ? 'RECRUITER' : 'CANDIDATE'}
+                  employerType={employerType}
+                />
+                {(providers.googleVisible !== false || providers.linkedinConfigured) ? (
                   <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                     or continue with email
@@ -376,7 +401,9 @@ export function AuthExperience({
                 />
                 {audience === 'employer' ? (
                   <InlineValidationMessage tone="muted">
-                    Step 1 of 3: account. Organization and workspace details remain future onboarding steps.
+                    {employerType === 'COMPANY'
+                      ? 'Company Recruiter accounts require a verified official company email address. If your company domain is not recognized, request verification.'
+                      : 'Business and verified personal email addresses are both accepted for Consultancy Recruiter accounts.'}
                   </InlineValidationMessage>
                 ) : null}
                 <FormActions className="justify-between">
@@ -406,40 +433,53 @@ export function AuthExperience({
                   ? 'Use your verified account to continue applying and tracking opportunities.'
                   : 'Use the authenticated backend session as the source of truth for workspace routing.'}
               >
-                {audience === 'candidate' ? (
-                  <SocialButtons mode="login" nextHref={nextHref} providers={providers} />
-                ) : null}
-                {audience === 'candidate' && (providers.googleVisible !== false || providers.linkedinConfigured) ? (
+                <SocialButtons
+                  mode="login"
+                  nextHref={nextHref}
+                  providers={providers}
+                  role={audience === 'employer' ? 'RECRUITER' : 'CANDIDATE'}
+                />
+                {(providers.googleVisible !== false || providers.linkedinConfigured) ? (
                   <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                     or continue with email
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                   </div>
                 ) : null}
-                <Input
-                  label={audience === 'employer' ? 'Work email' : 'Email'}
-                  type="email"
-                  value={loginForm.email}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setLoginForm((current) => ({ ...current, email: value }));
-                    setResetEmail(value);
+                <form
+                  className="grid gap-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleLogin();
                   }}
-                  placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
-                />
-                <PasswordField
-                  label="Password"
-                  value={loginForm.password}
-                  onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                />
-                <FormActions className="justify-between">
-                  <Button onClick={handleLogin} loading={pendingAction === 'login'}>
-                    Sign in
-                  </Button>
-                  <Button type="button" variant="link" onClick={() => setIsResetFlow((current) => !current)}>
-                    Forgot password
-                  </Button>
-                </FormActions>
+                >
+                  <Input
+                    label={audience === 'employer' ? 'Work email' : 'Email'}
+                    type="email"
+                    autoComplete="username"
+                    value={loginForm.email}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setLoginForm((current) => ({ ...current, email: value }));
+                      setResetEmail(value);
+                    }}
+                    placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
+                  />
+                  <PasswordField
+                    label="Password"
+                    autoComplete="current-password"
+                    value={loginForm.password}
+                    onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                  />
+                  <FormActions className="justify-between">
+                    <Button type="submit" loading={pendingAction === 'login'}>
+                      Sign in
+                    </Button>
+                    <Button type="button" variant="link" onClick={() => setIsResetFlow((current) => !current)}>
+                      Forgot password
+                    </Button>
+                  </FormActions>
+                </form>
                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
                   <Link href={alternateRoutes.register} className="font-semibold text-[var(--color-primary)]">
                     {audience === 'candidate' ? 'Create a candidate profile' : 'Create employer workspace/account'}

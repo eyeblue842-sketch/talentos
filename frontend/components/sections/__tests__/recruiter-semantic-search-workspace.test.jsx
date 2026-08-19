@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecruiterSemanticSearchWorkspace } from '../recruiter-semantic-search-workspace';
 
 const routerReplace = vi.fn();
+const routerPush = vi.fn();
 const toastPush = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     replace: routerReplace,
+    push: routerPush,
   }),
 }));
 
@@ -258,31 +260,36 @@ function makePreview() {
 }
 
 function renderWorkspace(overrides = {}) {
+  const initialState = {
+    query: 'java backend',
+    mode: 'HYBRID',
+    jobId: 'cmjob12345678901234567890',
+    location: '',
+    locations: [],
+    workMode: '',
+    employmentType: '',
+    education: '',
+    currentEmployer: '',
+    previousEmployer: '',
+    requiredSkills: '',
+    optionalSkills: '',
+    minExperience: '',
+    maxExperience: '',
+    salaryMin: '',
+    salaryMax: '',
+    noticePeriodDaysMax: '',
+    expansionEnabled: true,
+    transferableSkillsEnabled: true,
+    includeMatch: true,
+    highConfidenceOnly: false,
+    candidateName: '',
+    deferSearch: false,
+    ...(overrides.initialState || {}),
+  };
+
   return render(
     <RecruiterSemanticSearchWorkspace
-      initialState={{
-        query: 'java backend',
-        mode: 'HYBRID',
-        jobId: 'cmjob12345678901234567890',
-        location: '',
-        workMode: '',
-        employmentType: '',
-        education: '',
-        currentEmployer: '',
-        previousEmployer: '',
-        requiredSkills: '',
-        optionalSkills: '',
-        minExperience: '',
-        maxExperience: '',
-        salaryMin: '',
-        salaryMax: '',
-        noticePeriodDaysMax: '',
-        expansionEnabled: true,
-        transferableSkillsEnabled: true,
-        includeMatch: true,
-        highConfidenceOnly: false,
-        candidateName: '',
-      }}
+      initialState={initialState}
       organisationName="Careeriz Hire"
       jobs={[{ id: 'cmjob12345678901234567890', title: 'Senior Backend Engineer' }]}
       featureEnabled
@@ -309,6 +316,7 @@ describe('RecruiterSemanticSearchWorkspace', () => {
   beforeEach(() => {
     toastPush.mockReset();
     routerReplace.mockReset();
+    routerPush.mockReset();
     global.IntersectionObserver = class {
       constructor() {}
       observe() {}
@@ -332,6 +340,30 @@ describe('RecruiterSemanticSearchWorkspace', () => {
       }
       if (url === '/api/intelligence/search/suggestions' && method === 'POST') {
         return Promise.resolve({ ok: true, json: async () => ({ success: true, data: makeSuggestionsResponse() }) });
+      }
+      if (url === '/api/intelligence/search/parse' && method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: {
+              keyword: 'Java Spring Boot AWS',
+              location: 'Bengaluru',
+              minExperience: 6,
+              maxExperience: 10,
+              skills: ['Java', 'Spring Boot', 'AWS'],
+              parsedQuery: {
+                mode: 'HYBRID',
+                originalQuery: 'Java Spring Boot AWS Bengaluru',
+                filters: {
+                  requiredSkills: ['Java', 'Spring Boot', 'AWS'],
+                  optionalSkills: ['Kafka'],
+                },
+              },
+              interpretedFilters: ['Java', 'Bengaluru', '6-10 years'],
+            },
+          }),
+        });
       }
       if (url === '/api/intelligence/saved-searches' && method === 'POST') {
         return Promise.resolve({ ok: true, json: async () => ({ success: true, data: makeSavedSearch() }) });
@@ -361,16 +393,68 @@ describe('RecruiterSemanticSearchWorkspace', () => {
     expect(screen.getByText(/do not have access to Resume Search/i)).toBeInTheDocument();
   });
 
-  it('loads search results, history, saved searches, and live preview', async () => {
-    renderWorkspace();
+  it('renders one unified search workspace without the legacy duplicate panels', async () => {
+    renderWorkspace({ view: 'criteria' });
 
+    expect(await screen.findByRole('heading', { name: 'AI Assist' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Search Criteria' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Candidate Results' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Saved Searches' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recent Searches' })).toBeInTheDocument();
+    expect(screen.queryByText('Reusable recruiter search presets stored on the backend.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Deterministic query suggestions from your current input, saved searches, and search context.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live candidate preview')).not.toBeInTheDocument();
+  });
+
+  it('renders candidate results only on the dedicated results view', async () => {
+    renderWorkspace({ view: 'results' });
+
+    expect(await screen.findByRole('heading', { name: 'Candidate Results' })).toBeInTheDocument();
     expect((await screen.findAllByText('Aarav Sharma')).length).toBeGreaterThan(0);
-    expect(await screen.findByText('Java shortlist')).toBeInTheDocument();
-    expect(await screen.findByText('Recent Searches')).toBeInTheDocument();
-    expect(await screen.findByText('Aarav Sharma is a backend engineer with strong Java and AWS experience.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'AI Assist' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Live candidate preview')).not.toBeInTheDocument();
+  });
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/search', expect.any(Object));
-    expect(global.fetch).toHaveBeenCalledWith('/api/recruiter/candidates/candidate-1/preview', expect.any(Object));
+  it('keeps criteria review separate from results and preview rendering', () => {
+    renderWorkspace({
+      view: 'criteria',
+      initialState: { query: '', jobId: '', includeMatch: false },
+    });
+
+    expect(screen.getByRole('heading', { name: 'AI Assist' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Search Criteria' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Candidate Results' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Live candidate preview')).not.toBeInTheDocument();
+    expect(screen.queryByText('Aarav Sharma')).not.toBeInTheDocument();
+  });
+
+  it('serializes multiple normalized locations in the results navigation', () => {
+    renderWorkspace({
+      view: 'criteria',
+      initialState: { query: 'engineer', jobId: '', includeMatch: false },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Bengaluru, Karnataka/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Chennai, Tamil Nadu/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Search Candidates' }));
+
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('locations=Bengaluru%2C+Karnataka%2CChennai%2C+Tamil+Nadu'));
+  });
+
+  it('serializes supported Additional Details filters into the existing results route', async () => {
+    renderWorkspace({ view: 'criteria', initialState: { query: 'java', jobId: '', includeMatch: false } });
+    fireEvent.click(screen.getByText('Additional Details'));
+    fireEvent.click(screen.getByLabelText('Permanent'));
+    fireEvent.click(screen.getByLabelText('Full Time'));
+    fireEvent.change(screen.getByLabelText('Search work permit countries'), { target: { value: 'Canada' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Canada' }));
+    fireEvent.click(screen.getByLabelText('Verified email ID'));
+    fireEvent.click(screen.getByLabelText('Attached resume'));
+    fireEvent.change(screen.getByLabelText('Active in'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search Candidates' }));
+
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('activeWithin=30'));
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('workPermitCountries=Canada'));
   });
 
   it('loads suggestions on demand', async () => {
@@ -381,17 +465,89 @@ describe('RecruiterSemanticSearchWorkspace', () => {
     expect(await screen.findByRole('button', { name: 'Java Spring Boot AWS' })).toBeInTheDocument();
   });
 
+  it('interprets AI search into structured filters without auto-running search', async () => {
+    renderWorkspace({
+      view: 'criteria',
+      initialState: {
+        query: '',
+        jobId: '',
+        includeMatch: false,
+      },
+    });
+
+    global.fetch.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText(/Find a Java developer in Bengaluru/i), {
+      target: { value: 'Find a Java developer in Bengaluru with Spring Boot and AWS, 6-10 years experience and maximum 30 days notice.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Interpret Search/i }));
+
+    expect(await screen.findByRole('button', { name: /Apply filters/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Apply filters/i }));
+
+    expect(screen.getByLabelText('Required skills')).toHaveValue('Java, Spring Boot, AWS');
+    expect(screen.getByRole('button', { name: /Bengaluru ×/i })).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/search/parse', expect.objectContaining({ method: 'POST' }));
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/intelligence/search', expect.objectContaining({ method: 'POST' }));
+  });
+
   it('saves the current search through the proxy route', async () => {
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Save current/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Save Search$/i }));
     fireEvent.change(await screen.findByLabelText(/Search name/i), { target: { value: 'Backend shortlist' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Save search$/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save search$/i }).at(-1));
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/saved-searches', expect.objectContaining({ method: 'POST' })));
   });
 
-  it('loads more search results when requested', async () => {
+  it('repopulates filters from saved and recent searches', async () => {
+    renderWorkspace({
+      initialState: {
+        query: '',
+        jobId: '',
+        includeMatch: false,
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved Searches' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Java shortlist/i }));
+
+    expect(screen.getByLabelText('Keywords')).toHaveValue('java backend');
+    expect(screen.getByLabelText('Required skills')).toHaveValue('Java, Spring Boot');
+    expect(routerReplace).toHaveBeenCalledWith(expect.stringContaining('/recruiter/database/results?'), { scroll: false });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent Searches' }));
+    fireEvent.click(await screen.findByRole('button', { name: /java backend/i }));
+
+    expect(screen.getByLabelText('Keywords')).toHaveValue('java backend');
+  });
+
+  it('submits the structured recruiter payload from Search Candidates', async () => {
+    renderWorkspace({
+      view: 'criteria',
+      initialState: {
+        query: '',
+        jobId: '',
+        includeMatch: false,
+      },
+    });
+
+    global.fetch.mockClear();
+
+    fireEvent.change(screen.getByLabelText('Keywords'), { target: { value: 'power bi developer' } });
+    fireEvent.change(screen.getByLabelText('Required skills'), { target: { value: 'Power BI, SQL' } });
+    fireEvent.change(screen.getByLabelText('Min Experience'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Max Experience'), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search Candidates' }));
+
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('/recruiter/database/results?'));
+    expect(routerPush.mock.calls[0][0]).toContain('requiredSkills=Power+BI%2C+SQL');
+    expect(routerPush.mock.calls[0][0]).toContain('minExperience=4');
+    expect(routerPush.mock.calls[0][0]).toContain('maxExperience=7');
+  });
+
+  it('paginates search results when requested', async () => {
     global.fetch = vi.fn().mockImplementation((url, init = {}) => {
       const method = init.method || 'GET';
       if (url === '/api/intelligence/saved-searches' && method === 'GET') {
@@ -438,17 +594,19 @@ describe('RecruiterSemanticSearchWorkspace', () => {
 
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Load more results/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
 
     expect(await screen.findByText('Meera Nair')).toBeInTheDocument();
   });
 
-  it('executes similar-candidate search from the preview panel', async () => {
+  it('links each candidate name to the full recruiter profile route', async () => {
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Similar Candidate/i }));
-
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/search/similar-candidate', expect.objectContaining({ method: 'POST' })));
+    const candidateLink = await screen.findByRole('link', { name: 'Aarav Sharma' });
+    expect(candidateLink).toHaveAttribute(
+      'href',
+      '/recruiter/database/candidate-1?jobId=cmjob12345678901234567890&tab=ai-match&returnTo=%2Frecruiter%2Fdatabase%2Fresults%3Fq%3Djava%2Bbackend%26jobId%3Dcmjob12345678901234567890%26includeMatch%3Dtrue',
+    );
   });
 
   it('supports pending polling through search history detail', async () => {
@@ -468,7 +626,6 @@ describe('RecruiterSemanticSearchWorkspace', () => {
           }),
         }),
       })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true, data: makePreview() }) })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({

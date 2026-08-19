@@ -3,14 +3,7 @@ import { MapPin, BriefcaseBusiness, Building2, Bookmark, CalendarDays, IndianRup
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-
-function formatSalary(job) {
-  if (!job.salaryMin && !job.salaryMax) return 'Compensation not disclosed';
-  const parts = [job.salaryMin, job.salaryMax]
-    .filter((value) => value != null)
-    .map((value) => `${job.currency || 'INR'} ${value} LPA`);
-  return parts.join(' - ');
-}
+import { formatJobSalaryRange } from '@/lib/recruitment-formatters';
 
 function formatExperience(job) {
   return `${job.experienceMin}-${job.experienceMax} years`;
@@ -58,7 +51,7 @@ export function PublicJobCard({ job, saveAction = null, unsaveAction = null, red
         ))}
       </div>
       <div className="mt-5 flex flex-wrap gap-4 text-sm text-[var(--color-text-muted)]">
-        <span className="inline-flex items-center gap-2"><IndianRupee size={15} aria-hidden="true" /> {formatSalary(job)}</span>
+        <span className="inline-flex items-center gap-2"><IndianRupee size={15} aria-hidden="true" /> {formatJobSalaryRange(job)}</span>
         <span className="inline-flex items-center gap-2"><CalendarDays size={15} aria-hidden="true" /> Posted {new Date(job.postedAt).toLocaleDateString()}</span>
       </div>
     </Card>

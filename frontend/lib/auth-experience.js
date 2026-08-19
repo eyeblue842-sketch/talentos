@@ -46,7 +46,7 @@ export function getLegacyAuthDestination(params = {}) {
   if (role === 'recruiter' || role === 'employer' || isEmployerNextPath(next)) {
     return {
       type: 'redirect',
-      href: buildPathWithParams(employerAuthRoutes.login, params),
+      href: buildPathWithParams(employerAuthRoutes.landing, params),
     };
   }
 

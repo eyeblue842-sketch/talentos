@@ -10,7 +10,6 @@ let previewSemanticSearch;
 let getSemanticSearchIntent;
 
 let state;
-let originalEnv = {};
 
 function now() {
   return new Date('2026-07-29T10:00:00.000Z');
@@ -282,11 +281,6 @@ before(async () => {
 beforeEach(() => {
   seedState();
   installPrismaMocks();
-  originalEnv = {
-    intelligenceEnabled: env.intelligenceEnabled,
-    intelligenceProvider: env.intelligenceProvider,
-    elasticsearchEnabled: env.elasticsearchEnabled,
-  };
   env.intelligenceEnabled = true;
   env.intelligenceProvider = 'MOCK';
   env.elasticsearchEnabled = false;

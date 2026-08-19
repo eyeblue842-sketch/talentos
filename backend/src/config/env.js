@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { getDefaultIntelligenceBaseUrl } from '../intelligence/providers/providerDefaults.js';
 
 dotenv.config();
 
@@ -20,6 +21,16 @@ const envSchema = z.object({
   ELASTICSEARCH_ENABLED: z.enum(['true', 'false']).default('false'),
   ELASTICSEARCH_URL: z.string().url().optional(),
   ELASTICSEARCH_INDEX: z.string().default('resumes'),
+  RESUME_SEARCH_V2_ENABLED: z.enum(['true', 'false']).default('false'),
+  RESUME_INDEXING_ENABLED: z.enum(['true', 'false']).default('false'),
+  RESUME_SEARCH_ENGINE_PROVIDER: z.enum(['opensearch']).default('opensearch'),
+  OPENSEARCH_NODE: z.string().url().optional(),
+  OPENSEARCH_USERNAME: z.string().optional(),
+  OPENSEARCH_PASSWORD: z.string().optional(),
+  OPENSEARCH_INDEX_PREFIX: z.string().trim().min(1).default('careeriz-resume-search'),
+  OPENSEARCH_CURSOR_SECRET: z.string().optional(),
+  RESUME_INDEXING_ALLOWED_ORG_IDS: z.string().default(''),
+  RESUME_INDEXING_ALLOWED_BATCH_IDS: z.string().default(''),
   REDIS_ENABLED: z.enum(['true', 'false']).default('false'),
   REDIS_URL: z.string().url().optional(),
   REDIS_KEY_PREFIX: z.string().default('careeriz'),
@@ -35,13 +46,14 @@ const envSchema = z.object({
   QUEUE_PROVIDER: z.enum(['database', 'sqs']).default('database'),
   AWS_SQS_RESUME_IMPORT_QUEUE_URL: z.string().url().optional(),
   AWS_SQS_RESUME_IMPORT_DLQ_URL: z.string().url().optional(),
-  RESUME_IMPORT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+  RESUME_IMPORT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(1),
   RESUME_IMPORT_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
   RESUME_IMPORT_MAX_FILES: z.coerce.number().int().min(1).max(1000).default(100),
   RESUME_MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(10),
   RESUME_IMPORT_MAX_ZIP_SIZE_MB: z.coerce.number().int().min(1).max(1000).default(100),
   RESUME_IMPORT_MAX_UNCOMPRESSED_MB: z.coerce.number().int().min(1).max(5000).default(500),
   RESUME_IMPORT_MAX_TEXT_CHARS: z.coerce.number().int().min(1000).max(1000000).default(120000),
+  RESUME_IMPORT_BLOCKED_BATCH_IDS: z.string().default(''),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
@@ -73,7 +85,7 @@ const envSchema = z.object({
   INTELLIGENCE_MODEL: z.string().trim().min(1).max(200).optional(),
   INTELLIGENCE_API_KEY: z.string().trim().min(1).optional(),
   INTELLIGENCE_BASE_URL: z.string().url().optional(),
-  INTELLIGENCE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
+  INTELLIGENCE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   INTELLIGENCE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
   INTELLIGENCE_MAX_INPUT_CHARS: z.coerce.number().int().min(500).max(200000).default(30000),
   INTELLIGENCE_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(8000).default(1200),
@@ -83,16 +95,128 @@ const envSchema = z.object({
   AWS_BEDROCK_MODEL_ID: z.string().optional(),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(1),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(30000),
   TASK_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  TASK_LEASE_DURATION_MS: z.coerce.number().int().min(30000).max(1800000).default(300000),
+  WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(2000).max(60000).default(10000),
+  WORKER_HEARTBEAT_STALE_MS: z.coerce.number().int().min(10000).max(300000).default(45000),
+
+  // Document-processing service (Track B, Step 3): disabled by default so
+  // existing Node-only resume-import behaviour is completely unaffected
+  // until an engine (Docling/PaddleOCR) actually lands and is explicitly
+  // wired into the import pipeline in a later step.
+  DOCUMENT_PROCESSOR_ENABLED: z.enum(['true', 'false']).default('false'),
+  DOCUMENT_PROCESSOR_INTEGRATION_ENABLED: z.enum(['true', 'false']).default('false'),
+  DOCUMENT_PROCESSOR_ALLOWED_COMPANY_IDS: z.string().default(''),
+  DOCUMENT_PROCESSOR_ALLOWED_BATCH_IDS: z.string().default(''),
+  DOCUMENT_PROCESSOR_URL: z.string().url().default('http://127.0.0.1:8081'),
+  DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(3000),
+  // Step 4.5: the Python service enforces its own hard per-job deadline
+  // OUTSIDE the worker process, so a stuck engine can no longer run
+  // unbounded -- this value must stay safely ABOVE the Python side's
+  // deadline(s) plus transport/queue-wait margin, or Node would abandon
+  // (AbortController) a request Python was about to cleanly resolve with
+  // its own 504 PROCESSING_TIMEOUT.
+  //
+  // Step 6 changed the worst case: a single /v1/documents/analyse
+  // request for a PDF can now invoke Docling (DOCLING_CONVERSION_TIMEOUT_SECONDS,
+  // default 45s) AND THEN, additively in the same request, OCR
+  // (OCR_CONVERSION_TIMEOUT_SECONDS, default 60s) when PADDLEOCR_ENABLED
+  // is on -- these are two SEQUENTIAL worker calls within one HTTP
+  // request, not alternatives, so the worst case is their SUM, not their
+  // max. Default here = 45s + 60s (both Python hard deadlines, worst
+  // case) + 15s margin = 120s. If DOCLING_CONVERSION_TIMEOUT_SECONDS,
+  // OCR_CONVERSION_TIMEOUT_SECONDS, or either QUEUE_CAPACITY change on
+  // the Python side, this must be revisited (see
+  // docs/document-processor.md's worked timeout math).
+  DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(180000).default(120000),
+  DOCUMENT_PROCESSOR_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
+  DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().min(1000).max(600000).default(30000),
+
+  // Subscriptions/Billing/Payment Gateway (feature/subscriptions-billing-entitlements).
+  // Razorpay Test Mode only during development - RAZORPAY_ENABLED gates the whole
+  // module so it stays inert (checkout disabled, webhook signature checks reject
+  // everything) until real key material is supplied. The four *_BUTTON_ID vars are
+  // the public Razorpay Payment Button ids from the brief - stored for display/
+  // reference only; they do NOT grant entitlements (see billingService/razorpayService
+  // and the Stage 1 design report for why Payment Buttons can't be securely
+  // correlated to a company/purchase, and why Orders API + Standard Checkout is the
+  // actual entitlement-granting path).
+  RAZORPAY_ENABLED: z.enum(['true', 'false']).default('false'),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  RAZORPAY_BUTTON_JOB_POST_45D: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_1M: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_6M: z.string().optional(),
+  RAZORPAY_BUTTON_ATS_DB_12M: z.string().optional(),
+  // Careeriz's own registered GST home state code (2 digits), used to decide
+  // CGST+SGST (intra-state) vs IGST (inter-state) on generated invoices.
+  BILLING_SELLER_STATE_CODE: z.string().regex(/^[0-9]{2}$/).optional(),
+  BILLING_SELLER_LEGAL_NAME: z.string().optional(),
+  BILLING_SELLER_GSTIN: z.string().optional(),
+  // How long an unused, separately-purchased job credit (the extra Rs.1,770
+  // top-up) stays valid before it is swept as expired. Configurable per
+  // section 10's explicit instruction; subscription-included credits instead
+  // expire with their subscription and are not affected by this value.
+  BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS: z.coerce.number().int().min(1).max(60).default(12),
+  // Separately purchased job-posting credits do not expire for now (binding
+  // product decision - the unconfirmed 12-month assumption was removed).
+  // This flag exists purely so that policy can change later without another
+  // schema/code change: BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS above stays
+  // configurable and is only actually applied when this is 'true'.
+  BILLING_PURCHASED_CREDIT_EXPIRY_ENABLED: z.enum(['true', 'false']).default('false'),
+  BILLING_RENEWAL_REMINDER_DAYS_BEFORE: z.coerce.number().int().min(1).max(60).default(15),
+  // Rollout kill-switch (B1 hardening, section 2): the entitlement
+  // middleware and job-credit consumption are fully implemented and always
+  // COMPUTED, but only actually BLOCK/CONSUME when this is 'true' (or the
+  // organisation is in the rollout allowlist below). Defaults to 'false' so
+  // deploying this migration/code never locks out an existing paying
+  // organisation with zero billing history. Server-side only - no request
+  // header, query param, or client value can influence this.
+  BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false'),
+  BILLING_ENTITLEMENT_ROLLOUT_ORG_IDS: z.string().optional(),
+  // Opt-in only. When both this and the enforcement flag are false (the
+  // default), the entitlement gates perform ZERO additional queries and are
+  // a true no-op - existing behaviour is bit-for-bit unchanged, not just
+  // "unblocked". Turn this on temporarily during rollout planning to see
+  // shadow.wouldBlock decisions in logs before flipping enforcement on.
+  BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED: z.enum(['true', 'false']).default('false'),
+  // CAREERIZ EMPLOYER ACCESS, domain-ownership closure section 1: same
+  // kill-switch pattern as BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED above -
+  // fully implemented and always computable, but only actually blocks
+  // COMPANY organisations stuck in domainVerificationStatus=PENDING when
+  // this is 'true' (or the organisation is in the allowlist below).
+  // Defaults to 'false' so deploying this code never locks out an existing
+  // organisation created before this feature existed (type=null) or any
+  // organisation created before enforcement is deliberately turned on.
+  EMPLOYER_ORGANISATION_VERIFICATION_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false'),
+  EMPLOYER_ORGANISATION_VERIFICATION_ROLLOUT_ORG_IDS: z.string().optional(),
 }).superRefine((data, context) => {
   if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['ELASTICSEARCH_URL'],
       message: 'ELASTICSEARCH_URL is required when ELASTICSEARCH_ENABLED=true.',
+    });
+  }
+
+  if ((data.RESUME_SEARCH_V2_ENABLED === 'true' || data.RESUME_INDEXING_ENABLED === 'true') && !data.OPENSEARCH_NODE) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPENSEARCH_NODE'],
+      message: 'OPENSEARCH_NODE is required when resume search v2 or resume indexing is enabled.',
+    });
+  }
+
+  if (data.RESUME_SEARCH_V2_ENABLED === 'true' && !data.OPENSEARCH_CURSOR_SECRET) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPENSEARCH_CURSOR_SECRET'],
+      message: 'OPENSEARCH_CURSOR_SECRET is required when RESUME_SEARCH_V2_ENABLED=true.',
     });
   }
 
@@ -115,7 +239,9 @@ const envSchema = z.object({
     });
   }
 
-  if (providerEnabled && !['MOCK', 'BEDROCK'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_BASE_URL) {
+  const hasDefaultIntelligenceBaseUrl = Boolean(getDefaultIntelligenceBaseUrl(data.INTELLIGENCE_PROVIDER));
+
+  if (providerEnabled && !['MOCK', 'BEDROCK'].includes(data.INTELLIGENCE_PROVIDER) && !data.INTELLIGENCE_BASE_URL && !hasDefaultIntelligenceBaseUrl) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['INTELLIGENCE_BASE_URL'],
@@ -241,6 +367,26 @@ const envSchema = z.object({
       message: 'AI_PROVIDER=mock is not allowed in production.',
     });
   }
+
+  if (data.RAZORPAY_ENABLED === 'true') {
+    for (const field of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) {
+      if (!data[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required when RAZORPAY_ENABLED=true.`,
+        });
+      }
+    }
+  }
+
+  if (data.NODE_ENV === 'production' && data.RAZORPAY_ENABLED === 'true' && data.RAZORPAY_KEY_ID?.startsWith('rzp_test_')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['RAZORPAY_KEY_ID'],
+      message: 'A Razorpay Test Mode key (rzp_test_...) must not be used when NODE_ENV=production.',
+    });
+  }
 });
 
 export function parseEnv(rawEnv) {
@@ -278,6 +424,22 @@ export const env = {
   elasticsearchEnabled: parsed.data.ELASTICSEARCH_ENABLED === 'true',
   elasticsearchUrl: parsed.data.ELASTICSEARCH_URL,
   elasticsearchIndex: parsed.data.ELASTICSEARCH_INDEX,
+  resumeSearchV2Enabled: parsed.data.RESUME_SEARCH_V2_ENABLED === 'true',
+  resumeIndexingEnabled: parsed.data.RESUME_INDEXING_ENABLED === 'true',
+  resumeSearchEngineProvider: parsed.data.RESUME_SEARCH_ENGINE_PROVIDER,
+  openSearchNode: parsed.data.OPENSEARCH_NODE,
+  openSearchUsername: parsed.data.OPENSEARCH_USERNAME,
+  openSearchPassword: parsed.data.OPENSEARCH_PASSWORD,
+  openSearchIndexPrefix: parsed.data.OPENSEARCH_INDEX_PREFIX,
+  openSearchCursorSecret: parsed.data.OPENSEARCH_CURSOR_SECRET,
+  resumeIndexingAllowedOrgIds: parsed.data.RESUME_INDEXING_ALLOWED_ORG_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  resumeIndexingAllowedBatchIds: parsed.data.RESUME_INDEXING_ALLOWED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   redisEnabled: parsed.data.REDIS_ENABLED === 'true',
   redisUrl: parsed.data.REDIS_URL,
   redisKeyPrefix: parsed.data.REDIS_KEY_PREFIX,
@@ -300,6 +462,10 @@ export const env = {
   resumeImportMaxZipSizeMb: parsed.data.RESUME_IMPORT_MAX_ZIP_SIZE_MB,
   resumeImportMaxUncompressedMb: parsed.data.RESUME_IMPORT_MAX_UNCOMPRESSED_MB,
   resumeImportMaxTextChars: parsed.data.RESUME_IMPORT_MAX_TEXT_CHARS,
+  resumeImportBlockedBatchIds: parsed.data.RESUME_IMPORT_BLOCKED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   smtpHost: parsed.data.SMTP_HOST,
   smtpPort: parsed.data.SMTP_PORT,
   smtpUser: parsed.data.SMTP_USER,
@@ -345,4 +511,50 @@ export const env = {
   workerPollIntervalMs: parsed.data.WORKER_POLL_INTERVAL_MS,
   workerSchedulerIntervalMs: parsed.data.WORKER_SCHEDULER_INTERVAL_MS,
   taskRetentionDays: parsed.data.TASK_RETENTION_DAYS,
+  taskLeaseDurationMs: parsed.data.TASK_LEASE_DURATION_MS,
+  workerHeartbeatIntervalMs: parsed.data.WORKER_HEARTBEAT_INTERVAL_MS,
+  workerHeartbeatStaleMs: parsed.data.WORKER_HEARTBEAT_STALE_MS,
+  documentProcessorEnabled: parsed.data.DOCUMENT_PROCESSOR_ENABLED === 'true',
+  documentProcessorIntegrationEnabled: parsed.data.DOCUMENT_PROCESSOR_INTEGRATION_ENABLED === 'true',
+  documentProcessorAllowedCompanyIds: parsed.data.DOCUMENT_PROCESSOR_ALLOWED_COMPANY_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  documentProcessorAllowedBatchIds: parsed.data.DOCUMENT_PROCESSOR_ALLOWED_BATCH_IDS
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  documentProcessorUrl: parsed.data.DOCUMENT_PROCESSOR_URL,
+  documentProcessorConnectTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_CONNECT_TIMEOUT_MS,
+  documentProcessorResponseTimeoutMs: parsed.data.DOCUMENT_PROCESSOR_RESPONSE_TIMEOUT_MS,
+  documentProcessorMaxRetries: parsed.data.DOCUMENT_PROCESSOR_MAX_RETRIES,
+  documentProcessorCircuitBreakerThreshold: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_THRESHOLD,
+  documentProcessorCircuitBreakerCooldownMs: parsed.data.DOCUMENT_PROCESSOR_CIRCUIT_BREAKER_COOLDOWN_MS,
+  razorpayEnabled: parsed.data.RAZORPAY_ENABLED === 'true',
+  razorpayKeyId: parsed.data.RAZORPAY_KEY_ID,
+  razorpayKeySecret: parsed.data.RAZORPAY_KEY_SECRET,
+  razorpayWebhookSecret: parsed.data.RAZORPAY_WEBHOOK_SECRET,
+  razorpayButtonIds: {
+    JOB_POST_45D: parsed.data.RAZORPAY_BUTTON_JOB_POST_45D || null,
+    ATS_DB_1M: parsed.data.RAZORPAY_BUTTON_ATS_DB_1M || null,
+    ATS_DB_6M: parsed.data.RAZORPAY_BUTTON_ATS_DB_6M || null,
+    ATS_DB_12M: parsed.data.RAZORPAY_BUTTON_ATS_DB_12M || null,
+  },
+  billingSellerStateCode: parsed.data.BILLING_SELLER_STATE_CODE || null,
+  billingSellerLegalName: parsed.data.BILLING_SELLER_LEGAL_NAME || 'Careeriz',
+  billingSellerGstin: parsed.data.BILLING_SELLER_GSTIN || null,
+  billingPurchasedCreditValidityMonths: parsed.data.BILLING_PURCHASED_CREDIT_VALIDITY_MONTHS,
+  billingPurchasedCreditExpiryEnabled: parsed.data.BILLING_PURCHASED_CREDIT_EXPIRY_ENABLED === 'true',
+  billingRenewalReminderDaysBefore: parsed.data.BILLING_RENEWAL_REMINDER_DAYS_BEFORE,
+  billingEntitlementEnforcementEnabled: parsed.data.BILLING_ENTITLEMENT_ENFORCEMENT_ENABLED === 'true',
+  billingEntitlementRolloutOrgIds: (parsed.data.BILLING_ENTITLEMENT_ROLLOUT_ORG_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  billingEntitlementShadowLoggingEnabled: parsed.data.BILLING_ENTITLEMENT_SHADOW_LOGGING_ENABLED === 'true',
+  employerOrganisationVerificationEnforcementEnabled: parsed.data.EMPLOYER_ORGANISATION_VERIFICATION_ENFORCEMENT_ENABLED === 'true',
+  employerOrganisationVerificationRolloutOrgIds: (parsed.data.EMPLOYER_ORGANISATION_VERIFICATION_ROLLOUT_ORG_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 };

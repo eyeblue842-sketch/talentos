@@ -8,9 +8,12 @@ const variantStyles = {
   elevated: 'border-[var(--color-border)] bg-white shadow-[var(--shadow-floating)]',
 };
 
-export function Card({ children, className, variant = 'default', as: Comp = 'div' }) {
+export function Card({ children, className, variant = 'default', as: Comp = 'div', ...props }) {
   return (
-    <Comp className={cn('rounded-[var(--radius-card)] border p-5', variantStyles[variant], className)}>
+    <Comp
+      className={cn('rounded-[var(--radius-card)] border p-5', variantStyles[variant], className)}
+      {...props}
+    >
       {children}
     </Comp>
   );

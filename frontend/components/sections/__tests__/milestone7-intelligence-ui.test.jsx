@@ -24,8 +24,8 @@ describe('milestone 7 intelligence UI', () => {
     render(<RecruiterTalentSearchAssistant />);
 
     expect(screen.getByText(/AI-generated suggestion\. Review before use\./i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/Find senior Java developers/i), { target: { value: 'Find senior Java developers in Bangalore with AWS' } });
-    fireEvent.click(screen.getByRole('button', { name: /Interpret Query/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Find a Java developer/i), { target: { value: 'Find senior Java developers in Bangalore with AWS' } });
+    fireEvent.click(screen.getByRole('button', { name: /Search with AI/i }));
 
     await waitFor(() => expect(screen.getByText(/Location: Bangalore/i)).toBeInTheDocument());
   });

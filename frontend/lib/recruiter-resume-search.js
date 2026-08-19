@@ -416,8 +416,9 @@ export function decorateResumePreview(candidate) {
     activity,
     atsPipeline: candidate.atsPipeline || deriveAtsPipeline(candidate),
     talentPools: (candidate.talentPools || []).map((pool) => (typeof pool === 'string' ? pool : pool.name)),
-    showContactInfo: Boolean(candidate.contact?.email || candidate.user?.email),
+    showContactInfo: Boolean(candidate.contact?.email || candidate.contact?.phone || candidate.user?.email),
     contactEmail: candidate.contact?.email || candidate.user?.email || null,
+    contactPhone: candidate.contact?.phone || null,
     resumeUrl: candidate.resumeDownloadUrl || candidate.resumeUrl || null,
   };
 }

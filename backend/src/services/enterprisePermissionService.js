@@ -53,6 +53,17 @@ export const enterprisePermissions = [
   'intelligence.analytics.use',
   'intelligence.governance.read',
   'intelligence.governance.manage',
+  // Full billing (invoices, payment references, purchase history, GSTIN/
+  // billing address, credit-adjustment history) is OWNER/ADMIN/platform-
+  // admin only - see organisation.billing.summary.read below for what a
+  // plain RECRUITER/HIRING_MANAGER may see instead (B2 hardening, section 1).
+  'organisation.billing.read',
+  'organisation.billing.manage',
+  // Minimal, non-financial entitlement awareness (ATS/resume-db active,
+  // expiry date, remaining job credits, renewal-required flag only - no
+  // GSTIN, address, invoices, payment references, or purchase/adjustment
+  // history). Granted to RECRUITER/HIRING_MANAGER below.
+  'organisation.billing.summary.read',
 ];
 
 const defaultRolePermissions = {
@@ -64,6 +75,7 @@ const defaultRolePermissions = {
     'organisation.audit.read',
     'organisation.users.read',
     'organisation.roles.read',
+    'organisation.billing.summary.read',
     'interview.schedule',
     'interview.reschedule',
     'interview.cancel',
@@ -96,6 +108,7 @@ const defaultRolePermissions = {
     'organisation.analytics.read',
     'organisation.users.read',
     'organisation.roles.read',
+    'organisation.billing.summary.read',
     'interview.schedule',
     'interview.reschedule',
     'interview.cancel',
@@ -160,7 +173,11 @@ async function getPlatformOrganisationContext(requestedOrganisationId = null) {
 }
 
 export async function resolveEnterpriseContext(actorUser, requestedOrganisationId = null) {
-  if (actorUser.role === 'ADMIN') {
+  // PLATFORM_ADMIN is the opt-in equivalent of the legacy org-agnostic ADMIN
+  // bypass, for optional system-wide access. RECRUITER_ADMIN is intentionally
+  // excluded here - it is scoped to its own organisation via a real
+  // OrganisationMembership, same as any recruiter OWNER.
+  if (actorUser.role === 'ADMIN' || actorUser.role === 'PLATFORM_ADMIN') {
     return getPlatformOrganisationContext(requestedOrganisationId);
   }
 

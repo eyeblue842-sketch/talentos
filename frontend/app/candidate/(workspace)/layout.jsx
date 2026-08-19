@@ -8,6 +8,6 @@ export const metadata = {
 };
 
 export default async function CandidateLayout({ children }) {
-  await requireUser('CANDIDATE');
+  await requireUser(['CANDIDATE', 'CANDIDATE_ADMIN']);
   return children;
 }

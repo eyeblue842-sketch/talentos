@@ -18,8 +18,10 @@ import {
   listTalentPools,
   searchCandidates,
 } from '../services/searchService.js';
+import { searchResumesV2 } from '../services/resumeSearchV2/service.js';
 import { findCandidateResumeReference } from '../repositories/resume/resumeRepository.js';
 import { getCandidateRecommendations } from '../services/candidateService.js';
+import { env } from '../config/env.js';
 import { apiError, sendSuccess } from '../utils/response.js';
 
 export async function searchResumeDatabase(req, res, next) {
@@ -67,6 +69,25 @@ export async function searchResumeDatabase(req, res, next) {
       pageSize: req.query.pageSize,
     };
     const result = await searchCandidates(filters, req.user.activeMembership?.organisationId, req.user);
+    sendSuccess(res, 200, result.items, result.meta);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function searchResumeDatabaseV2(req, res, next) {
+  try {
+    if (!env.resumeSearchV2Enabled) {
+      return res.status(404).json(apiError('Resume search v2 is disabled.', {
+        code: 'RESUME_SEARCH_V2_DISABLED',
+      }));
+    }
+
+    const result = await searchResumesV2(req.user, req.body, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
     sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);

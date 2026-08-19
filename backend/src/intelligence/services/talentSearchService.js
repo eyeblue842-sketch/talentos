@@ -124,7 +124,7 @@ export async function parseTalentSearchQuery(actorUser, payload) {
         promptKey: 'TALENT_SEARCH_QUERY_PARSE',
         input: {
           query: payload.query,
-          allowlistedFields: ['skills', 'experience range', 'location', 'work mode', 'notice period', 'current title', 'education', 'certifications', 'application status', 'talent pool', 'recency', 'availability'],
+          allowlistedFields: ['skills', 'experience range', 'location', 'preferred location', 'willing to relocate', 'work mode', 'notice period', 'current title', 'current company', 'education course', 'education institute', 'education completion year', 'certifications', 'application status', 'talent pool', 'recency', 'availability'],
         },
       });
       assisted = runtime.output;

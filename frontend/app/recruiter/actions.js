@@ -12,6 +12,13 @@ function splitCommaList(value) {
     .filter(Boolean);
 }
 
+function splitLineList(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 async function recruiterRequest(path, options = {}) {
   const token = await getSessionToken();
   if (!token) {
@@ -59,6 +66,10 @@ function buildJobPayload(formData) {
     title: String(formData.get('title') || '').trim(),
     description: String(formData.get('description') || '').trim(),
     skillsRequired: splitCommaList(formData.get('skillsRequired')),
+    responsibilities: splitLineList(formData.get('responsibilities')),
+    requirements: splitLineList(formData.get('requirements')),
+    benefits: splitLineList(formData.get('benefits')),
+    applicationNotificationEmail: asNullableString(formData.get('applicationNotificationEmail')),
     experienceMin: Number(formData.get('experienceMin')),
     experienceMax: Number(formData.get('experienceMax')),
     salaryMin: formData.get('salaryMin') ? Number(formData.get('salaryMin')) : null,
@@ -80,7 +91,10 @@ function buildJobPayload(formData) {
     targetHires: formData.get('targetHires') ? Number(formData.get('targetHires')) : null,
     autoCloseOnTargetHire: formData.get('autoCloseOnTargetHire') === 'on',
     isPublic: formData.get('isPublic') === 'on',
-    publicSalaryEnabled: formData.get('publicSalaryEnabled') === 'on',
+    // Salary stays mandatory internally; this checkbox only controls whether the
+    // candidate-facing public serializer is allowed to expose it (see
+    // backend/src/serializers/index.js:serializePublicJob).
+    publicSalaryEnabled: formData.get('hideSalaryFromCandidates') !== 'on',
     featuredInPortal: formData.get('featuredInPortal') === 'on',
     visibility: String(formData.get('visibility') || 'EXTERNAL'),
     status: String(formData.get('status') || 'DRAFT'),
@@ -129,6 +143,55 @@ function buildQuestionPayload(formData) {
         }]
       : [],
   };
+}
+
+function buildQuestionPayloadFromDraft(draft = {}) {
+  const questionType = String(draft.questionType || 'SHORT_TEXT');
+  const rawOptions = Array.isArray(draft.options)
+    ? draft.options.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    questionText: String(draft.questionText || '').trim(),
+    internalLabel: null,
+    helpText: null,
+    placeholder: asNullableString(draft.placeholder),
+    questionType,
+    required: Boolean(draft.required),
+    isActive: true,
+    config: ['SINGLE_SELECT', 'MULTI_SELECT'].includes(questionType)
+      ? {
+          options: rawOptions.map((item, index) => ({
+            id: `option-${index + 1}`,
+            label: item,
+            value: item,
+          })),
+        }
+      : {},
+    validationConfig: {},
+    rules: [],
+  };
+}
+
+function buildScreeningQuestionDrafts(formData) {
+  const questions = formData.getAll('screeningQuestionText');
+  const types = formData.getAll('screeningQuestionType');
+  const requiredValues = formData.getAll('screeningQuestionRequired');
+  const placeholders = formData.getAll('screeningQuestionPlaceholder');
+  const options = formData.getAll('screeningQuestionOptions');
+
+  return questions
+    .map((questionText, index) => ({
+      questionText: String(questionText || '').trim(),
+      questionType: String(types[index] || 'SHORT_TEXT'),
+      required: String(requiredValues[index] || '') === 'true',
+      placeholder: String(placeholders[index] || '').trim(),
+      options: String(options[index] || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    }))
+    .filter((item) => item.questionText);
 }
 
 function numberOrNull(value) {
@@ -194,14 +257,22 @@ function buildOfferPayload(formData, options = {}) {
 }
 
 export async function createJobAction(formData) {
-  await recruiterRequest('/jobs', {
+  const created = await recruiterRequest('/jobs', {
     method: 'POST',
     body: JSON.stringify(buildJobPayload(formData)),
   });
 
+  const questionDrafts = buildScreeningQuestionDrafts(formData);
+  for (const draft of questionDrafts) {
+    await recruiterRequest(`/jobs/${created.data.id}/screening-questions`, {
+      method: 'POST',
+      body: JSON.stringify(buildQuestionPayloadFromDraft(draft)),
+    });
+  }
+
   revalidatePath('/recruiter');
   revalidatePath('/recruiter/jobs');
-  redirect('/recruiter/jobs?notice=job-created');
+  redirect(`/recruiter/jobs/${created.data.id}?notice=job-created`);
 }
 
 export async function completeRecruiterOnboardingAction(formData) {
@@ -234,8 +305,26 @@ export async function completeRecruiterOnboardingAction(formData) {
 
   await setActiveOrganisationCookie(response.data.organisation?.id);
   revalidatePath('/recruiter');
+  revalidatePath('/recruiter/home');
   revalidatePath('/recruiter/onboarding');
-  redirect('/recruiter?notice=workspace-ready');
+  redirect('/recruiter/home?notice=workspace-ready');
+}
+
+export async function createOrganisationPostAction(formData) {
+  const organisationSlug = String(formData.get('organisationSlug') || '').trim();
+
+  await recruiterRequest('/organisations/current/posts', {
+    method: 'POST',
+    body: JSON.stringify({
+      content: String(formData.get('content') || '').trim(),
+      status: 'PUBLISHED',
+    }),
+  });
+
+  revalidatePath('/recruiter/home');
+  if (organisationSlug) {
+    revalidatePath(`/companies/${organisationSlug}`);
+  }
 }
 
 export async function inviteOrganisationMemberAction(formData) {

@@ -45,6 +45,7 @@ function extractInlineFilters(tokens) {
     minExperience: null,
     maxExperience: null,
     location: null,
+    locations: [],
     workMode: null,
     employmentType: null,
     noticePeriodDaysMax: null,
@@ -159,6 +160,59 @@ function extractInlineFilters(tokens) {
   };
 }
 
+function enrichNaturalLanguageFilters(filters, query) {
+  const text = normalizeWhitespace(query);
+  const relocation = text.match(/willing\s+to\s+relocate\s+to\s+([A-Za-z][A-Za-z .-]*?)(?:\s+and|\s+with|\s+for|$)/i);
+  if (relocation) {
+    filters.preferredLocations = [relocation[1].trim()];
+    filters.includeWillingToRelocate = true;
+  }
+
+  const education = text.match(/\b(mba|pgdm|mca|m\.tech|mtech|m\.sc|msc|b\.tech|btech|b\.e\.?|be|phd|m\.phil)\b[\s\S]{0,40}?(?:graduat(?:e|ing)|completion|completed|after)\s+(?:the\s+year\s+)?(19\d{2}|20\d{2})/i);
+  if (education) {
+    const course = education[1].replace(/\s+/g, ' ').trim();
+    const level = /^(mba|pgdm|mca|m\.tech|mtech|m\.sc|msc)$/i.test(course) ? 'pg' : (/phd|m\.phil/i.test(course) ? 'ppg' : 'ug');
+    filters.educationFilters = {
+      ...(filters.educationFilters || {}),
+      [level]: { mode: 'SPECIFIC', course, completionYearFrom: Number(education[2]) },
+    };
+  }
+
+  const currentCompany = text.match(/(?:current\s+)?(?:developer|engineer|designer|manager|recruiter)[\s\S]{0,30}?\bat\s+([A-Za-z][A-Za-z .&-]*?)(?:\s+with|\s+in|\s+and|$)/i);
+  if (currentCompany) {
+    filters.currentEmployer = currentCompany[1].trim();
+    filters.companyScope = 'current';
+  }
+
+  const workPermit = text.match(/(?:work\s+permit|work\s+authorization)\s+(?:for|in|:)?\s*([A-Za-z][A-Za-z .-]*?)(?:\s+and|\s+with|$)/i)
+    || text.match(/\b([A-Za-z]+)\s+work\s+(?:permit|authorization)/i);
+  if (workPermit) {
+    const aliases = { us: 'United States', usa: 'United States', uk: 'United Kingdom', uae: 'United Arab Emirates', canadian: 'Canada', american: 'United States', british: 'United Kingdom' };
+    const country = (workPermit[1] || workPermit[2]).trim();
+    filters.workPermitCountries = [aliases[country.toLowerCase()] || country];
+  }
+
+  if (/\b(permanent|full[- ]time)\b/i.test(text)) {
+    filters.jobTypes = /\bpermanent\b/i.test(text) ? ['PERMANENT'] : filters.jobTypes;
+    filters.employmentTypes = ['FULL_TIME'];
+  } else if (/\bpart[- ]time\b/i.test(text)) {
+    filters.employmentTypes = ['PART_TIME'];
+  } else if (/\bcontract\b/i.test(text)) {
+    filters.jobTypes = ['CONTRACT'];
+    filters.employmentTypes = ['CONTRACT'];
+  }
+
+  const active = text.match(/active\s+(?:in|within|last)\s+(?:the\s+last\s+)?(\d+)\s+(day|days|month|months|year|years)/i);
+  if (active) {
+    const amount = Number(active[1]);
+    filters.activeWithin = /month/i.test(active[2]) ? amount * 30 : /year/i.test(active[2]) ? amount * 365 : amount;
+  }
+  if (/recently\s+registered|new\s+registrations?/i.test(text)) filters.displayCandidateType = 'NEW_REGISTRATIONS';
+  if (/verified\s+(?:email|email\s+id)/i.test(text)) filters.emailVerified = true;
+  if (/attached\s+resume|resume\s+attached/i.test(text)) filters.resumeAttachment = 'Available';
+  return filters;
+}
+
 function parseBooleanAst(tokens) {
   if (!tokens.length) return null;
   let position = 0;
@@ -235,6 +289,17 @@ export function parseSearchQuery(payload = {}) {
   const terms = remainingTerms.filter((token) => !OPERATOR_TOKENS.has(token) && token !== '(' && token !== ')');
   const canonicalKeyword = normalizeWhitespace(terms.join(' '));
 
+  const suppliedFilters = payload.filters && typeof payload.filters === 'object' ? payload.filters : {};
+  const mergedFilters = enrichNaturalLanguageFilters({
+    ...filters,
+    ...suppliedFilters,
+    certifications: [...new Set([...(filters.certifications || []), ...(suppliedFilters.certifications || [])])],
+    skills: [...new Set([...(filters.skills || []), ...(suppliedFilters.skills || [])])],
+    requiredSkills: [...new Set(suppliedFilters.requiredSkills || [])],
+    optionalSkills: [...new Set(suppliedFilters.optionalSkills || [])],
+    locations: [...new Set(suppliedFilters.locations || [])],
+  }, originalQuery);
+
   return semanticSearchParseResponseSchema.parse({
     originalQuery,
     normalizedQuery: originalQuery,
@@ -245,7 +310,7 @@ export function parseSearchQuery(payload = {}) {
     terms,
     booleanAst,
     canonicalKeyword,
-    filters,
+    filters: mergedFilters,
     warnings: [],
   });
 }

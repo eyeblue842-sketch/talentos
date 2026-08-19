@@ -7,17 +7,20 @@ import {
   getCandidateOnboardingState,
   getCandidateRecommendations,
   getCandidateSelfProfile,
+  getCandidateProfilePhotoFile,
   getCandidateSettings,
   listCandidateNotifications,
   listSavedJobs,
   markAllCandidateNotificationsRead,
   markCandidateNotificationRead,
+  removeCandidateProfilePhoto,
   removeSavedJob,
   recordCandidateJobView,
   requestCandidateDataExport,
   requestCandidateAccountDeactivation,
   saveCandidateOnboarding,
   saveJobForCandidate,
+  uploadCandidateProfilePhoto,
   updateCandidateSelfProfile,
   updateCandidateSettings,
 } from '../services/candidateService.js';
@@ -44,6 +47,46 @@ export async function patchCandidateProfile(req, res, next) {
       userAgent: req.get('user-agent'),
     });
     sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateProfilePhoto(req, res, next) {
+  try {
+    const result = await uploadCandidateProfilePhoto(req.user.candidateProfile.id, req.file, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteCandidateProfilePhoto(req, res, next) {
+  try {
+    const result = await removeCandidateProfilePhoto(req.user.candidateProfile.id, {
+      actorUserId: req.user.id,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCandidateProfilePhoto(req, res, next) {
+  try {
+    const file = await getCandidateProfilePhotoFile(req.user.candidateProfile.id);
+    res.setHeader('content-type', file.contentType || 'application/octet-stream');
+    if (file.contentLength) {
+      res.setHeader('content-length', String(file.contentLength));
+    }
+    res.setHeader('cache-control', 'private, max-age=60');
+    file.stream.pipe(res);
   } catch (error) {
     next(error);
   }

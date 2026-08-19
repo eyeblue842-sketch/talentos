@@ -810,7 +810,7 @@ async function generateAndPersistMatch(context, requestedByUserId = null) {
     let promptTokens = 0;
     let completionTokens = 0;
     let latencyMs = 0;
-    let estimatedCost = 0;
+    const estimatedCost = 0;
 
     if (context.aiEnabled) {
       const runtime = await executeStructuredPrompt({

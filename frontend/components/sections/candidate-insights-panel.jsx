@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -346,7 +346,7 @@ export function CandidateInsightsPanel({
   const hasPreviousResult = hasPreviousCandidateIntelligenceResult(result);
   const showLimitedDataState = !canRenderProfessionalSummary(result) && !groupedSkills.length && !(result?.timeline?.length);
 
-  async function refreshFullResult() {
+  const refreshFullResult = useCallback(async () => {
     const payload = await requestJson(`/api/intelligence/candidates/${candidateId}`);
     const parsed = parseCandidateIntelligenceResponse(payload);
     setResult(parsed);
@@ -363,20 +363,22 @@ export function CandidateInsightsPanel({
       resultVersion: parsed.execution.resultVersion,
     }));
     setError('');
-  }
+  }, [candidateId]);
 
-  async function refreshStatus() {
+  const refreshStatus = useCallback(async () => {
     const payload = await requestJson(`/api/intelligence/candidates/${candidateId}/status`);
     const parsed = parseCandidateIntelligenceStatusResponse(payload);
     setStatus(parsed);
     return parsed;
-  }
+  }, [candidateId]);
 
   useEffect(() => {
     if (!featureEnabled || !canRead || parsedInitialResult) return undefined;
     let cancelled = false;
 
-    setLoading(true);
+    // `loading` is already lazily initialized to true for exactly this
+    // condition (see the useState above); no synchronous reset is needed
+    // here.
     requestJson(`/api/intelligence/candidates/${candidateId}`)
       .then((payload) => {
         if (cancelled) return;
@@ -455,7 +457,7 @@ export function CandidateInsightsPanel({
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [candidateId, polling]);
+  }, [candidateId, polling, refreshFullResult, refreshStatus]);
 
   async function handleRegenerate() {
     setRegenerating(true);

@@ -11,6 +11,29 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Disposable, CI-only PostgreSQL service container - created fresh for
+    # this job run and destroyed with the runner. Credentials below are not
+    # a secret: they only ever resolve to this ephemeral container, never to
+    # any shared/Supabase/production database.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: careeriz
+          POSTGRES_PASSWORD: careeriz
+          POSTGRES_DB: careeriz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U careeriz -d careeriz_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      DIRECT_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      TEST_DATABASE_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      TEST_DIRECT_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
     steps:
       - uses: actions/checkout@v4
 
@@ -19,20 +42,44 @@ jobs:
           node-version: 20
           cache: npm
 
+      # The root npm ci (workspaces: shared, frontend, backend) is the only
+      # install this pipeline needs or Docker actually uses (all three
+      # Dockerfiles COPY only the root package.json/package-lock.json - see
+      # backend/Dockerfile, backend/Dockerfile.worker, frontend/Dockerfile).
+      # There is deliberately no separate `npm ci --prefix backend`/
+      # `--prefix frontend` step here: those per-workspace lockfiles were
+      # never a build input for anything, just went stale, and made `npm
+      # ci` (strict, unlike the README's local `npm install`) fail on
+      # drift no production path depended on.
       - name: Install
         run: npm ci
-
-      - name: Backend install
-        run: npm ci --prefix backend
-
-      - name: Frontend install
-        run: npm ci --prefix frontend
 
       - name: Lint
         run: npm run lint
 
       - name: Type-check
         run: npm run type-check
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U careeriz -d careeriz_test >/dev/null 2>&1; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time." >&2
+          exit 1
+
+      - name: Prisma generate (disposable CI database)
+        run: npx prisma generate
+        working-directory: backend
+
+      - name: Apply migrations (disposable CI database)
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
+        working-directory: backend
 
       - name: Backend tests
         run: npm test --prefix backend
@@ -66,6 +113,122 @@ jobs:
 
       - name: Docker build frontend
         run: docker build -f frontend/Dockerfile .
+
+  # Added as part of Track B Step 4 closure. This is the authoritative
+  # Python 3.11 verification for the document-processor service: local
+  # development in this repo has so far only run against Python 3.14 (this
+  # job targets what the Dockerfile actually pins, python:3.11-slim's
+  # matching interpreter), and runs on a real Linux runner rather than a
+  # cross-platform pip dry-run, which cannot correctly evaluate
+  # sys_platform-conditional dependency markers (e.g. a Windows-only
+  # pywin32 requirement on some transitive packages) when run from Windows.
+  # As of this commit this job has not yet had a real run recorded — mark
+  # any report that cites it as "pending actual execution" until a CI run
+  # completes and its logs are inspected.
+  document-processor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            document-processor/requirements-lock.txt
+            document-processor/requirements-dev.txt
+
+      - name: Install production dependencies (hash-verified)
+        run: python -m pip install --require-hashes -r requirements-lock.txt
+        working-directory: document-processor
+
+      - name: Install development tools
+        run: python -m pip install --no-deps -r requirements-dev.txt
+        working-directory: document-processor
+
+      - name: Lint (ruff check)
+        run: python -m ruff check app tests
+        working-directory: document-processor
+
+      - name: Tests (Docling disabled — the safe default)
+        run: python -m pytest -v
+        working-directory: document-processor
+
+      - name: Tests (Docling explicitly enabled)
+        run: python -m pytest -v tests/test_docling_engine.py tests/test_health_and_capabilities.py
+        working-directory: document-processor
+        env:
+          DOCLING_ENABLED: "true"
+
+      - name: Docker build document-processor
+        run: docker build -f document-processor/Dockerfile document-processor
+
+  # Step 6B: REAL PaddleOCR validation -- authored but never executed as of
+  # this commit (prepared from a dev sandbox with no Docker and no Python
+  # 3.11/3.13 interpreter locally; see docs/document-processor.md's Step 6
+  # dependency-gate section and the Step 6B closure report). Deliberately
+  # gated to workflow_dispatch only, not push/PR: installing paddlepaddle
+  # (~195MB wheel) plus PP-OCRv5 model weights on every push would be slow
+  # and wasteful for a capability that stays PADDLEOCR_ENABLED=false by
+  # default anyway. Mark any report that cites this job's results as
+  # "pending actual execution" until a real run's logs are inspected --
+  # exactly the same caveat the `document-processor` job above carried
+  # before its own first real run.
+  document-processor-ocr-real-validation:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            document-processor/requirements-lock.txt
+            document-processor/requirements-dev.txt
+
+      - name: Install production dependencies, hash-verified (including real paddleocr/paddlepaddle)
+        run: python -m pip install --require-hashes -r requirements-lock.txt
+        working-directory: document-processor
+
+      - name: Install development tools
+        run: python -m pip install --no-deps -r requirements-dev.txt
+        working-directory: document-processor
+
+      - name: Real PaddleOCR API/accuracy/orientation/resource validation
+        run: python -m pytest -v -s tests/test_ocr_real_engine.py
+        working-directory: document-processor
+        env:
+          PADDLEOCR_ENABLED: "true"
+          DOCLING_ENABLED: "true"
+          PREPROCESSING_ENABLED: "true"
+
+      - name: Real reliability matrix against the live engine
+        run: python -m pytest -v tests/test_ocr_worker_pools.py
+        working-directory: document-processor
+        env:
+          PADDLEOCR_ENABLED: "true"
+          DOCLING_ENABLED: "true"
+          PREPROCESSING_ENABLED: "true"
+
+      - name: Docker build (production target, Python 3.11 + hash lock)
+        run: docker build -f document-processor/Dockerfile document-processor
+
+      - name: Container health/readiness/shutdown check
+        run: |
+          set -e
+          docker run -d --name docproc-validate -p 8081:8081 \
+            -e DOCLING_ENABLED=true -e PADDLEOCR_ENABLED=true -e PREPROCESSING_ENABLED=true \
+            document-processor
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8081/health/live && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8081/health/ready
+          docker stop docproc-validate
+          docker logs docproc-validate
+          docker rm docproc-validate
 
   deploy-staging:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
