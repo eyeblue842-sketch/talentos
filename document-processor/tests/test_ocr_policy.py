@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.engines.paddleocr_engine import PaddleOCREngine, OcrResultParseError, _parse_ocr_result, _parse_orientation_result
+from app.engines.paddleocr_engine import OcrResultParseError, PaddleOCREngine, _parse_ocr_result, _parse_orientation_result
 from app.ocr import orientation as orientation_policy
 from app.ocr import quality_policy, reconciliation
 from app.ocr.reading_order import deduplicate_overlapping_lines, reconstruct_reading_order
