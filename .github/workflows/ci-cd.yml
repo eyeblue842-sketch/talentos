@@ -11,6 +11,29 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Disposable, CI-only PostgreSQL service container - created fresh for
+    # this job run and destroyed with the runner. Credentials below are not
+    # a secret: they only ever resolve to this ephemeral container, never to
+    # any shared/Supabase/production database.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: careeriz
+          POSTGRES_PASSWORD: careeriz
+          POSTGRES_DB: careeriz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U careeriz -d careeriz_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      DIRECT_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      TEST_DATABASE_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
+      TEST_DIRECT_URL: postgresql://careeriz:careeriz@localhost:5432/careeriz_test?schema=public
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +59,27 @@ jobs:
 
       - name: Type-check
         run: npm run type-check
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U careeriz -d careeriz_test >/dev/null 2>&1; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time." >&2
+          exit 1
+
+      - name: Prisma generate (disposable CI database)
+        run: npx prisma generate
+        working-directory: backend
+
+      - name: Apply migrations (disposable CI database)
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
+        working-directory: backend
 
       - name: Backend tests
         run: npm test --prefix backend
