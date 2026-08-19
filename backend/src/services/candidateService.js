@@ -323,9 +323,12 @@ function profileCompletionSections(profile) {
       key: 'professional_details',
       label: 'Professional details',
       weight: 10,
+      // totalExperience alone no longer gates this section: a candidate
+      // with zero total experience (a fresher) is not "missing" experience,
+      // so professional identity (headline/summary/current role/employment
+      // status) is evaluated on its own, independent of experience.
       complete: Boolean(
-        safeProfile.totalExperience > 0
-        && (safeProfile.summary || safeProfile.headline || safeProfile.currentEmployer || safeProfile.currentDesignation || safeProfile.employmentStatus),
+        safeProfile.summary || safeProfile.headline || safeProfile.currentEmployer || safeProfile.currentDesignation || safeProfile.employmentStatus,
       ),
     },
     {
@@ -344,7 +347,10 @@ function profileCompletionSections(profile) {
       key: 'experience',
       label: 'Experience history',
       weight: 10,
-      complete: hasExperience,
+      // Zero total experience is a complete, correct state for a fresher -
+      // there is no employment history to enter. Only a positive
+      // totalExperience with no real entries counts as incomplete.
+      complete: hasExperience || safeProfile.totalExperience === 0,
     },
     {
       key: 'education',

@@ -164,21 +164,98 @@ beforeEach(() => {
   };
 });
 
-test('weighted profile completion treats a fresher profile as complete when core sections are present', () => {
+test('weighted profile completion treats a complete fresher profile as fully complete without employment history', () => {
   const result = calculateProfileCompletion({
     fullName: 'Riya Singh',
+    phoneNumber: '+91 9876543210',
     currentTitle: 'Graduate Engineer',
     location: 'Pune',
     latestResumeAssetId: 'resume-1',
     skills: ['React', 'Node.js', 'Testing'],
     totalExperience: 0,
+    experienceEntries: [],
+    educationEntries: [
+      { degree: 'B.Tech', institution: 'Pune Institute of Technology', fieldOfStudy: 'Computer Science', year: 2026 },
+    ],
+    certificationEntries: [
+      { name: 'React Developer Certification', issuingOrganisation: 'Meta' },
+    ],
+    projectEntries: [
+      { projectName: 'Campus Placement Portal', summary: 'Built a portal to track campus recruitment.' },
+    ],
     preferredRoles: ['frontend engineer'],
     preferredLocations: ['Pune'],
     workplacePreferences: ['HYBRID'],
     employmentPreferences: ['FULL_TIME'],
-    headline: 'Entry-level engineer',
-    summary: 'Ready for frontend roles.',
+    headline: 'Entry-level frontend engineer',
+    summary: 'Ready to take on frontend engineering roles.',
     linkedInUrl: 'https://linkedin.com/in/riya',
+    updatedAt: new Date('2026-07-17T09:00:00.000Z'),
+  });
+
+  assert.equal(result.percentage, 100);
+  assert.deepEqual(result.missingSections, []);
+});
+
+test('weighted profile completion does not automatically reach 100% for an otherwise-incomplete fresher profile', () => {
+  const result = calculateProfileCompletion({
+    fullName: 'Kabir Rao',
+    phoneNumber: null,
+    currentTitle: 'Graduate Engineer',
+    location: 'Pune',
+    latestResumeAssetId: null,
+    skills: ['React'],
+    totalExperience: 0,
+    experienceEntries: [],
+    educationEntries: [],
+    certificationEntries: [],
+    projectEntries: [],
+    preferredRoles: [],
+    preferredLocations: [],
+    workplacePreferences: [],
+    employmentPreferences: [],
+    headline: null,
+    summary: null,
+    linkedInUrl: null,
+    updatedAt: new Date('2026-07-17T09:00:00.000Z'),
+  });
+
+  assert.equal(result.percentage < 100, true);
+  assert.equal(result.missingSections.includes('Resume availability'), true);
+  assert.equal(result.missingSections.includes('Education'), true);
+  // The zero-experience exemption is narrow: it only ever satisfies
+  // "Experience history" itself, never any other section.
+  assert.equal(result.missingSections.includes('Experience history'), false);
+});
+
+test('weighted profile completion treats a complete experienced candidate as fully complete', () => {
+  const result = calculateProfileCompletion({
+    fullName: 'Meera Nair',
+    phoneNumber: '+91 9123456780',
+    currentTitle: 'Senior Backend Engineer',
+    location: 'Bengaluru',
+    latestResumeAssetId: 'resume-2',
+    skills: ['Node.js', 'PostgreSQL', 'AWS'],
+    totalExperience: 6,
+    experienceEntries: [
+      { company: 'Acme Labs', title: 'Senior Backend Engineer' },
+    ],
+    educationEntries: [
+      { degree: 'B.E.', institution: 'Anna University', fieldOfStudy: 'Computer Science', year: 2018 },
+    ],
+    certificationEntries: [
+      { name: 'AWS Certified Solutions Architect' },
+    ],
+    projectEntries: [
+      { projectName: 'Payments Platform', summary: 'Led the payments platform rebuild.' },
+    ],
+    preferredRoles: ['backend engineer'],
+    preferredLocations: ['Bengaluru'],
+    workplacePreferences: ['HYBRID'],
+    employmentPreferences: ['FULL_TIME'],
+    headline: 'Senior Backend Engineer',
+    summary: 'Backend engineer with 6 years building payment systems.',
+    linkedInUrl: 'https://linkedin.com/in/meera',
     updatedAt: new Date('2026-07-17T09:00:00.000Z'),
   });
 
