@@ -87,10 +87,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: document-processor/requirements-dev.txt
+          cache-dependency-path: |
+            document-processor/requirements-lock.txt
+            document-processor/requirements-dev.txt
 
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Install production dependencies (hash-verified)
+        run: python -m pip install --require-hashes -r requirements-lock.txt
+        working-directory: document-processor
+
+      - name: Install development tools
+        run: python -m pip install --no-deps -r requirements-dev.txt
         working-directory: document-processor
 
       - name: Lint (ruff check)
@@ -131,14 +137,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: document-processor/requirements-dev.txt
+          cache-dependency-path: |
+            document-processor/requirements-lock.txt
+            document-processor/requirements-dev.txt
 
-      - name: Install dependencies (including real paddleocr/paddlepaddle)
-        run: pip install -r requirements-dev.txt
+      - name: Install production dependencies, hash-verified (including real paddleocr/paddlepaddle)
+        run: python -m pip install --require-hashes -r requirements-lock.txt
         working-directory: document-processor
 
-      - name: Verify hash-locked install reproduces the same environment
-        run: pip install --require-hashes -r requirements-lock.txt --dry-run
+      - name: Install development tools
+        run: python -m pip install --no-deps -r requirements-dev.txt
         working-directory: document-processor
 
       - name: Real PaddleOCR API/accuracy/orientation/resource validation

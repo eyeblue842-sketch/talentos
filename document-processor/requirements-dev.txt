@@ -1,4 +1,23 @@
--r requirements.txt
+# Development/CI-only tools. Installed with `pip install --no-deps` on top
+# of the hash-verified production lock (requirements-lock.txt) - see the
+# document-processor CI job. Exact pins only; no production/ML/runtime
+# package may appear here, and this file must never `-r`/`-c` include
+# requirements.in or requirements-lock.txt (that would pull in unhashed
+# production input while --require-hashes is expected to be the only way
+# production dependencies are installed).
+#
+# --no-deps means each entry's own dependencies must already be satisfied
+# by requirements-lock.txt, or be listed here explicitly. Verified against
+# each package's real PyPI metadata for Python 3.11 on Linux:
+#   pytest==9.1.1 needs iniconfig, packaging, pluggy, pygments (+ colorama
+#     only on win32, + exceptiongroup/tomli only on Python <3.11 - neither
+#     applies here). packaging/pluggy/pygments are already in the
+#     production lock (transitively); iniconfig is not, so it is pinned
+#     below.
+#   httpx==0.28.1 needs anyio, certifi, httpcore==1.*, idna - all already
+#     satisfied by the production lock.
+#   ruff==0.16.2 has no runtime dependencies at all (a standalone binary).
 pytest==9.1.1
 httpx==0.28.1
 ruff==0.16.2
+iniconfig==2.3.0
