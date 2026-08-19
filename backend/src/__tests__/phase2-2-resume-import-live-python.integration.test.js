@@ -10,6 +10,15 @@ import { processResumeImportItem } from '../services/resumeImportService.js';
 
 const RUN = `phase2live${Date.now()}`;
 const DOC_PROCESSOR_URL = process.env.PHASE2_DOC_PROCESSOR_URL || 'http://127.0.0.1:18081';
+
+// Same explicit opt-in gate as resume-search-v2-opensearch.integration.test.js:
+// off by default (test.skip) so the normal deterministic backend suite
+// never depends on a live document-processor instance being reachable.
+// Only the two tests below that make real, un-mocked network calls through
+// to DOC_PROCESSOR_URL need this - the third test in this file fully mocks
+// global.fetch itself and stays a plain, always-run test.
+const runIntegration = process.env.PHASE2_LIVE_PYTHON_INTEGRATION_ENABLED === 'true';
+const integrationTest = runIntegration ? test : test.skip;
 const originalFetch = global.fetch;
 const originalStorageProvider = env.storageProvider;
 const originalLocalStoragePath = env.localStoragePath;
@@ -147,7 +156,7 @@ after(async () => {
   }
 });
 
-test('processResumeImportItem calls the live Python service and persists the reconciliation payload after a real Prisma reload', async () => {
+integrationTest('processResumeImportItem calls the live Python service and persists the reconciliation payload after a real Prisma reload', async () => {
   const batch = await prisma.resumeImportBatch.create({
     data: {
       organisationId: org.id,
@@ -214,7 +223,7 @@ test('processResumeImportItem calls the live Python service and persists the rec
   assert.equal(reloadedAgain.updatedAt.getTime(), reloaded.updatedAt.getTime());
 });
 
-test('concurrent processResumeImportItem calls for the same real row perform exactly one live Python request and one final persistence', async () => {
+integrationTest('concurrent processResumeImportItem calls for the same real row perform exactly one live Python request and one final persistence', async () => {
   const batch = await prisma.resumeImportBatch.create({
     data: {
       organisationId: org.id,

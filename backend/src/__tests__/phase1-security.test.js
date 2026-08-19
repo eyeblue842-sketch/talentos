@@ -290,6 +290,20 @@ function installPrismaMocks() {
   prisma.recruiterProfile ||= {};
   prisma.authToken ||= {};
   prisma.savedCandidate ||= {};
+  prisma.platformSetupState ||= {};
+
+  // This suite tests signup/login/session behavior, not the initial-setup
+  // wizard, so the platform is always treated as already set up - without
+  // this, assertInitialSetupCompleted() falls through to a real (unmocked)
+  // organisation/user count against whatever database DATABASE_URL points
+  // to, which only happened to pass by coincidence against a long-lived
+  // local dev database that already had real organisations/admins in it.
+  prisma.platformSetupState.findUnique = async () => ({
+    id: 'platform-setup-state',
+    setupCompleted: true,
+    setupVersion: '1.0.0',
+    setupCompletedAt: new Date('2026-01-01'),
+  });
 
   prisma.user.findUnique = async ({ where, include = {} }) => {
     const user = state.users.find((item) => (

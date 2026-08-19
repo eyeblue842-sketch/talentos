@@ -156,6 +156,8 @@ function seedState() {
     intelligenceResults: [],
     backgroundTasks: [],
     auditLogs: [],
+    matchScoringProfiles: [],
+    matchScoringProfileVersions: [],
   };
 }
 
@@ -204,6 +206,76 @@ function installPrismaMocks() {
   prisma.backgroundTask ||= {};
   prisma.auditLog ||= {};
   prisma.user ||= {};
+  prisma.matchScoringProfile ||= {};
+  prisma.matchScoringProfileVersion ||= {};
+
+  // ensureDefaultMatchScoringProfile() (matchScoringProfileService.js) reads
+  // and writes these two models directly against the real Prisma client
+  // when their methods exist, rather than falling back to its own stub -
+  // without mocking them here the same way as every other model in this
+  // file, it hits the real (unmocked) database and fails on a foreign key
+  // constraint since org-1/org-2 only exist in this in-memory state.
+  function withMatchScoringProfileRelations(profile, include = {}) {
+    if (!profile) return null;
+    const versions = state.matchScoringProfileVersions.filter((item) => item.profileId === profile.id);
+    return {
+      ...clone(profile),
+      activeVersion: include.activeVersion
+        ? clone(versions.find((item) => item.id === profile.activeVersionId) || null)
+        : undefined,
+      versions: include.versions
+        ? versions.slice().sort((a, b) => b.version - a.version).slice(0, include.versions.take || versions.length).map(clone)
+        : undefined,
+    };
+  }
+
+  prisma.matchScoringProfile.findFirst = async ({ where = {}, include = {} } = {}) => {
+    const found = state.matchScoringProfiles.find((item) => (
+      (!where.id || item.id === where.id)
+      && (!where.organisationId || item.organisationId === where.organisationId)
+      && (!where.key || item.key === where.key)
+    )) || null;
+    return withMatchScoringProfileRelations(found, include);
+  };
+
+  prisma.matchScoringProfile.create = async ({ data } = {}) => {
+    const profile = {
+      id: nextId('match-scoring-profile'),
+      activeVersionId: null,
+      activatedAt: null,
+      activatedByUserId: null,
+      archivedAt: null,
+      createdAt: now(),
+      updatedAt: now(),
+      ...clone(data),
+    };
+    state.matchScoringProfiles.push(profile);
+    return clone(profile);
+  };
+
+  prisma.matchScoringProfile.update = async ({ where, data } = {}) => {
+    const profile = state.matchScoringProfiles.find((item) => item.id === where.id);
+    applyData(profile, data);
+    return clone(profile);
+  };
+
+  prisma.matchScoringProfileVersion.findFirst = async ({ where = {} } = {}) => {
+    const matches = state.matchScoringProfileVersions.filter((item) => (
+      (!where.profileId || item.profileId === where.profileId)
+    ));
+    const found = matches.slice().sort((a, b) => b.version - a.version)[0] || null;
+    return clone(found);
+  };
+
+  prisma.matchScoringProfileVersion.create = async ({ data } = {}) => {
+    const version = {
+      id: nextId('match-scoring-profile-version'),
+      createdAt: now(),
+      ...clone(data),
+    };
+    state.matchScoringProfileVersions.push(version);
+    return clone(version);
+  };
 
   prisma.organisation.findFirst = async ({ where = {} } = {}) => clone(
     state.organisations.find((item) => (!where.id || item.id === where.id) && (!where.status || item.status === where.status)) || null
