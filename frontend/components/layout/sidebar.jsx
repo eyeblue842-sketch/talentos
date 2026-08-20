@@ -140,7 +140,11 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
     setIsLoggingOut(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.replace('/auth');
+      // A recruiter logging out should be able to log back in again via the
+      // employer chooser, not land on the candidate login page - the /auth
+      // compatibility page has no way to know this was a recruiter session
+      // once the cookie is gone.
+      router.replace(pathname.startsWith('/recruiter') ? '/hire' : '/auth');
       router.refresh();
     } finally {
       setIsLoggingOut(false);

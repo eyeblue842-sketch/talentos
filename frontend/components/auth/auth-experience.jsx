@@ -10,7 +10,7 @@ import { FormActions, FormSection, InlineValidationMessage, PasswordField } from
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { resolvePostAuthRoute, safeInternalPath } from '@/lib/roles';
-import { buildPathWithParams, candidateAuthRoutes, employerAuthRoutes } from '@/lib/auth-experience';
+import { buildPathWithParams, candidateAuthRoutes, employerAuthRoutes, normalizeEmployerType } from '@/lib/auth-experience';
 
 const passwordHelpText = 'Use at least 8 characters. Choose a password you do not reuse elsewhere.';
 
@@ -192,14 +192,19 @@ export function AuthExperience({
   );
   const [isResetFlow, setIsResetFlow] = useState(initialSearchParams.authStatus === 'password-reset-ready');
 
-  const employerType = useMemo(() => {
-    const requested = String(initialSearchParams.employerType || '').toUpperCase();
-    return requested === 'COMPANY' ? 'COMPANY' : 'CONSULTANCY';
-  }, [initialSearchParams.employerType]);
+  const employerType = useMemo(
+    () => normalizeEmployerType(initialSearchParams.employerType) || 'CONSULTANCY',
+    [initialSearchParams.employerType],
+  );
 
   const nextHref = useMemo(
     () => safeInternalPath(initialSearchParams.next, audience === 'employer' ? '/recruiter/home' : '/candidate/dashboard'),
     [audience, initialSearchParams.next],
+  );
+
+  const changeRecruiterTypeHref = useMemo(
+    () => buildPathWithParams(employerAuthRoutes.landing, { next: initialSearchParams.next }),
+    [initialSearchParams.next],
   );
 
   const registerPasswordMismatch = registerForm.confirmPassword.length > 0 && registerForm.password !== registerForm.confirmPassword;
@@ -333,6 +338,14 @@ export function AuthExperience({
                   ? 'Sign in to continue your candidate journey or create a profile to start applying.'
                   : 'Access your hiring workspace or create the account step for your employer setup.'}
               </p>
+              {audience === 'employer' ? (
+                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                  {employerType === 'COMPANY' ? 'Company Recruiter' : 'Consultancy Recruiter'} ·{' '}
+                  <Link href={changeRecruiterTypeHref} className="font-semibold text-[var(--color-primary)]">
+                    Change recruiter type
+                  </Link>
+                </p>
+              ) : null}
             </div>
 
             <div aria-live="polite" className="mt-5 grid gap-3">

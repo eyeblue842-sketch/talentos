@@ -9,6 +9,17 @@ export const employerAuthRoutes = {
   register: '/hire/register',
 };
 
+export const VALID_EMPLOYER_TYPES = ['CONSULTANCY', 'COMPANY'];
+
+export function normalizeEmployerType(value) {
+  const upper = String(value || '').toUpperCase();
+  return VALID_EMPLOYER_TYPES.includes(upper) ? upper : null;
+}
+
+export function isValidEmployerType(value) {
+  return normalizeEmployerType(value) !== null;
+}
+
 export function isEmployerNextPath(path = '') {
   return typeof path === 'string' && (path.startsWith('/recruiter') || path.startsWith('/hire'));
 }
