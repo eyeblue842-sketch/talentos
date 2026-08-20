@@ -39,7 +39,7 @@ export function Button({
       type={Comp === 'button' ? type : undefined}
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] border font-semibold shadow-[var(--shadow-sm)]',
-        'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]',
+        'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--focus-ring-glow)]',
         'disabled:cursor-not-allowed disabled:border-[var(--color-border)] disabled:bg-[var(--color-bg-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none',
         'motion-safe:hover:-translate-y-px motion-reduce:hover:transform-none',
         variantStyles[variant],

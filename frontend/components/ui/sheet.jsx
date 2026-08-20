@@ -74,7 +74,7 @@ export function Sheet({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 bg-[var(--overlay-scrim)] backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === overlayRef.current) {
           onClose?.();
