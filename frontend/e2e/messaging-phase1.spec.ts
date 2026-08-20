@@ -131,7 +131,7 @@ test.describe.serial('Careeriz Messaging Phase 1 browser E2E', () => {
       const recruiterConversation = await getConversationByParticipant(candidateAApi, seed.recruiterA.fullName);
       const recruiterConversationId = recruiterConversation.id;
 
-      await login(recruiterA, '/hire/login?next=/recruiter/messages', seed.recruiterA.email, seed.password, '/recruiter/messages');
+      await login(recruiterA, '/hire/login?employerType=CONSULTANCY&next=/recruiter/messages', seed.recruiterA.email, seed.password, '/recruiter/messages');
       const recruiterConversationButton = getConversationRow(recruiterA, seed.candidateA.fullName);
       await expect(getUnreadBadge(recruiterConversationButton)).toHaveText('1');
       await recruiterConversationButton.click();
@@ -229,7 +229,7 @@ test.describe.serial('Careeriz Messaging Phase 1 browser E2E', () => {
     const candidateAApi = await createBackendApiContext(seed.candidateA.userId);
 
     try {
-      await login(recruiterA, '/hire/login?next=/recruiter/network', seed.recruiterA.email, seed.password, '/recruiter/network');
+      await login(recruiterA, '/hire/login?employerType=CONSULTANCY&next=/recruiter/network', seed.recruiterA.email, seed.password, '/recruiter/network');
       await expectNetworkPage(recruiterA, 'recruiter');
       await openMessageFromConnection(recruiterA, seed.candidateA.userId);
 

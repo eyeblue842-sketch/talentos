@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { AuthExperience } from '@/components/auth/auth-experience';
@@ -100,6 +101,60 @@ describe('public landing and authentication redesign', () => {
     await waitFor(() => {
       expect(window.location.assign).toHaveBeenCalledWith('/recruiter/home');
     });
+  });
+
+  test('employer login and registration both show a visible "Change recruiter type" link back to /hire', () => {
+    render(<AuthExperience audience="employer" mode="login" initialSearchParams={{ employerType: 'COMPANY' }} />);
+    expect(screen.getByRole('link', { name: 'Change recruiter type' })).toHaveAttribute('href', expect.stringMatching(/^\/hire(\?|$)/));
+
+    render(<AuthExperience audience="employer" mode="register" initialSearchParams={{ employerType: 'CONSULTANCY' }} />);
+    expect(screen.getAllByRole('link', { name: 'Change recruiter type' }).length).toBeGreaterThan(0);
+  });
+
+  test('candidate login and registration never show a "Change recruiter type" link', () => {
+    render(<AuthExperience audience="candidate" mode="login" />);
+    expect(screen.queryByText('Change recruiter type')).not.toBeInTheDocument();
+  });
+
+  test('pressing Enter in the employer login password field submits the form, same as clicking Sign in', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { user: { role: 'RECRUITER' } } }),
+    });
+    const user = userEvent.setup();
+
+    render(<AuthExperience audience="employer" mode="login" />);
+
+    await user.type(screen.getAllByLabelText('Work email')[0], 'team@company.com');
+    await user.type(screen.getAllByLabelText('Password')[0], 'password123{Enter}');
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/login', expect.objectContaining({ method: 'POST' }));
+    });
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith('/recruiter/home');
+    });
+  });
+
+  test('invalid employer credentials show a generic message, not an account-existence hint', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ success: false, message: 'Invalid credentials.' }),
+    });
+
+    render(<AuthExperience audience="employer" mode="login" />);
+
+    fireEvent.change(screen.getAllByLabelText('Work email')[0], { target: { value: 'nobody@company.com' } });
+    fireEvent.change(screen.getAllByLabelText('Password')[0], { target: { value: 'wrong-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Invalid credentials.')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/no account/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+    expect(window.location.assign).not.toHaveBeenCalled();
   });
 
   test('social login is hidden when not configured', () => {

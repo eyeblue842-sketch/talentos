@@ -35,8 +35,11 @@ export default async function InvitationAcceptPage({ searchParams }) {
     redirect('/candidate/dashboard');
   }
 
-  const loginHref = buildPathWithParams(employerAuthRoutes.login, { next: `/auth/invitations/accept?token=${encodeURIComponent(token)}` });
-  const registerHref = buildPathWithParams(employerAuthRoutes.register, { next: `/auth/invitations/accept?token=${encodeURIComponent(token)}` });
+  // These are general employer entry points (the invitation itself does not
+  // tell us which recruiter type the invitee should authenticate as), so per
+  // the employer-login contract they route through the /hire chooser rather
+  // than straight to /hire/login or /hire/register.
+  const employerEntryHref = buildPathWithParams(employerAuthRoutes.landing, { next: `/auth/invitations/accept?token=${encodeURIComponent(token)}` });
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
@@ -60,8 +63,8 @@ export default async function InvitationAcceptPage({ searchParams }) {
 
             {!user ? (
               <div className="flex flex-wrap gap-3">
-                <Button as={Link} href={loginHref}>Employer Sign In</Button>
-                <Button as={Link} href={registerHref} variant="outline">Create Employer Account</Button>
+                <Button as={Link} href={employerEntryHref}>Employer Sign In</Button>
+                <Button as={Link} href={employerEntryHref} variant="outline">Create Employer Account</Button>
               </div>
             ) : (
               <form action={acceptOrganisationInvitationAction.bind(null, token)} className="flex flex-wrap gap-3">

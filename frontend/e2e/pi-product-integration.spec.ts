@@ -24,7 +24,7 @@ function seed(): SeedResult {
 }
 
 async function login(page, email: string, password: string) {
-  await page.goto('/hire/login', { waitUntil: 'domcontentloaded' });
+  await page.goto('/hire/login?employerType=CONSULTANCY', { waitUntil: 'domcontentloaded' });
   // The page also renders a "Work email" field for the password-reset
   // flow with the same accessible label - scope to the form that actually
   // contains the Sign In button to avoid filling the wrong one.
