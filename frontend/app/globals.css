@@ -58,6 +58,78 @@
   --brand-strong: var(--color-primary-hover);
   --accent: var(--color-accent);
   --soft: var(--color-primary-soft);
+
+  /* Application-shell semantic tokens (U1). Built on top of the primitive
+     tokens above rather than replacing them, so a future shell/sidebar can
+     depend on a stable, purpose-named contract without coupling to base
+     color names. Several intentionally alias an existing primitive - that
+     is documented per group below, not an oversight. */
+
+  /* Surfaces */
+  --shell-bg: var(--color-bg-page);
+  --shell-surface-elevated: var(--color-bg-elevated);
+  --shell-surface-nav: #fbf9ff;
+  --shell-surface-header: color-mix(in srgb, var(--color-bg-card) 84%, transparent);
+
+  /* Navigation item states */
+  --shell-nav-item-hover-bg: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  --shell-nav-item-active-bg: var(--color-primary-soft);
+  --shell-nav-item-active-text: var(--color-primary);
+  --shell-nav-item-active-indicator: var(--color-primary);
+
+  /* Borders (alias existing primitives under shell-specific names) */
+  --shell-border-subtle: var(--color-border);
+  --shell-border-strong: var(--color-border-strong);
+
+  /* Text (alias existing primitives under shell-specific names) */
+  --shell-text-primary: var(--color-text);
+  --shell-text-secondary: var(--color-text-secondary);
+  --shell-text-muted: var(--color-text-muted);
+
+  /* Focus ring - extracted from the existing :focus-visible rule and
+     Button's focus glow below, values unchanged. */
+  --focus-ring: rgba(79, 156, 249, 0.85);
+  --focus-ring-glow: rgba(79, 156, 249, 0.22);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Overlays and shadows - extracted from Dialog/Sheet's existing
+     bg-slate-950/40 scrim, value unchanged. Shadow depth is already
+     covered by --shadow-sm/md/lg/floating above. */
+  --overlay-scrim: rgba(2, 6, 23, 0.4);
+
+  /* Status badges - semantic bg/text pairs. Values match the Tailwind
+     palette classes already shipping in Badge (emerald/amber/rose/blue/
+     slate/violet 100+700-900), so wiring Badge to these tokens is a
+     zero-visual-diff swap. */
+  --color-badge-success-bg: #d1fae5;
+  --color-badge-success-text: #065f46;
+  --color-badge-warning-bg: #fef3c7;
+  --color-badge-warning-text: #78350f;
+  --color-badge-danger-bg: #ffe4e6;
+  --color-badge-danger-text: #9f1239;
+  --color-badge-info-bg: #dbeafe;
+  --color-badge-info-text: #1e40af;
+  --color-badge-neutral-bg: #f1f5f9;
+  --color-badge-neutral-text: #334155;
+  --color-badge-purple-bg: #ede9fe;
+  --color-badge-purple-text: #5b21b6;
+
+  /* Collapsed/expanded shell + context-rail widths, for the not-yet-built
+     sidebar (U-next). Defined now so later steps consume tokens, not
+     magic numbers. */
+  --shell-width-collapsed: 4rem;
+  --shell-width-expanded: 17rem;
+  --shell-width-context-rail: 20rem;
+
+  /* Compact/comfortable density, distinct from the page/marketing
+     --space-* scale above - this is specifically for shell chrome
+     (nav item padding/gaps, toolbar density), for the not-yet-built
+     sidebar (U-next). */
+  --shell-density-compact-gap: 0.5rem;
+  --shell-density-comfortable-gap: 0.75rem;
+  --shell-density-compact-padding: 0.75rem;
+  --shell-density-comfortable-padding: 1rem;
 }
 
 [data-theme="dark"] {
@@ -82,6 +154,29 @@
   --muted: var(--color-text-secondary);
   --line: var(--color-border);
   --soft: var(--color-primary-soft);
+
+  /* Application-shell tokens that alias a primitive above (--shell-bg,
+     --shell-surface-elevated, --shell-surface-header, --shell-border-*,
+     --shell-text-*, --shell-nav-item-active-*) already follow this
+     block's redefinitions automatically and need no separate override
+     here. Only standalone values are redefined below. */
+  --shell-surface-nav: #101a33;
+  --shell-nav-item-hover-bg: color-mix(in srgb, var(--color-primary) 14%, transparent);
+
+  /* Status badges - dark-mode-safe pairs (light "300" text on a low-alpha
+     tint of the same hue), the standard accessible dark-badge pattern. */
+  --color-badge-success-bg: rgba(16, 185, 129, 0.16);
+  --color-badge-success-text: #6ee7b7;
+  --color-badge-warning-bg: rgba(245, 158, 11, 0.16);
+  --color-badge-warning-text: #fcd34d;
+  --color-badge-danger-bg: rgba(244, 63, 94, 0.16);
+  --color-badge-danger-text: #fda4af;
+  --color-badge-info-bg: rgba(37, 99, 235, 0.18);
+  --color-badge-info-text: #93c5fd;
+  --color-badge-neutral-bg: rgba(148, 163, 184, 0.16);
+  --color-badge-neutral-text: #cbd5e1;
+  --color-badge-purple-bg: rgba(139, 92, 246, 0.18);
+  --color-badge-purple-text: #c4b5fd;
 }
 
 *,
@@ -148,8 +243,8 @@ select {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(79, 156, 249, 0.85);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 ::selection {

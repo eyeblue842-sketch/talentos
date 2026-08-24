@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   BellRing,
   BarChart3,
@@ -37,7 +37,12 @@ import {
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu } from '@/components/ui/dropdown-menu';
+import { Sheet } from '@/components/ui/sheet';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useCollapsibleRail } from '@/lib/use-collapsible-rail';
 import { cn } from '@/lib/utils';
+
+const RAIL_PINNED_STORAGE_KEY = 'careeriz.nav-rail-pinned';
 
 const iconMap = {
   BarChart3,
@@ -76,39 +81,39 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
   // Collapsed icon rail (opt-in via `collapsible`) expands into a full-nav
   // overlay on hover OR click - never hover-only, so keyboard/touch users can
   // reach it too. Expanding never resizes the grid column the rail sits in,
-  // so the page content next to it never shifts.
-  const [railExpanded, setRailExpanded] = useState(false);
-  const [railPinned, setRailPinned] = useState(false);
-  const railRef = useRef(null);
-  // Mirrors the resume-search-rail fix: an explicit collapse click can leave
-  // the cursor sitting on the now-revealed collapsed rail, and some browsers
-  // re-fire mouseenter on that DOM swap. Suppress hover-driven reopen briefly
-  // after any explicit collapse so it can't immediately undo the click.
-  const suppressRailHoverUntilRef = useRef(0);
+  // so the page content next to it never shifts. Shares its mechanics with
+  // the Resume Search V2 filter rail via useCollapsibleRail, each with its
+  // own independent state and persistence key.
+  const {
+    expanded: railExpanded,
+    pinned: railPinned,
+    containerRef: railRef,
+    collapse: collapseRail,
+    expand: expandRail,
+    expandAndPin: expandAndPinRail,
+    handleMouseEnter: handleRailMouseEnter,
+    handleMouseLeave: handleRailMouseLeave,
+  } = useCollapsibleRail({ persistKey: collapsible ? RAIL_PINNED_STORAGE_KEY : null, defaultExpanded: false });
+  const [lastSeenPathname, setLastSeenPathname] = useState(pathname);
 
-  function collapseRail() {
-    suppressRailHoverUntilRef.current = Date.now() + 400;
-    setRailPinned(false);
-    setRailExpanded(false);
+  // Route-change close: a temporarily (hover/click) expanded rail returns to
+  // collapsed after navigating, unless pinned open. Adjusted during render
+  // (React's documented pattern for resetting state when a prop/value
+  // changes) rather than in an effect, since this pathname comparison has
+  // nothing to synchronize with an external system - see
+  // https://react.dev/learn/you-might-not-need-an-effect. The very first
+  // render trivially skips this (lastSeenPathname already equals pathname),
+  // so mount never fires a spurious collapse of a rail just restored from
+  // a persisted pin.
+  if (pathname !== lastSeenPathname) {
+    setLastSeenPathname(pathname);
+    if (collapsible && railExpanded && !railPinned) {
+      collapseRail();
+    }
+    if (mobileOpen) {
+      setMobileOpen(false);
+    }
   }
-
-  useEffect(() => {
-    if (!collapsible || !railExpanded || railPinned) return undefined;
-    function handlePointerDown(event) {
-      if (railRef.current && !railRef.current.contains(event.target)) collapseRail();
-    }
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [collapsible, railExpanded, railPinned]);
-
-  useEffect(() => {
-    if (!collapsible || !railExpanded) return undefined;
-    function handleKeyDown(event) {
-      if (event.key === 'Escape' && !railPinned) collapseRail();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [collapsible, railExpanded, railPinned]);
 
   const flatItems = items.flatMap((item) => item.children ? item.children : [item]);
   const activeItem = flatItems.find((item) => isActiveHref(item.href, item.exact));
@@ -279,6 +284,11 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
         >
           <Icon size={18} aria-hidden="true" />
           <span>{item.label}</span>
+          {item.badgeCount > 0 ? (
+            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1.5 text-[10px] font-semibold leading-none text-white">
+              {item.badgeCount > 99 ? '99+' : item.badgeCount}
+            </span>
+          ) : null}
         </Link>
       );
     });
@@ -315,45 +325,33 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
         </div>
       </div>
 
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" onClick={() => setMobileOpen(false)}>
-          <aside
-            className="absolute inset-y-0 left-0 flex w-[88vw] max-w-sm flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-page)] p-5 shadow-[var(--shadow-floating)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-text-muted)]">Careeriz</p>
-                <h2 className="mt-1 text-xl font-semibold text-[var(--color-text)]">{brand}</h2>
-              </div>
-              <Button variant="ghost" size="icon" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)}>
-                <Menu size={18} aria-hidden="true" />
-              </Button>
-            </div>
-            <nav className="mt-6 grid gap-2">
-              {navigationList('flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm font-medium', true)}
-            </nav>
-            <div className="mt-auto pt-6">
-              <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
-                {isLoggingOut ? 'Logging out...' : 'Logout'}
-              </Button>
-            </div>
-          </aside>
+      <Sheet
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        title={brand}
+        className="lg:hidden"
+      >
+        <nav className="grid gap-2">
+          {navigationList('flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm font-medium', true)}
+        </nav>
+        <div className="mt-6">
+          <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
+            {isLoggingOut ? 'Logging out...' : 'Logout'}
+          </Button>
         </div>
-      ) : null}
+      </Sheet>
 
       {collapsible ? (
         <div
           ref={railRef}
           className="sticky top-6 hidden self-start lg:block"
-          onMouseEnter={() => {
-            if (railPinned || Date.now() < suppressRailHoverUntilRef.current) return;
-            setRailExpanded(true);
-          }}
+          onMouseEnter={handleRailMouseEnter}
+          onMouseLeave={handleRailMouseLeave}
         >
           <aside
+            aria-hidden={railExpanded}
             className={cn(
-              'flex w-16 flex-col items-center gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/88 py-4 shadow-[var(--shadow-lg)] backdrop-blur lg:flex lg:min-h-[calc(100vh-4rem)]',
+              'flex w-[var(--shell-width-collapsed)] flex-col items-center gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/88 py-4 shadow-[var(--shadow-lg)] backdrop-blur lg:flex lg:min-h-[calc(100vh-4rem)]',
               railExpanded && 'invisible',
             )}
           >
@@ -363,7 +361,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
               aria-expanded={railExpanded}
               aria-pressed={railPinned}
               aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
-              onClick={() => { setRailExpanded(true); setRailPinned(true); }}
+              onClick={expandAndPinRail}
               className="mt-2 flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]"
             >
               <Menu size={18} aria-hidden="true" />
@@ -381,34 +379,48 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
                     ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]',
                 );
+                const badge = item.badgeCount > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-semibold leading-none text-white"
+                  >
+                    {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                  </span>
+                ) : null;
+
                 if (hasChildren) {
                   return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      aria-label={item.label}
-                      aria-current={active ? 'page' : undefined}
-                      onClick={() => {
-                        setExpandedGroups((current) => ({ ...current, [item.label]: true }));
-                        setRailExpanded(true);
-                      }}
-                      className={iconButtonClass}
-                    >
-                      <Icon size={18} aria-hidden="true" />
-                    </button>
+                    <Tooltip key={item.label} content={item.label}>
+                      <button
+                        type="button"
+                        aria-label={item.label}
+                        aria-current={active ? 'page' : undefined}
+                        onClick={() => {
+                          setExpandedGroups((current) => ({ ...current, [item.label]: true }));
+                          expandRail();
+                        }}
+                        className={cn(iconButtonClass, 'relative')}
+                      >
+                        <Icon size={18} aria-hidden="true" />
+                        {badge}
+                      </button>
+                    </Tooltip>
                   );
                 }
                 return (
-                  <Link key={item.href} href={item.href} aria-label={item.label} aria-current={active ? 'page' : undefined} className={iconButtonClass}>
-                    <Icon size={18} aria-hidden="true" />
-                  </Link>
+                  <Tooltip key={item.href} content={item.label}>
+                    <Link href={item.href} aria-label={item.label} aria-current={active ? 'page' : undefined} className={cn(iconButtonClass, 'relative')}>
+                      <Icon size={18} aria-hidden="true" />
+                      {badge}
+                    </Link>
+                  </Tooltip>
                 );
               })}
             </nav>
           </aside>
 
           {railExpanded ? (
-            <aside className="absolute left-0 top-0 z-40 flex w-[272px] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]">
+            <aside aria-label="Expanded navigation" className="absolute left-0 top-0 z-40 flex w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={brand} size="md" />
@@ -421,7 +433,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
                   type="button"
                   aria-pressed={railPinned}
                   aria-label={railPinned ? 'Unpin navigation' : 'Pin navigation open'}
-                  onClick={() => (railPinned ? collapseRail() : setRailPinned(true))}
+                  onClick={() => (railPinned ? collapseRail() : expandAndPinRail())}
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
                     railPinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]',

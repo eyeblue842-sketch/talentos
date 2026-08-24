@@ -1,35 +1,7 @@
-import { Sidebar } from '@/components/layout/sidebar';
-import { cn } from '@/lib/utils';
-
-export function WorkspaceShell({
-  brand,
-  items,
-  children,
-  className,
-  sidebarProfileLinks = [],
-  defaultProfileExpanded = false,
-  maxWidthClassName = 'max-w-7xl',
-  paddingClassName = 'px-4 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8',
-  sidebarCollapsible = false,
-}) {
-  return (
-    <main
-      className={cn(
-        'mx-auto grid min-h-screen gap-6',
-        paddingClassName,
-        sidebarCollapsible ? 'lg:grid-cols-[64px_1fr]' : 'lg:grid-cols-[272px_1fr]',
-        maxWidthClassName,
-        className,
-      )}
-    >
-      <Sidebar
-        brand={brand}
-        items={items}
-        profileLinks={sidebarProfileLinks}
-        defaultProfileExpanded={defaultProfileExpanded}
-        collapsible={sidebarCollapsible}
-      />
-      <section className="min-w-0 space-y-6">{children}</section>
-    </main>
-  );
-}
+// Backward-compatible alias: every existing authenticated page imports
+// WorkspaceShell by this name. CareerizAppShell is the actual, more capable
+// implementation (right-context slot, page-header slots, token-driven rail
+// widths) - kept as a separate, more descriptively named module so new
+// pages can adopt the name directly, without a mass rename of ~50 existing
+// call sites that already work correctly against this export.
+export { CareerizAppShell as WorkspaceShell } from '@/components/layout/careeriz-app-shell';

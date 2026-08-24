@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { Bell } from 'lucide-react';
+import { Bell, BriefcaseBusiness, CalendarClock, CircleCheck, WalletCards } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
+import { StatCard } from '@/components/ui/stat-card';
 import { clearRecentJobsAction } from '@/app/candidate/actions';
 import { getCandidateDashboard } from '@/lib/api';
 import { candidateNav } from '@/lib/navigation';
@@ -29,7 +30,7 @@ export default async function CandidateDashboardPage() {
   ];
 
   return (
-    <WorkspaceShell brand="Careeriz" items={candidateNav}>
+    <WorkspaceShell brand="Careeriz" items={candidateNav} sidebarCollapsible>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader
           title="Candidate dashboard"
@@ -61,10 +62,10 @@ export default async function CandidateDashboardPage() {
       <Card>
         <h2 className="font-[var(--font-display)] text-2xl font-semibold">Application summary</h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Active</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.activeApplicationsCount}</p></div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Interviews</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.interviewApplicationsCount}</p></div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Closed</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.closedApplicationsCount}</p></div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm"><p className="font-semibold">Withdrawn</p><p className="mt-2 text-2xl font-semibold">{dashboard.metrics.withdrawnApplicationsCount}</p></div>
+          <StatCard label="Active" value={dashboard.metrics.activeApplicationsCount} icon={BriefcaseBusiness} />
+          <StatCard label="Interviews" value={dashboard.metrics.interviewApplicationsCount} icon={CalendarClock} />
+          <StatCard label="Closed" value={dashboard.metrics.closedApplicationsCount} icon={CircleCheck} />
+          <StatCard label="Withdrawn" value={dashboard.metrics.withdrawnApplicationsCount} icon={WalletCards} />
         </div>
       </Card>
 

@@ -6,9 +6,13 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   CircleX,
   Filter,
   LoaderCircle,
+  Pin,
+  PinOff,
   Quote,
   Search,
   ShieldCheck,
@@ -40,6 +44,8 @@ import {
   splitKeywordInputToChips,
   resumeSearchV2SortOptions,
 } from '@/lib/recruiter-resume-search-v2';
+import { useCollapsibleRail } from '@/lib/use-collapsible-rail';
+import { cn } from '@/lib/utils';
 
 function formatCandidateName(item) {
   if (item.normalizedName) return item.normalizedName;
@@ -443,6 +449,20 @@ export function RecruiterResumeSearchV2Page({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const compactLayout = useMediaQuery('(max-width: 1279px)');
+  // Independent instance of the shell's shared collapsible-rail primitive
+  // (own state, own persistence key). Filters default to expanded (unlike
+  // the nav rail's collapsed default) since they're the primary content of
+  // this page, not a secondary menu - and existing behavior/tests expect
+  // filter fields to be immediately present without an extra expand step.
+  const {
+    expanded: filterRailExpanded,
+    pinned: filterRailPinned,
+    containerRef: filterRailRef,
+    collapse: collapseFilterRail,
+    expandAndPin: expandAndPinFilterRail,
+    handleMouseEnter: handleFilterRailMouseEnter,
+    handleMouseLeave: handleFilterRailMouseLeave,
+  } = useCollapsibleRail({ persistKey: 'careeriz.resume-search-v2-filter-rail-pinned', defaultExpanded: true });
 
   // Adjusting state during render (not in an effect) whenever URL hydration
   // produces a new `hydrated` value (e.g. navigating with different query
@@ -832,7 +852,61 @@ export function RecruiterResumeSearchV2Page({
       <SearchModeSummary summary={summary} />
 
       <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
-        <div className="hidden space-y-4 xl:block">{filtersContent}</div>
+        <div
+          ref={filterRailRef}
+          className="hidden xl:block"
+          onMouseEnter={handleFilterRailMouseEnter}
+          onMouseLeave={handleFilterRailMouseLeave}
+        >
+          {filterRailExpanded ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-[var(--color-text)]">Filters</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-pressed={filterRailPinned}
+                    aria-label={filterRailPinned ? 'Unpin filters open' : 'Pin filters open'}
+                    onClick={() => (filterRailPinned ? collapseFilterRail() : expandAndPinFilterRail())}
+                    className={cn(
+                      'flex h-7 w-7 items-center justify-center rounded-full',
+                      filterRailPinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]',
+                    )}
+                  >
+                    {filterRailPinned ? <PinOff size={15} aria-hidden="true" /> : <Pin size={15} aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Collapse filters"
+                    onClick={collapseFilterRail}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]"
+                  >
+                    <ChevronLeft size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              {filtersContent}
+            </div>
+          ) : (
+            <Tooltip content={`Expand filters (${activeFilterCount} active)`}>
+              <button
+                type="button"
+                aria-expanded={false}
+                aria-label={`Expand filters, ${activeFilterCount} active`}
+                onClick={expandAndPinFilterRail}
+                className="relative flex w-full flex-col items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-3 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]"
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+                <Filter size={18} aria-hidden="true" />
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-semibold leading-none text-white">
+                    {activeFilterCount > 99 ? '99+' : activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+            </Tooltip>
+          )}
+        </div>
 
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">

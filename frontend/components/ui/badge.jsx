@@ -2,12 +2,12 @@ import { cn } from '@/lib/utils';
 
 const styles = {
   default: 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]',
-  success: 'bg-emerald-100 text-emerald-800',
-  warning: 'bg-amber-100 text-amber-900',
-  danger: 'bg-rose-100 text-rose-800',
-  info: 'bg-blue-100 text-blue-800',
-  neutral: 'bg-slate-100 text-slate-700',
-  purple: 'bg-violet-100 text-violet-800',
+  success: 'bg-[var(--color-badge-success-bg)] text-[var(--color-badge-success-text)]',
+  warning: 'bg-[var(--color-badge-warning-bg)] text-[var(--color-badge-warning-text)]',
+  danger: 'bg-[var(--color-badge-danger-bg)] text-[var(--color-badge-danger-text)]',
+  info: 'bg-[var(--color-badge-info-bg)] text-[var(--color-badge-info-text)]',
+  neutral: 'bg-[var(--color-badge-neutral-bg)] text-[var(--color-badge-neutral-text)]',
+  purple: 'bg-[var(--color-badge-purple-bg)] text-[var(--color-badge-purple-text)]',
   brand: 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]',
 };
 

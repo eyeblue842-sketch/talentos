@@ -1,5 +1,6 @@
 import { BriefcaseBusiness } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
+import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { PageHeader } from '@/components/ui/page-header';
@@ -25,7 +26,7 @@ export default async function AdminPage() {
   const isRecruiterOwner = currentUser?.role === 'RECRUITER_ADMIN';
 
   return (
-    <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav}>
+    <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav} sidebarCollapsible>
       <PageHeader
         eyebrow="Enterprise administration"
         title="Operate the organization platform from one workspace"
@@ -34,7 +35,11 @@ export default async function AdminPage() {
         secondaryActions={isRecruiterOwner ? [{ label: 'Recruiter Workspace', href: '/recruiter/home', icon: BriefcaseBusiness }] : []}
       />
 
-      {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
+      {error ? (
+        <Alert tone="danger" title="Overview unavailable">
+          {error}
+        </Alert>
+      ) : null}
 
       {overview ? (
         <>

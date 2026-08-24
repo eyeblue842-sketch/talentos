@@ -98,6 +98,7 @@ describe('RecruiterResumeSearchV2Page', () => {
     toastPush.mockReset();
     installMatchMedia(false);
     global.fetch = vi.fn();
+    window.localStorage.clear();
   });
 
   it('renders disabled and no-access states', () => {
@@ -344,5 +345,44 @@ describe('RecruiterResumeSearchV2Page', () => {
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\+91/)).not.toBeInTheDocument();
     expect((await axe(container)).violations).toHaveLength(0);
+  });
+
+  it('the desktop filter rail is expanded by default - filter fields are immediately present, unlike the collapsed-by-default nav rail', () => {
+    renderPage();
+    expect(screen.getByLabelText('Minimum experience (months)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse filters' })).toBeInTheDocument();
+  });
+
+  it('collapsing the filter rail hides the form behind a toggle showing the active filter count, and expanding restores the same values', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText('Minimum experience (months)'), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse filters' }));
+
+    expect(screen.queryByLabelText('Minimum experience (months)')).not.toBeInTheDocument();
+    const expandToggle = screen.getByRole('button', { name: 'Expand filters, 1 active' });
+    expect(expandToggle).toBeInTheDocument();
+
+    fireEvent.click(expandToggle);
+    expect(screen.getByLabelText('Minimum experience (months)')).toHaveValue(60);
+  });
+
+  it('the filter rail pin preference persists under its own key, independent of the nav rail\'s key', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse filters' }));
+
+    await waitFor(() => expect(window.localStorage.getItem('careeriz.resume-search-v2-filter-rail-pinned')).toBe('false'));
+    expect(window.localStorage.getItem('careeriz.nav-rail-pinned')).toBeNull();
+  });
+
+  it('the mobile filters Sheet is unaffected by the desktop filter rail state', async () => {
+    installMatchMedia(true);
+    renderPage();
+
+    // Collapsing the (hidden-on-mobile) desktop rail toggle has no bearing
+    // on mobile - the Sheet-based trigger still works exactly as before.
+    const trigger = screen.getByRole('button', { name: /Open filters/i });
+    fireEvent.click(trigger);
+    expect(await screen.findByRole('dialog', { name: 'Search filters' })).toBeInTheDocument();
   });
 });
