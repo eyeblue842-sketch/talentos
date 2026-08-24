@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { Sidebar } from '@/components/layout/sidebar';
+import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { PaginationNav } from '@/components/sections/pagination-nav';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobSearchForm } from '@/components/sections/public-job-search-form';
@@ -21,9 +21,7 @@ export default async function CandidateJobsPage({ searchParams }) {
   const redirectTo = buildPathWithQuery('/candidate/jobs', params || {});
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Careeriz" items={candidateNav} />
-      <section className="space-y-6">
+    <CareerizAppShell brand="Careeriz" items={candidateNav}>
         <Card className="rounded-[32px] bg-[var(--surface)] p-6 shadow-[0_20px_60px_rgba(16,36,24,0.08)] md:p-7">
           <h1 className="font-[var(--font-display)] text-4xl font-semibold tracking-tight">Browse jobs</h1>
           <p className="mt-3 text-sm leading-7 text-[var(--muted)]">Search the public job market, save roles, and compare them against deterministic recommendations.</p>
@@ -48,7 +46,6 @@ export default async function CandidateJobsPage({ searchParams }) {
           ))}
         </div>
         <PaginationNav basePath="/candidate/jobs" params={params || {}} meta={jobs.meta} />
-      </section>
-    </main>
+    </CareerizAppShell>
   );
 }

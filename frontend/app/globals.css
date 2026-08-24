@@ -118,7 +118,7 @@
   /* Collapsed/expanded shell + context-rail widths, for the not-yet-built
      sidebar (U-next). Defined now so later steps consume tokens, not
      magic numbers. */
-  --shell-width-collapsed: 4.5rem;
+  --shell-width-collapsed: 4rem;
   --shell-width-expanded: 17rem;
   --shell-width-context-rail: 20rem;
 

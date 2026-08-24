@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { Sidebar } from '@/components/layout/sidebar';
+import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PaginationNav } from '@/components/sections/pagination-nav';
@@ -17,9 +17,7 @@ export default async function CandidateNotificationsPage({ searchParams }) {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr] lg:px-10">
-      <Sidebar brand="Careeriz" items={candidateNav} />
-      <section className="space-y-6">
+    <CareerizAppShell brand="Careeriz" items={candidateNav}>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">Notifications</p>
@@ -55,7 +53,6 @@ export default async function CandidateNotificationsPage({ searchParams }) {
           </Card>
         )}
         <PaginationNav basePath="/candidate/notifications" params={params || {}} meta={notifications.meta} />
-      </section>
-    </main>
+    </CareerizAppShell>
   );
 }

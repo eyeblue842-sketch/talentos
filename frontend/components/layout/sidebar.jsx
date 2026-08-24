@@ -37,7 +37,11 @@ import {
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu } from '@/components/ui/dropdown-menu';
+import { Sheet } from '@/components/ui/sheet';
+import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+const RAIL_PINNED_STORAGE_KEY = 'careeriz.nav-rail-pinned';
 
 const iconMap = {
   BarChart3,
@@ -77,8 +81,15 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
   // overlay on hover OR click - never hover-only, so keyboard/touch users can
   // reach it too. Expanding never resizes the grid column the rail sits in,
   // so the page content next to it never shifts.
+  // SSR and the first client render both start unpinned/collapsed
+  // (identical output, no hydration mismatch). The persisted preference is
+  // only ever read inside an effect - after hydration - and applied in a
+  // second, client-only render, matching React's documented safe pattern
+  // for localStorage-backed UI state.
   const [railExpanded, setRailExpanded] = useState(false);
   const [railPinned, setRailPinned] = useState(false);
+  const [railHydrated, setRailHydrated] = useState(false);
+  const [lastSeenPathname, setLastSeenPathname] = useState(pathname);
   const railRef = useRef(null);
   // Mirrors the resume-search-rail fix: an explicit collapse click can leave
   // the cursor sitting on the now-revealed collapsed rail, and some browsers
@@ -91,6 +102,42 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
     setRailPinned(false);
     setRailExpanded(false);
   }
+
+  useEffect(() => {
+    if (!collapsible) return;
+    // This IS the sync-from-an-external-system case
+    // react-hooks/set-state-in-effect means to allow: it reads localStorage
+    // (external to React) and applies it once, after mount. A lazy
+    // useState(() => localStorage.getItem(...)) initializer is not a safe
+    // alternative here - client components still render once during
+    // SSR/RSC and again on the client BEFORE hydration completes, so a
+    // lazy initializer would read real localStorage on that pre-hydration
+    // client render while the server had none, producing the exact
+    // hydration mismatch this effect exists to avoid.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try {
+      if (window.localStorage.getItem(RAIL_PINNED_STORAGE_KEY) === 'true') {
+        setRailPinned(true);
+        setRailExpanded(true);
+      }
+    } catch {
+      // localStorage unavailable (privacy mode, disabled storage, etc.) -
+      // fall back to the default unpinned/collapsed state.
+    } finally {
+      setRailHydrated(true);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // Only ever read the stored preference once, right after mount.
+  }, [collapsible]);
+
+  useEffect(() => {
+    if (!collapsible || !railHydrated) return;
+    try {
+      window.localStorage.setItem(RAIL_PINNED_STORAGE_KEY, String(railPinned));
+    } catch {
+      // Ignore write failures - the preference simply won't persist.
+    }
+  }, [collapsible, railHydrated, railPinned]);
 
   useEffect(() => {
     if (!collapsible || !railExpanded || railPinned) return undefined;
@@ -109,6 +156,25 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [collapsible, railExpanded, railPinned]);
+
+  // Route-change close: a temporarily (hover/click) expanded rail returns to
+  // collapsed after navigating, unless pinned open. Adjusted during render
+  // (React's documented pattern for resetting state when a prop/value
+  // changes) rather than in an effect, since this pathname comparison has
+  // nothing to synchronize with an external system - see
+  // https://react.dev/learn/you-might-not-need-an-effect. The very first
+  // render trivially skips this (lastSeenPathname already equals pathname),
+  // so mount never fires a spurious collapse of a rail just restored from
+  // a persisted pin.
+  if (pathname !== lastSeenPathname) {
+    setLastSeenPathname(pathname);
+    if (collapsible && railExpanded && !railPinned) {
+      setRailExpanded(false);
+    }
+    if (mobileOpen) {
+      setMobileOpen(false);
+    }
+  }
 
   const flatItems = items.flatMap((item) => item.children ? item.children : [item]);
   const activeItem = flatItems.find((item) => isActiveHref(item.href, item.exact));
@@ -279,6 +345,11 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
         >
           <Icon size={18} aria-hidden="true" />
           <span>{item.label}</span>
+          {item.badgeCount > 0 ? (
+            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1.5 text-[10px] font-semibold leading-none text-white">
+              {item.badgeCount > 99 ? '99+' : item.badgeCount}
+            </span>
+          ) : null}
         </Link>
       );
     });
@@ -315,32 +386,21 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
         </div>
       </div>
 
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" onClick={() => setMobileOpen(false)}>
-          <aside
-            className="absolute inset-y-0 left-0 flex w-[88vw] max-w-sm flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-page)] p-5 shadow-[var(--shadow-floating)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-text-muted)]">Careeriz</p>
-                <h2 className="mt-1 text-xl font-semibold text-[var(--color-text)]">{brand}</h2>
-              </div>
-              <Button variant="ghost" size="icon" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)}>
-                <Menu size={18} aria-hidden="true" />
-              </Button>
-            </div>
-            <nav className="mt-6 grid gap-2">
-              {navigationList('flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm font-medium', true)}
-            </nav>
-            <div className="mt-auto pt-6">
-              <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
-                {isLoggingOut ? 'Logging out...' : 'Logout'}
-              </Button>
-            </div>
-          </aside>
+      <Sheet
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        title={brand}
+        className="lg:hidden"
+      >
+        <nav className="grid gap-2">
+          {navigationList('flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm font-medium', true)}
+        </nav>
+        <div className="mt-6">
+          <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
+            {isLoggingOut ? 'Logging out...' : 'Logout'}
+          </Button>
         </div>
-      ) : null}
+      </Sheet>
 
       {collapsible ? (
         <div
@@ -350,10 +410,14 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
             if (railPinned || Date.now() < suppressRailHoverUntilRef.current) return;
             setRailExpanded(true);
           }}
+          onMouseLeave={() => {
+            if (!railPinned) setRailExpanded(false);
+          }}
         >
           <aside
+            aria-hidden={railExpanded}
             className={cn(
-              'flex w-16 flex-col items-center gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/88 py-4 shadow-[var(--shadow-lg)] backdrop-blur lg:flex lg:min-h-[calc(100vh-4rem)]',
+              'flex w-[var(--shell-width-collapsed)] flex-col items-center gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/88 py-4 shadow-[var(--shadow-lg)] backdrop-blur lg:flex lg:min-h-[calc(100vh-4rem)]',
               railExpanded && 'invisible',
             )}
           >
@@ -381,34 +445,48 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
                     ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]',
                 );
+                const badge = item.badgeCount > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-semibold leading-none text-white"
+                  >
+                    {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                  </span>
+                ) : null;
+
                 if (hasChildren) {
                   return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      aria-label={item.label}
-                      aria-current={active ? 'page' : undefined}
-                      onClick={() => {
-                        setExpandedGroups((current) => ({ ...current, [item.label]: true }));
-                        setRailExpanded(true);
-                      }}
-                      className={iconButtonClass}
-                    >
-                      <Icon size={18} aria-hidden="true" />
-                    </button>
+                    <Tooltip key={item.label} content={item.label}>
+                      <button
+                        type="button"
+                        aria-label={item.label}
+                        aria-current={active ? 'page' : undefined}
+                        onClick={() => {
+                          setExpandedGroups((current) => ({ ...current, [item.label]: true }));
+                          setRailExpanded(true);
+                        }}
+                        className={cn(iconButtonClass, 'relative')}
+                      >
+                        <Icon size={18} aria-hidden="true" />
+                        {badge}
+                      </button>
+                    </Tooltip>
                   );
                 }
                 return (
-                  <Link key={item.href} href={item.href} aria-label={item.label} aria-current={active ? 'page' : undefined} className={iconButtonClass}>
-                    <Icon size={18} aria-hidden="true" />
-                  </Link>
+                  <Tooltip key={item.href} content={item.label}>
+                    <Link href={item.href} aria-label={item.label} aria-current={active ? 'page' : undefined} className={cn(iconButtonClass, 'relative')}>
+                      <Icon size={18} aria-hidden="true" />
+                      {badge}
+                    </Link>
+                  </Tooltip>
                 );
               })}
             </nav>
           </aside>
 
           {railExpanded ? (
-            <aside className="absolute left-0 top-0 z-40 flex w-[272px] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]">
+            <aside aria-label="Expanded navigation" className="absolute left-0 top-0 z-40 flex w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={brand} size="md" />
