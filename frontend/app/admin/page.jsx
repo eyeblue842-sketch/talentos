@@ -1,5 +1,6 @@
 import { BriefcaseBusiness } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
+import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { PageHeader } from '@/components/ui/page-header';
@@ -34,7 +35,11 @@ export default async function AdminPage() {
         secondaryActions={isRecruiterOwner ? [{ label: 'Recruiter Workspace', href: '/recruiter/home', icon: BriefcaseBusiness }] : []}
       />
 
-      {error ? <Card><p className="text-sm text-[var(--muted)]">{error}</p></Card> : null}
+      {error ? (
+        <Alert tone="danger" title="Overview unavailable">
+          {error}
+        </Alert>
+      ) : null}
 
       {overview ? (
         <>
