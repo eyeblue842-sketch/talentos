@@ -121,9 +121,12 @@ describe('CareerizAppShell / collapsible navigation rail', () => {
     // source never reads localStorage anywhere except inside a useEffect
     // callback: both `useState(false)` initializers are static, and the
     // only `localStorage.getItem` call site is inside the mount effect.
+    // This lives in the shared useCollapsibleRail hook (Sidebar's own
+    // rail state now delegates to it - see the "shares its mechanics"
+    // comment in sidebar.jsx), not in sidebar.jsx directly.
     const { readFileSync } = await import('node:fs');
     const path = await import('node:path');
-    const source = readFileSync(path.resolve(process.cwd(), 'components/layout/sidebar.jsx'), 'utf8');
+    const source = readFileSync(path.resolve(process.cwd(), 'lib/use-collapsible-rail.js'), 'utf8');
 
     // Strip // comments first - this file documents the unsafe alternative
     // (a lazy useState(() => localStorage.getItem(...)) initializer) in

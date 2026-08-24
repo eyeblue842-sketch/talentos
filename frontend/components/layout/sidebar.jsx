@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   BellRing,
   BarChart3,
@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu } from '@/components/ui/dropdown-menu';
 import { Sheet } from '@/components/ui/sheet';
 import { Tooltip } from '@/components/ui/tooltip';
+import { useCollapsibleRail } from '@/lib/use-collapsible-rail';
 import { cn } from '@/lib/utils';
 
 const RAIL_PINNED_STORAGE_KEY = 'careeriz.nav-rail-pinned';
@@ -80,82 +81,20 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
   // Collapsed icon rail (opt-in via `collapsible`) expands into a full-nav
   // overlay on hover OR click - never hover-only, so keyboard/touch users can
   // reach it too. Expanding never resizes the grid column the rail sits in,
-  // so the page content next to it never shifts.
-  // SSR and the first client render both start unpinned/collapsed
-  // (identical output, no hydration mismatch). The persisted preference is
-  // only ever read inside an effect - after hydration - and applied in a
-  // second, client-only render, matching React's documented safe pattern
-  // for localStorage-backed UI state.
-  const [railExpanded, setRailExpanded] = useState(false);
-  const [railPinned, setRailPinned] = useState(false);
-  const [railHydrated, setRailHydrated] = useState(false);
+  // so the page content next to it never shifts. Shares its mechanics with
+  // the Resume Search V2 filter rail via useCollapsibleRail, each with its
+  // own independent state and persistence key.
+  const {
+    expanded: railExpanded,
+    pinned: railPinned,
+    containerRef: railRef,
+    collapse: collapseRail,
+    expand: expandRail,
+    expandAndPin: expandAndPinRail,
+    handleMouseEnter: handleRailMouseEnter,
+    handleMouseLeave: handleRailMouseLeave,
+  } = useCollapsibleRail({ persistKey: collapsible ? RAIL_PINNED_STORAGE_KEY : null, defaultExpanded: false });
   const [lastSeenPathname, setLastSeenPathname] = useState(pathname);
-  const railRef = useRef(null);
-  // Mirrors the resume-search-rail fix: an explicit collapse click can leave
-  // the cursor sitting on the now-revealed collapsed rail, and some browsers
-  // re-fire mouseenter on that DOM swap. Suppress hover-driven reopen briefly
-  // after any explicit collapse so it can't immediately undo the click.
-  const suppressRailHoverUntilRef = useRef(0);
-
-  function collapseRail() {
-    suppressRailHoverUntilRef.current = Date.now() + 400;
-    setRailPinned(false);
-    setRailExpanded(false);
-  }
-
-  useEffect(() => {
-    if (!collapsible) return;
-    // This IS the sync-from-an-external-system case
-    // react-hooks/set-state-in-effect means to allow: it reads localStorage
-    // (external to React) and applies it once, after mount. A lazy
-    // useState(() => localStorage.getItem(...)) initializer is not a safe
-    // alternative here - client components still render once during
-    // SSR/RSC and again on the client BEFORE hydration completes, so a
-    // lazy initializer would read real localStorage on that pre-hydration
-    // client render while the server had none, producing the exact
-    // hydration mismatch this effect exists to avoid.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    try {
-      if (window.localStorage.getItem(RAIL_PINNED_STORAGE_KEY) === 'true') {
-        setRailPinned(true);
-        setRailExpanded(true);
-      }
-    } catch {
-      // localStorage unavailable (privacy mode, disabled storage, etc.) -
-      // fall back to the default unpinned/collapsed state.
-    } finally {
-      setRailHydrated(true);
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
-    // Only ever read the stored preference once, right after mount.
-  }, [collapsible]);
-
-  useEffect(() => {
-    if (!collapsible || !railHydrated) return;
-    try {
-      window.localStorage.setItem(RAIL_PINNED_STORAGE_KEY, String(railPinned));
-    } catch {
-      // Ignore write failures - the preference simply won't persist.
-    }
-  }, [collapsible, railHydrated, railPinned]);
-
-  useEffect(() => {
-    if (!collapsible || !railExpanded || railPinned) return undefined;
-    function handlePointerDown(event) {
-      if (railRef.current && !railRef.current.contains(event.target)) collapseRail();
-    }
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [collapsible, railExpanded, railPinned]);
-
-  useEffect(() => {
-    if (!collapsible || !railExpanded) return undefined;
-    function handleKeyDown(event) {
-      if (event.key === 'Escape' && !railPinned) collapseRail();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [collapsible, railExpanded, railPinned]);
 
   // Route-change close: a temporarily (hover/click) expanded rail returns to
   // collapsed after navigating, unless pinned open. Adjusted during render
@@ -169,7 +108,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
   if (pathname !== lastSeenPathname) {
     setLastSeenPathname(pathname);
     if (collapsible && railExpanded && !railPinned) {
-      setRailExpanded(false);
+      collapseRail();
     }
     if (mobileOpen) {
       setMobileOpen(false);
@@ -406,13 +345,8 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
         <div
           ref={railRef}
           className="sticky top-6 hidden self-start lg:block"
-          onMouseEnter={() => {
-            if (railPinned || Date.now() < suppressRailHoverUntilRef.current) return;
-            setRailExpanded(true);
-          }}
-          onMouseLeave={() => {
-            if (!railPinned) setRailExpanded(false);
-          }}
+          onMouseEnter={handleRailMouseEnter}
+          onMouseLeave={handleRailMouseLeave}
         >
           <aside
             aria-hidden={railExpanded}
@@ -427,7 +361,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
               aria-expanded={railExpanded}
               aria-pressed={railPinned}
               aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
-              onClick={() => { setRailExpanded(true); setRailPinned(true); }}
+              onClick={expandAndPinRail}
               className="mt-2 flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]"
             >
               <Menu size={18} aria-hidden="true" />
@@ -463,7 +397,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
                         aria-current={active ? 'page' : undefined}
                         onClick={() => {
                           setExpandedGroups((current) => ({ ...current, [item.label]: true }));
-                          setRailExpanded(true);
+                          expandRail();
                         }}
                         className={cn(iconButtonClass, 'relative')}
                       >
@@ -499,7 +433,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
                   type="button"
                   aria-pressed={railPinned}
                   aria-label={railPinned ? 'Unpin navigation' : 'Pin navigation open'}
-                  onClick={() => (railPinned ? collapseRail() : setRailPinned(true))}
+                  onClick={() => (railPinned ? collapseRail() : expandAndPinRail())}
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
                     railPinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)]',
