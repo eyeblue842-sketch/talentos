@@ -4,7 +4,7 @@ import { adminNav } from '@/lib/navigation';
 
 export default function Loading() {
   return (
-    <CareerizAppShell brand="Enterprise Admin" items={adminNav}>
+    <CareerizAppShell brand="Enterprise Admin" items={adminNav} sidebarCollapsible>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricSkeleton />
         <MetricSkeleton />

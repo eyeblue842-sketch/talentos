@@ -26,7 +26,7 @@ export default async function AdminPage() {
   const isRecruiterOwner = currentUser?.role === 'RECRUITER_ADMIN';
 
   return (
-    <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav}>
+    <WorkspaceShell brand={overview?.organisation?.name || 'Enterprise Admin'} items={adminNav} sidebarCollapsible>
       <PageHeader
         eyebrow="Enterprise administration"
         title="Operate the organization platform from one workspace"

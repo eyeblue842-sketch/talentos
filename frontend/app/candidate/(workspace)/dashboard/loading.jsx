@@ -4,7 +4,7 @@ import { candidateNav } from '@/lib/navigation';
 
 export default function Loading() {
   return (
-    <CareerizAppShell brand="Careeriz" items={candidateNav}>
+    <CareerizAppShell brand="Careeriz" items={candidateNav} sidebarCollapsible>
       <ProfileSkeleton />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricSkeleton />

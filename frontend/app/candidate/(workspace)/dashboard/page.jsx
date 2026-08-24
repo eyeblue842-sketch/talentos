@@ -30,7 +30,7 @@ export default async function CandidateDashboardPage() {
   ];
 
   return (
-    <WorkspaceShell brand="Careeriz" items={candidateNav}>
+    <WorkspaceShell brand="Careeriz" items={candidateNav} sidebarCollapsible>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader
           title="Candidate dashboard"
