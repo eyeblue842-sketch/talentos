@@ -18,6 +18,17 @@ export default defineConfig({
   },
   webServer: [
     {
+      // Real local SMTP listener + HTTP peek API (backend/scripts/e2e-smtp-catcher.mjs)
+      // that the e2e backend below is pointed at, so password-reset/OTP specs
+      // can read the emailed link token / code back over HTTP after a genuine
+      // SMTP delivery, instead of relying on the in-memory test transport.
+      command: 'node ./scripts/e2e-smtp-catcher.mjs',
+      cwd: '../backend',
+      url: 'http://127.0.0.1:2526/health',
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
       command: 'node ./scripts/start-e2e-server.mjs',
       cwd: '../backend',
       url: 'http://127.0.0.1:5001/api/health',
