@@ -1,12 +1,14 @@
 export const candidateAuthRoutes = {
   login: '/auth/candidate/login',
   register: '/auth/candidate/register',
+  forgotPassword: '/auth/candidate/forgot-password',
 };
 
 export const employerAuthRoutes = {
   landing: '/hire',
   login: '/hire/login',
   register: '/hire/register',
+  forgotPassword: '/hire/forgot-password',
 };
 
 export const VALID_EMPLOYER_TYPES = ['CONSULTANCY', 'COMPANY'];

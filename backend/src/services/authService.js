@@ -4,8 +4,15 @@ import { prisma } from '../config/db.js';
 import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
 import { normalizeOfficeLocations } from '../utils/email.js';
 import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '../serializers/index.js';
-import { issueAuthToken, consumeAuthToken } from './authTokenService.js';
-import { sendEmailVerificationEmail, sendPasswordResetEmail } from './emailService.js';
+import { issueAuthToken, consumeAuthToken, peekAuthTokenByRawToken, issueNumericOtp, invalidTokenError } from './authTokenService.js';
+import { sendEmailVerificationEmail, sendPasswordResetEmail, sendPasswordResetOtpEmail } from './emailService.js';
+
+// Mirrors frontend/lib/roles.js's isSafeInternalPath() - only ever used to
+// decide whether a client-supplied "return to this page after reset" hint
+// is safe to echo back in a redirect target, never to grant access.
+function isSafeInternalPath(path) {
+  return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//');
+}
 import { resolveMembershipForRequest } from './organisationAccessService.js';
 import { assertInitialSetupCompleted } from './setupService.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
@@ -200,24 +207,109 @@ export async function loginUser(email, password) {
   };
 }
 
-export async function requestPasswordReset(email) {
+export async function requestPasswordReset(email, requestContext = {}) {
   const user = await getUserByEmail(email);
   if (!user) {
+    // Non-enumerating: identical response and timing-insensitive shape
+    // whether or not the account exists.
     return { requested: true };
   }
 
-  const { token } = await issueAuthToken(user.id, 'PASSWORD_RESET');
+  const context = {
+    audience: requestContext.audience === 'employer' ? 'employer' : 'candidate',
+    employerType: requestContext.audience === 'employer' ? (requestContext.employerType || null) : null,
+    next: isSafeInternalPath(requestContext.next) ? requestContext.next : null,
+  };
+
+  const { token } = await issueAuthToken(user.id, 'PASSWORD_RESET', { context });
   await sendPasswordResetEmail(user.email, token);
   return { requested: true };
 }
 
 export async function createPasswordResetSession(token) {
   const consumedToken = await consumeAuthToken(token, 'PASSWORD_RESET', { includeUser: true });
-  const { token: sessionToken } = await issueAuthToken(consumedToken.user.id, 'PASSWORD_RESET_SESSION');
+  const context = { ...(consumedToken.context || {}), otpVerified: false, attempts: 0 };
+  const { token: sessionToken, id: sessionId } = await issueAuthToken(consumedToken.user.id, 'PASSWORD_RESET_SESSION', { context });
+
+  const { code } = await issueNumericOtp(consumedToken.user.id, { resetSessionTokenId: sessionId });
+  await sendPasswordResetOtpEmail(consumedToken.user.email, code);
+
   return { token: sessionToken };
 }
 
+export async function resendPasswordResetOtp(sessionToken) {
+  const session = await peekAuthTokenByRawToken(sessionToken, 'PASSWORD_RESET_SESSION');
+
+  if (!session.userId) {
+    throw invalidTokenError();
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: session.userId } });
+  if (!user) {
+    throw invalidTokenError();
+  }
+
+  const { code } = await issueNumericOtp(session.userId, { resetSessionTokenId: session.id });
+  await prisma.authToken.update({
+    where: { id: session.id },
+    data: { context: { ...(session.context || {}), attempts: 0, otpVerified: false } },
+  });
+  await sendPasswordResetOtpEmail(user.email, code);
+
+  return { resent: true };
+}
+
+const MAX_OTP_ATTEMPTS = 5;
+
+export async function verifyPasswordResetOtp(sessionToken, code) {
+  const session = await peekAuthTokenByRawToken(sessionToken, 'PASSWORD_RESET_SESSION');
+  const attempts = session.context?.attempts || 0;
+
+  if (attempts >= MAX_OTP_ATTEMPTS) {
+    const error = new Error('Too many incorrect attempts. Request a new code.');
+    error.statusCode = 429;
+    throw error;
+  }
+
+  let otpToken;
+  try {
+    // Must match the exact string issueNumericOtp() hashed - see that
+    // function's comment for why the session id is bound into the hash
+    // input instead of hashing the bare (collision-prone) 6-digit code.
+    otpToken = await consumeAuthToken(`${session.id}:${code}`, 'PASSWORD_RESET_OTP');
+  } catch {
+    otpToken = null;
+  }
+
+  const isBoundToThisSession = otpToken && otpToken.context?.resetSessionTokenId === session.id;
+
+  if (!isBoundToThisSession) {
+    await prisma.authToken.update({
+      where: { id: session.id },
+      data: { context: { ...(session.context || {}), attempts: attempts + 1 } },
+    });
+    const error = new Error('Incorrect verification code.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await prisma.authToken.update({
+    where: { id: session.id },
+    data: { context: { ...(session.context || {}), otpVerified: true } },
+  });
+
+  return { verified: true };
+}
+
 export async function confirmPasswordReset(token, password) {
+  const session = await peekAuthTokenByRawToken(token, 'PASSWORD_RESET_SESSION');
+
+  if (!session.context?.otpVerified) {
+    const error = new Error('Enter the emailed verification code before setting a new password.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const consumedToken = await consumeAuthToken(token, 'PASSWORD_RESET_SESSION', { includeUser: true });
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -229,7 +321,12 @@ export async function confirmPasswordReset(token, password) {
     },
   });
 
-  return { reset: true };
+  return {
+    reset: true,
+    audience: consumedToken.context?.audience || 'candidate',
+    employerType: consumedToken.context?.employerType || null,
+    next: consumedToken.context?.next || null,
+  };
 }
 
 export async function requestEmailVerification(email) {

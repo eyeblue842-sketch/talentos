@@ -6,7 +6,7 @@ function buildTokenHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-function invalidTokenError() {
+export function invalidTokenError() {
   const error = new Error('Invalid or expired token.');
   error.statusCode = 400;
   return error;
@@ -43,7 +43,7 @@ export async function issueAuthToken(userId, type, options = {}) {
     });
   }
 
-  await prisma.authToken.create({
+  const created = await prisma.authToken.create({
     data: {
       userId,
       type,
@@ -53,7 +53,60 @@ export async function issueAuthToken(userId, type, options = {}) {
     },
   });
 
-  return { token, expiresAt };
+  return { token, expiresAt, id: created.id };
+}
+
+// Looks up an AuthToken by its raw (unhashed) value WITHOUT consuming it -
+// used by the OTP-verification step, which must be able to re-check the
+// same reset-session token across multiple requests (one per OTP attempt)
+// before the session is finally consumed at password-confirm time.
+export async function peekAuthTokenByRawToken(token, type) {
+  const tokenHash = buildTokenHash(token);
+  const record = await prisma.authToken.findUnique({ where: { tokenHash } });
+
+  if (!record || record.type !== type || record.consumedAt || record.expiresAt <= new Date()) {
+    throw invalidTokenError();
+  }
+
+  return record;
+}
+
+// A short numeric (not the generic 32-byte hex) token, mailed to the user as
+// a 6-digit code rather than embedded in a link. Hashed and stored the same
+// way as every other AuthToken so it is verified through the same single-use,
+// race-safe consumeAuthToken() path as the reset link itself.
+// The stored tokenHash is derived from `${resetSessionTokenId}:${code}`, not
+// the bare code - a 6-digit code only has 1,000,000 possible values, so two
+// unrelated concurrent reset sessions could otherwise land on the same
+// displayed code and either collide on AuthToken.tokenHash's unique
+// constraint or let one session's guess consume a different user's OTP.
+// Binding the session id into what actually gets hashed keeps the code the
+// user sees short while keeping every stored hash unique.
+export async function issueNumericOtp(userId, context = {}) {
+  if (!context.resetSessionTokenId) {
+    throw new Error('issueNumericOtp requires context.resetSessionTokenId.');
+  }
+
+  const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+  const now = new Date();
+  const expiresAt = addMinutes(now, 10);
+
+  await prisma.authToken.updateMany({
+    where: { userId, type: 'PASSWORD_RESET_OTP', consumedAt: null },
+    data: { consumedAt: now },
+  });
+
+  await prisma.authToken.create({
+    data: {
+      userId,
+      type: 'PASSWORD_RESET_OTP',
+      tokenHash: buildTokenHash(`${context.resetSessionTokenId}:${code}`),
+      context,
+      expiresAt,
+    },
+  });
+
+  return { code, expiresAt };
 }
 
 export async function consumeAuthToken(token, type, options = {}) {

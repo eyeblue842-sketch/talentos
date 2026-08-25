@@ -36,12 +36,27 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// audience/employerType/next describe which portal initiated the reset
+// (candidate vs employer, and for employer which recruiter type, plus a
+// safe post-login destination) so the emailed OTP flow can send the user
+// back to the correct portal-specific login once the reset is complete.
+// They are optional and non-enumerating-safe: the backend never echoes
+// whether the email exists, only records this context against the issued
+// token when it does.
 export const passwordResetRequestSchema = z.object({
   email: z.string().email(),
+  audience: z.enum(['candidate', 'employer']).optional(),
+  employerType: employerTypeSchema.optional(),
+  next: z.string().trim().min(1).max(2048).optional(),
 });
 
 export const tokenConfirmationSchema = z.object({
   token: z.string().min(32),
+});
+
+export const passwordResetOtpVerifySchema = z.object({
+  token: z.string().min(32),
+  code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code.'),
 });
 
 export const oauthCallbackSchema = z.object({

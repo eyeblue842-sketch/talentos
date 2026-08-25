@@ -5,11 +5,20 @@ import { enqueueBackgroundTask } from './backgroundTaskService.js';
 
 const sentEmails = [];
 
-function createSmtpTransport() {
+// Exported (with an overridable config) so a test can point a real transport
+// at a local SMTP listener without needing the app's own test-mode gate
+// (env.isTest, always true under this project's `node --test` runner) to be
+// bypassed - see password-reset-smtp-acceptance.test.js.
+export function createSmtpTransport(config = {}) {
+  const host = config.host ?? env.smtpHost;
+  const port = config.port ?? env.smtpPort;
+  const user = config.user ?? env.smtpUser;
+  const pass = config.pass ?? env.smtpPass;
+
   return nodemailer.createTransport({
-    host: env.smtpHost,
-    port: env.smtpPort,
-    auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
+    host,
+    port,
+    auth: user ? { user, pass } : undefined,
   });
 }
 
@@ -199,15 +208,34 @@ export function __getEmailTransportInfo() {
   return __resolveEmailTransportInfo();
 }
 
-export async function sendPasswordResetEmail(to, token) {
+// Pure message builders (exported) so both the real send path and a
+// standalone real-SMTP-acceptance test can construct the exact same
+// subject/body without going through the app's transport-selection gate.
+export function buildPasswordResetEmailMessage(to, token) {
   const resetUrl = new URL('/api/auth/password-reset/start', env.frontendUrl);
   resetUrl.searchParams.set('token', token);
 
-  await sendTransactionalEmail({
+  return {
     to,
     subject: 'Reset your Careeriz password',
     text: `Use this link to reset your password: ${resetUrl.toString()}`,
-  });
+  };
+}
+
+export function buildPasswordResetOtpEmailMessage(to, code) {
+  return {
+    to,
+    subject: 'Your Careeriz password reset verification code',
+    text: `Your verification code is ${code}. It expires in 10 minutes and can only be used once. If you did not request a password reset, you can ignore this email.`,
+  };
+}
+
+export async function sendPasswordResetEmail(to, token) {
+  await sendTransactionalEmail(buildPasswordResetEmailMessage(to, token));
+}
+
+export async function sendPasswordResetOtpEmail(to, code) {
+  await sendTransactionalEmail(buildPasswordResetOtpEmailMessage(to, code));
 }
 
 export async function sendEmailVerificationEmail(to, token) {

@@ -9,6 +9,8 @@ import {
   oauthExchange,
   oauthCallback,
   passwordResetConfirm,
+  passwordResetOtpResend,
+  passwordResetOtpVerify,
   passwordResetRequest,
   passwordResetSession,
   saveRecruiterProfile,
@@ -23,6 +25,7 @@ import {
   loginSchema,
   oauthCallbackSchema,
   passwordResetConfirmSchema,
+  passwordResetOtpVerifySchema,
   passwordResetRequestSchema,
   signupSchema,
   tokenConfirmationSchema,
@@ -69,6 +72,18 @@ authRouter.post(
   createRateLimiter({ keyPrefix: 'auth:password-reset-session', limit: 5 }),
   validateSchema(tokenConfirmationSchema),
   passwordResetSession
+);
+authRouter.post(
+  '/password-reset/otp/verify',
+  createRateLimiter({ keyPrefix: 'auth:password-reset-otp-verify', limit: 10 }),
+  validateSchema(passwordResetOtpVerifySchema),
+  passwordResetOtpVerify
+);
+authRouter.post(
+  '/password-reset/otp/resend',
+  createRateLimiter({ keyPrefix: 'auth:password-reset-otp-resend', limit: 3 }),
+  validateSchema(tokenConfirmationSchema),
+  passwordResetOtpResend
 );
 authRouter.post(
   '/password-reset/confirm',

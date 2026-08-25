@@ -24,6 +24,10 @@ for (const key of [
   'INTELLIGENCE_PROVIDER',
   'QUEUE_PROVIDER',
   'EMAIL_FROM',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_USER',
+  'SMTP_PASS',
 ]) {
   delete process.env[key];
 }
@@ -46,6 +50,20 @@ Object.assign(process.env, {
   QUEUE_PROVIDER: 'database',
   EMAIL_FROM: 'no-reply@careeriz.app',
   AUTH_LOGIN_RATE_LIMIT: '1000',
+  // Real SMTP delivery to a local catcher (backend/scripts/e2e-smtp-catcher.mjs,
+  // started as its own Playwright webServer entry) so password-reset/OTP e2e
+  // specs exercise genuine SMTP acceptance rather than the in-memory test
+  // transport - env.isTest is false here (NODE_ENV=development, and this
+  // process is not run under `node --test`), so createTransport() resolves
+  // to the real SMTP branch. SMTP_USER/PASS are placeholders only to satisfy
+  // env validation (host/user/pass must all be present together) - the
+  // catcher disables the AUTH command entirely, so nodemailer's SMTP client
+  // never actually attempts to authenticate with them (RFC 5321: a client
+  // only authenticates if the server advertises an AUTH mechanism in EHLO).
+  SMTP_HOST: process.env.E2E_SMTP_CATCHER_HOST || '127.0.0.1',
+  SMTP_PORT: process.env.E2E_SMTP_CATCHER_PORT || '2525',
+  SMTP_USER: 'e2e-catcher',
+  SMTP_PASS: 'e2e-catcher',
 });
 
 const { start } = await import('../src/server.js');
