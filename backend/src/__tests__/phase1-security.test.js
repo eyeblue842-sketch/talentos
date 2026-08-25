@@ -12,6 +12,7 @@ let getEmailTransportInfo;
 let resolveEmailTransportInfo;
 let resolveElasticConfig;
 let searchCandidatesWithAdapters;
+let resetRateLimiterBuckets;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -635,12 +636,19 @@ before(async () => {
   } = await import('../services/emailService.js'));
   ({ __resolveElasticConfig: resolveElasticConfig } = await import('../config/elastic.js'));
   ({ __searchCandidatesWithAdapters: searchCandidatesWithAdapters } = await import('../services/searchService.js'));
+  ({ resetRateLimiterBuckets } = await import('../middleware/rateLimit.js'));
 });
 
 beforeEach(async () => {
   await seedState();
   installPrismaMocks();
   resetSentEmails();
+  // Without Redis (the fallback path this suite runs under), rate-limit
+  // buckets are an in-memory Map that otherwise persists for the whole
+  // `node --test` process, so a test with several password-reset/OTP calls
+  // could 429 out a later, otherwise-unrelated test in the same file. This
+  // does not touch the limiter's actual behaviour, only test isolation.
+  resetRateLimiterBuckets();
 });
 
 test('registration requires verification and does not expose sensitive tokens in API responses', async () => {
@@ -858,7 +866,16 @@ test('logout invalidates an issued JWT immediately', async () => {
   assert.equal(afterLogout.statusCode, 401);
 });
 
-test('password reset requires a short-lived reset session, invalidates prior JWTs, and does not expose tokens', async () => {
+function latestEmailOtpCode() {
+  const emails = getSentEmails();
+  const email = emails[emails.length - 1];
+  assert.ok(email, 'Expected a sent email containing a verification code.');
+  const match = email.text.match(/\b(\d{6})\b/);
+  assert.ok(match, 'Expected the email body to contain a 6-digit code.');
+  return match[1];
+}
+
+test('password reset requires an emailed OTP after the link is confirmed, invalidates prior JWTs, and does not expose tokens', async () => {
   const jwt = await loginAs('candidate1@example.com');
 
   const requestReset = await request(app)
@@ -877,15 +894,47 @@ test('password reset requires a short-lived reset session, invalidates prior JWT
     .send({ token: resetToken });
   assert.equal(createSession.statusCode, 200);
   assert.ok(createSession.body.data.token);
+  const sessionToken = createSession.body.data.token;
+
+  // Clicking the link also emails a one-time code - a second email, distinct
+  // from the reset-link email above.
+  assert.equal(getSentEmails().length, 2);
+  const otpCode = latestEmailOtpCode();
+
+  // The password cannot be changed before the OTP is verified, and this
+  // rejection does not burn the reset session - the same session token can
+  // still be used once OTP verification actually succeeds.
+  const confirmBeforeOtp = await request(app)
+    .post('/api/auth/password-reset/confirm')
+    .send({ token: sessionToken, password: 'NewPassword123' });
+  assert.equal(confirmBeforeOtp.statusCode, 400);
+
+  const wrongOtp = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: otpCode === '000000' ? '111111' : '000000' });
+  assert.equal(wrongOtp.statusCode, 400);
+
+  const verifyOtp = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: otpCode });
+  assert.equal(verifyOtp.statusCode, 200);
+  assert.equal(verifyOtp.body.data.verified, true);
+
+  // A consumed OTP cannot be replayed even against the still-valid session.
+  const replayOtp = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: otpCode });
+  assert.equal(replayOtp.statusCode, 400);
 
   const reset = await request(app)
     .post('/api/auth/password-reset/confirm')
-    .send({ token: createSession.body.data.token, password: 'NewPassword123' });
+    .send({ token: sessionToken, password: 'NewPassword123' });
   assert.equal(reset.statusCode, 200);
+  assert.equal(reset.body.data.audience, 'candidate');
 
   const resetAgain = await request(app)
     .post('/api/auth/password-reset/confirm')
-    .send({ token: createSession.body.data.token, password: 'AnotherPassword123' });
+    .send({ token: sessionToken, password: 'AnotherPassword123' });
   assert.equal(resetAgain.statusCode, 400);
 
   const reusedResetLink = await request(app)
@@ -909,6 +958,70 @@ test('password reset requires a short-lived reset session, invalidates prior JWT
     password: 'NewPassword123',
   });
   assert.equal(newLogin.statusCode, 200);
+});
+
+test('password reset OTP locks out after too many incorrect attempts', async () => {
+  await request(app).post('/api/auth/password-reset/request').send({ email: 'candidate1@example.com' });
+  const resetToken = latestEmailLinkToken('token');
+  const createSession = await request(app).post('/api/auth/password-reset/session').send({ token: resetToken });
+  const sessionToken = createSession.body.data.token;
+  const otpCode = latestEmailOtpCode();
+  const wrongCode = otpCode === '000000' ? '111111' : '000000';
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await request(app)
+      .post('/api/auth/password-reset/otp/verify')
+      .send({ token: sessionToken, code: wrongCode });
+    assert.equal(response.statusCode, 400);
+  }
+
+  const lockedOut = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: otpCode });
+  assert.equal(lockedOut.statusCode, 429);
+});
+
+test('password reset OTP can be resent, invalidating the previous code', async () => {
+  await request(app).post('/api/auth/password-reset/request').send({ email: 'candidate1@example.com' });
+  const resetToken = latestEmailLinkToken('token');
+  const createSession = await request(app).post('/api/auth/password-reset/session').send({ token: resetToken });
+  const sessionToken = createSession.body.data.token;
+  const firstCode = latestEmailOtpCode();
+
+  const resend = await request(app).post('/api/auth/password-reset/otp/resend').send({ token: sessionToken });
+  assert.equal(resend.statusCode, 200);
+  const secondCode = latestEmailOtpCode();
+
+  const oldCodeRejected = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: firstCode });
+  assert.equal(oldCodeRejected.statusCode, 400);
+
+  const newCodeAccepted = await request(app)
+    .post('/api/auth/password-reset/otp/verify')
+    .send({ token: sessionToken, code: secondCode });
+  assert.equal(newCodeAccepted.statusCode, 200);
+});
+
+test('password reset carries portal context through to the confirm response for both employer types', async () => {
+  for (const employerType of ['CONSULTANCY', 'COMPANY']) {
+    await request(app)
+      .post('/api/auth/password-reset/request')
+      .send({ email: 'owner@company.com', audience: 'employer', employerType });
+    const resetToken = latestEmailLinkToken('token');
+    const createSession = await request(app).post('/api/auth/password-reset/session').send({ token: resetToken });
+    const sessionToken = createSession.body.data.token;
+    const otpCode = latestEmailOtpCode();
+
+    await request(app).post('/api/auth/password-reset/otp/verify').send({ token: sessionToken, code: otpCode });
+    const reset = await request(app)
+      .post('/api/auth/password-reset/confirm')
+      .send({ token: sessionToken, password: `NewPassword123-${employerType}` });
+
+    assert.equal(reset.statusCode, 200);
+    assert.equal(reset.body.data.audience, 'employer');
+    assert.equal(reset.body.data.employerType, employerType);
+  }
 });
 
 test('email verification resend uses the isolated test transport even when SMTP env vars are configured', async () => {

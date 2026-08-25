@@ -8,7 +8,9 @@ import {
   registerUser,
   requestEmailVerification,
   requestPasswordReset,
+  resendPasswordResetOtp,
   updateRecruiterProfile,
+  verifyPasswordResetOtp,
 } from '../services/authService.js';
 import {
   buildOAuthErrorRedirect,
@@ -44,7 +46,11 @@ export async function me(req, res) {
 
 export async function passwordResetRequest(req, res, next) {
   try {
-    const result = await requestPasswordReset(req.body.email);
+    const result = await requestPasswordReset(req.body.email, {
+      audience: req.body.audience,
+      employerType: req.body.employerType,
+      next: req.body.next,
+    });
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
@@ -54,6 +60,24 @@ export async function passwordResetRequest(req, res, next) {
 export async function passwordResetSession(req, res, next) {
   try {
     const result = await createPasswordResetSession(req.body.token);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function passwordResetOtpVerify(req, res, next) {
+  try {
+    const result = await verifyPasswordResetOtp(req.body.token, req.body.code);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function passwordResetOtpResend(req, res, next) {
+  try {
+    const result = await resendPasswordResetOtp(req.body.token);
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

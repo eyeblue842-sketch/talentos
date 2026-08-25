@@ -170,27 +170,15 @@ export function AuthExperience({
     email: '',
     password: '',
   });
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetForm, setResetForm] = useState({
-    password: '',
-    confirmPassword: '',
-  });
   const [pendingAction, setPendingAction] = useState('');
   const [statusMessage, setStatusMessage] = useState(
     initialSearchParams.authStatus === 'email-verified'
       ? 'Email verified. You can now sign in.'
-      : initialSearchParams.authStatus === 'password-reset-complete'
+      : initialSearchParams.resetSuccess
         ? 'Password reset complete. You can now sign in with the new password.'
-        : initialSearchParams.authStatus === 'password-reset-ready'
-          ? 'Reset link confirmed. Choose a new password.'
-          : ''
+        : ''
   );
-  const [errorMessage, setErrorMessage] = useState(
-    initialSearchParams.resetError
-      ? 'This password reset link is invalid or expired.'
-      : initialSearchParams.oauthError || ''
-  );
-  const [isResetFlow, setIsResetFlow] = useState(initialSearchParams.authStatus === 'password-reset-ready');
+  const [errorMessage, setErrorMessage] = useState(initialSearchParams.oauthError || '');
 
   const employerType = useMemo(
     () => normalizeEmployerType(initialSearchParams.employerType) || 'CONSULTANCY',
@@ -207,8 +195,17 @@ export function AuthExperience({
     [initialSearchParams.next],
   );
 
+  const forgotPasswordHref = useMemo(
+    () => buildPathWithParams(
+      audience === 'employer' ? employerAuthRoutes.forgotPassword : candidateAuthRoutes.forgotPassword,
+      audience === 'employer'
+        ? { employerType, next: initialSearchParams.next }
+        : { next: initialSearchParams.next }
+    ),
+    [audience, employerType, initialSearchParams.next],
+  );
+
   const registerPasswordMismatch = registerForm.confirmPassword.length > 0 && registerForm.password !== registerForm.confirmPassword;
-  const resetPasswordMismatch = resetForm.confirmPassword.length > 0 && resetForm.password !== resetForm.confirmPassword;
   const alternateRoutes = audience === 'employer' ? employerAuthRoutes : candidateAuthRoutes;
 
   async function handleRegister() {
@@ -262,39 +259,6 @@ export function AuthExperience({
         ? `/change-password${nextHref ? `?next=${encodeURIComponent(nextHref)}` : ''}`
         : resolvePostAuthRoute(user.role, nextHref);
       window.location.assign(target);
-    } catch (error) {
-      setErrorMessage(error.message);
-    } finally {
-      setPendingAction('');
-    }
-  }
-
-  async function handleResetRequest() {
-    setPendingAction('reset-request');
-    setErrorMessage('');
-    setStatusMessage('');
-
-    try {
-      await postJson('/api/auth/password-reset/request', { email: resetEmail });
-      setStatusMessage('If the email exists, a password reset link has been sent.');
-    } catch (error) {
-      setErrorMessage(error.message);
-    } finally {
-      setPendingAction('');
-    }
-  }
-
-  async function handleResetConfirm() {
-    setPendingAction('reset-confirm');
-    setErrorMessage('');
-    setStatusMessage('');
-
-    try {
-      await postJson('/api/auth/password-reset/confirm', { password: resetForm.password });
-      setStatusMessage('Password reset complete. You can now sign in with the new password.');
-      setIsResetFlow(false);
-      setResetForm({ password: '', confirmPassword: '' });
-      window.history.replaceState({}, '', mode === 'register' ? alternateRoutes.register : alternateRoutes.login);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -474,7 +438,6 @@ export function AuthExperience({
                     onChange={(event) => {
                       const value = event.target.value;
                       setLoginForm((current) => ({ ...current, email: value }));
-                      setResetEmail(value);
                     }}
                     placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
                   />
@@ -488,8 +451,8 @@ export function AuthExperience({
                     <Button type="submit" loading={pendingAction === 'login'}>
                       Sign in
                     </Button>
-                    <Button type="button" variant="link" onClick={() => setIsResetFlow((current) => !current)}>
-                      Forgot password
+                    <Button variant="link" as={Link} href={forgotPasswordHref}>
+                      Forgot password?
                     </Button>
                   </FormActions>
                 </form>
@@ -515,56 +478,6 @@ export function AuthExperience({
                 </Button>
               </FormSection>
             )}
-          </Card>
-
-          <Card variant="outlined" className="p-6">
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold text-[var(--color-text)]">
-              {isResetFlow ? 'Reset password' : 'Need a password reset?'}
-            </h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">
-              {isResetFlow
-                ? 'Set a new password for the current reset session.'
-                : 'Request a reset link without exposing whether the email exists.'}
-            </p>
-            <div className="mt-5 grid gap-4">
-              {isResetFlow ? (
-                <>
-                  <PasswordField
-                    label="New password"
-                    value={resetForm.password}
-                    onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
-                    helpText={passwordHelpText}
-                  />
-                  <PasswordField
-                    label="Confirm new password"
-                    value={resetForm.confirmPassword}
-                    onChange={(event) => setResetForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-                    error={resetPasswordMismatch ? 'Passwords must match.' : ''}
-                  />
-                  <FormActions>
-                    <Button onClick={handleResetConfirm} loading={pendingAction === 'reset-confirm'} disabled={resetPasswordMismatch}>
-                      Set new password
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={() => setIsResetFlow(false)}>
-                      Cancel
-                    </Button>
-                  </FormActions>
-                </>
-              ) : (
-                <>
-                  <Input
-                    label={audience === 'employer' ? 'Work email' : 'Email'}
-                    type="email"
-                    value={resetEmail}
-                    onChange={(event) => setResetEmail(event.target.value)}
-                    placeholder={audience === 'employer' ? 'team@company.com' : 'candidate@example.com'}
-                  />
-                  <Button onClick={handleResetRequest} loading={pendingAction === 'reset-request'} className="w-fit">
-                    Send password reset link
-                  </Button>
-                </>
-              )}
-            </div>
           </Card>
         </div>
       </div>
