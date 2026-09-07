@@ -4,6 +4,7 @@ import { createJobSchema } from '@careeriz/shared';
 
 let prisma;
 let createJob;
+let updateJob;
 let updateJobStatus;
 let getJobDetail;
 let searchCandidates;
@@ -648,7 +649,7 @@ function installPrismaMocks() {
 
 before(async () => {
   ({ prisma } = await import('../config/db.js'));
-  ({ createJob, updateJobStatus, getJobDetail } = await import('../services/jobService.js'));
+  ({ createJob, updateJob, updateJobStatus, getJobDetail } = await import('../services/jobService.js'));
   ({ searchCandidates, getAuthorizedCandidateDetail } = await import('../services/searchService.js'));
   ({ saveCandidateForRecruiter, removeSavedCandidate, getSavedCandidates } = await import('../services/resumeService.js'));
   ({ getRecruiterPipeline, updatePipelineStage, addAtsNote, scheduleInterview, cancelInterview } = await import('../services/atsService.js'));
@@ -687,6 +688,77 @@ test('recruiter can create and close an organisation-scoped job', async () => {
   assert.equal(closed.status, 'CLOSED');
 });
 
+test('job create/update persist structured locations, candidateQualifications, and preferredCandidateProfile, and a partial update preserves them when omitted', async () => {
+  const created = await createJob(actor('recruiter-1'), {
+    title: 'Platform Engineer',
+    description: 'Own platform reliability across our core services.',
+    skillsRequired: ['Kubernetes'],
+    experienceMin: 4,
+    experienceMax: 8,
+    salaryMin: 18,
+    salaryMax: 28,
+    currency: 'INR',
+    location: 'Bengaluru, Karnataka',
+    locations: [{ id: 'Bengaluru, Karnataka', name: 'Bengaluru, Karnataka', city: 'Bengaluru', state: 'Karnataka' }],
+    candidateQualifications: { minimumQualification: 'ug', industry: 'IT Services & Consulting', certifications: ['CKA'] },
+    preferredCandidateProfile: { preferredIndustry: 'Software Product', willingToRelocate: 'FLEXIBLE' },
+    employmentType: 'FULL_TIME',
+    workplaceType: 'ONSITE',
+    numberOfOpenings: 1,
+    recruiterId: 'recruiter-1',
+  }, 'org-1');
+
+  assert.deepEqual(created.locations, [{ id: 'Bengaluru, Karnataka', name: 'Bengaluru, Karnataka', city: 'Bengaluru', state: 'Karnataka' }]);
+  assert.deepEqual(created.candidateQualifications, { minimumQualification: 'ug', industry: 'IT Services & Consulting', certifications: ['CKA'] });
+  assert.deepEqual(created.preferredCandidateProfile, { preferredIndustry: 'Software Product', willingToRelocate: 'FLEXIBLE' });
+  // experienceMin/experienceMax/department stay their own top-level fields,
+  // never duplicated inside candidateQualifications.
+  assert.equal('experienceMin' in created.candidateQualifications, false);
+
+  const updated = await updateJob(created.id, actor('recruiter-1'), { title: 'Platform Engineer II' }, 'org-1');
+  assert.equal(updated.title, 'Platform Engineer II');
+  assert.deepEqual(updated.locations, created.locations);
+  assert.deepEqual(updated.candidateQualifications, created.candidateQualifications);
+  assert.deepEqual(updated.preferredCandidateProfile, created.preferredCandidateProfile);
+});
+
+test('a legacy job created before these fields existed serializes with safe empty/null defaults, not a crash', async () => {
+  state.jobs.push({
+    id: 'legacy-job-1',
+    organisationId: 'org-1',
+    recruiterId: 'recruiter-1',
+    title: 'Legacy Support Engineer',
+    slug: 'legacy-support-engineer',
+    description: 'Predates structured candidate fields.',
+    skillsRequired: ['SQL'],
+    experienceMin: 1,
+    experienceMax: 3,
+    salaryMin: 6,
+    salaryMax: 10,
+    currency: 'INR',
+    location: 'Remote',
+    // locations/candidateQualifications/preferredCandidateProfile intentionally
+    // absent - exactly how a pre-migration row reads from Postgres (NULL).
+    employmentType: 'FULL_TIME',
+    workplaceType: 'REMOTE',
+    numberOfOpenings: 1,
+    status: 'OPEN',
+    isPublic: true,
+    publicSalaryEnabled: true,
+    responsibilities: [],
+    requirements: [],
+    benefits: [],
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
+  const job = await getJobDetail(actor('recruiter-1'), 'legacy-job-1', 'org-1');
+  assert.deepEqual(job.locations, []);
+  assert.equal(job.candidateQualifications, null);
+  assert.equal(job.preferredCandidateProfile, null);
+  assert.equal(job.location, 'Remote');
+});
+
 test('cross-organisation job access is hidden and range validation rejects invalid values', async () => {
   await assert.rejects(
     () => getJobDetail(actor('owner-2'), 'job-1', 'org-2'),
@@ -720,6 +792,39 @@ test('cross-organisation job access is hidden and range validation rejects inval
     }),
     /Minimum salary must be less than or equal to maximum salary/
   );
+});
+
+test('createJobSchema accepts structured locations/candidateQualifications/preferredCandidateProfile and defaults them when omitted', () => {
+  const withStructuredFields = createJobSchema.parse({
+    title: 'Structured Fields Job',
+    description: 'A description long enough to satisfy validation rules.',
+    skillsRequired: ['Node.js'],
+    experienceMin: 2,
+    experienceMax: 5,
+    salaryMin: 10,
+    salaryMax: 20,
+    location: 'Bengaluru, Karnataka',
+    locations: [{ id: 'Bengaluru, Karnataka', name: 'Bengaluru, Karnataka', city: 'Bengaluru', state: 'Karnataka' }],
+    candidateQualifications: { minimumQualification: 'pg', certifications: ['PMP'] },
+    preferredCandidateProfile: { willingToRelocate: 'YES', preferredCertifications: [] },
+  });
+  assert.equal(withStructuredFields.locations.length, 1);
+  assert.equal(withStructuredFields.candidateQualifications.minimumQualification, 'pg');
+  assert.equal(withStructuredFields.preferredCandidateProfile.willingToRelocate, 'YES');
+
+  const withoutStructuredFields = createJobSchema.parse({
+    title: 'No Structured Fields Job',
+    description: 'A description long enough to satisfy validation rules.',
+    skillsRequired: ['Node.js'],
+    experienceMin: 2,
+    experienceMax: 5,
+    salaryMin: 10,
+    salaryMax: 20,
+    location: 'Remote',
+  });
+  assert.deepEqual(withoutStructuredFields.locations, []);
+  assert.equal(withoutStructuredFields.candidateQualifications, undefined);
+  assert.equal(withoutStructuredFields.preferredCandidateProfile, undefined);
 });
 
 test('resume database search is recruiter-usable and candidate data stays minimised', async () => {

@@ -170,6 +170,46 @@ export const jobStatusSchema = z.enum([
   'ARCHIVED',
 ]);
 
+// Canonical location entry for Job.locations (see JobLocationSelector on
+// the frontend) - id/name are the same stable "District, State" (or plain
+// city) string from the fixed india-location-master taxonomy, city/state
+// are split out for display convenience only.
+const jobLocationEntrySchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  name: z.string().trim().min(1).max(200),
+  city: z.string().trim().max(160).optional().nullable(),
+  state: z.string().trim().max(120).optional().nullable(),
+});
+
+// Structured Candidate Qualifications box. Deliberately does NOT repeat
+// experienceMin/experienceMax/department, which stay their own top-level
+// fields below (only relocated in the UI, not duplicated in storage).
+const candidateQualificationsSchema = z.object({
+  minimumQualification: z.string().trim().max(20).optional().nullable(),
+  educationCourse: z.string().trim().max(160).optional().nullable(),
+  specialization: z.string().trim().max(160).optional().nullable(),
+  relevantExperience: z.coerce.number().min(0).max(60).optional().nullable(),
+  industry: z.string().trim().max(160).optional().nullable(),
+  noticePeriod: z.string().trim().max(60).optional().nullable(),
+  certifications: z.array(z.string().trim().min(1).max(160)).max(20).optional().default([]),
+}).optional().nullable();
+
+// Structured Preferred Candidate Profile accordion. Recruiter-internal
+// screening preferences only - no protected/discriminatory personal
+// attributes (age, gender, marital status, religion, disability, etc.).
+const preferredCandidateProfileSchema = z.object({
+  preferredExperience: z.coerce.number().min(0).max(60).optional().nullable(),
+  preferredIndustry: z.string().trim().max(160).optional().nullable(),
+  preferredDepartmentRole: z.string().trim().max(160).optional().nullable(),
+  preferredEducation: z.string().trim().max(20).optional().nullable(),
+  preferredNoticePeriod: z.string().trim().max(60).optional().nullable(),
+  preferredCurrentLocation: z.string().trim().max(200).optional().nullable(),
+  willingToRelocate: z.string().trim().max(20).optional().nullable(),
+  workAuthorization: z.string().trim().max(60).optional().nullable(),
+  preferredCertifications: z.array(z.string().trim().min(1).max(160)).max(20).optional().default([]),
+  additionalNotes: z.string().trim().max(2000).optional().nullable(),
+}).optional().nullable();
+
 const jobBaseFieldsSchema = z.object({
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().min(20).max(20000),
@@ -190,6 +230,9 @@ const jobBaseFieldsSchema = z.object({
   featuredInPortal: z.boolean().optional(),
   visibility: jobVisibilitySchema.optional(),
   location: z.string().trim().min(2).max(160),
+  locations: z.array(jobLocationEntrySchema).max(20).optional().default([]),
+  candidateQualifications: candidateQualificationsSchema,
+  preferredCandidateProfile: preferredCandidateProfileSchema,
   employmentType: employmentTypeSchema.optional(),
   workplaceType: workplaceTypeSchema.optional().nullable(),
   numberOfOpenings: z.coerce.number().int().min(1).max(1000).optional(),

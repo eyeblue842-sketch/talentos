@@ -1930,6 +1930,24 @@ model Job {
   featuredInPortal                 Boolean                    @default(false)
   visibility                       JobVisibility              @default(EXTERNAL)
   location                         String
+  // Canonical multi-location selections ({id, name, city, state}[]) from the
+  // Job Location searchable multi-select - `location` above stays the
+  // legacy single display string (comma-joined) so every existing reader
+  // (cards, search, serializers) keeps working unchanged; new code should
+  // prefer `locations` when present.
+  locations                        Json?
+  // Structured Candidate Qualifications box (minimumQualification,
+  // educationCourse, specialization, relevantExperience, industry,
+  // noticePeriod, certifications[]). Deliberately does NOT duplicate
+  // experienceMin/experienceMax/department, which already exist as their
+  // own columns and are only relocated to sit in that box in the UI.
+  candidateQualifications          Json?
+  // Structured Preferred Candidate Profile accordion (preferredExperience,
+  // preferredIndustry, preferredDepartmentRole, preferredEducation,
+  // preferredNoticePeriod, preferredCurrentLocation, willingToRelocate,
+  // workAuthorization, preferredCertifications[], additionalNotes).
+  // Recruiter-internal only - never surfaced by serializePublicJob.
+  preferredCandidateProfile        Json?
   employmentType                   EmploymentType             @default(FULL_TIME)
   workplaceType                    WorkplaceType?
   numberOfOpenings                 Int                        @default(1)
