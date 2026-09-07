@@ -14,6 +14,16 @@ function now() {
   return new Date('2026-08-17T09:00:00.000Z');
 }
 
+// applicationWorkflowService checks job open/close eligibility against the
+// REAL wall clock (Date.now()), not the fictional now() above (which only
+// stamps unrelated fixture timestamps like createdAt/submittedAt) - there is
+// no clock-injection seam in the service to control that deterministically.
+// A fixed applicationClosesAt/applicationDeadline therefore goes stale and
+// starts failing with APPLICATION_CLOSED once real time passes it. Deriving
+// it from real Date.now() at test run time keeps it always safely in the
+// future without hardcoding a date that will eventually expire the same way.
+const FAR_FUTURE_APPLICATION_CLOSE = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -43,8 +53,8 @@ function seedState() {
       archivedAt: null,
       status: 'OPEN',
       applicationOpensAt: null,
-      applicationClosesAt: new Date('2026-08-31T00:00:00.000Z'),
-      applicationDeadline: new Date('2026-08-31T00:00:00.000Z'),
+      applicationClosesAt: FAR_FUTURE_APPLICATION_CLOSE,
+      applicationDeadline: FAR_FUTURE_APPLICATION_CLOSE,
       applicationNotificationEmail: 'recruiter@acme.example',
       maxApplications: 10,
       organisation: {
