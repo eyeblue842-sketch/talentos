@@ -54,9 +54,14 @@ describe('RecruiterJobsPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Job Posts' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Job Details' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Candidate Preferences/i })).toBeInTheDocument();
+    // Candidate Preferences was removed as a standalone step - its fields
+    // now live inside Job Description (Add Skills, Candidate
+    // Qualifications, Preferred Candidate Profile).
+    expect(screen.queryByRole('button', { name: /^Candidate Preferences$/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Screening Questions/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Job Description/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Communication Preferences/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review & Publish/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Manage Jobs' })).toBeInTheDocument();
     expect(screen.getByTestId('jobs-table')).toHaveTextContent('Senior Java Developer');
   });

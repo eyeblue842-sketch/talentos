@@ -61,7 +61,28 @@ function asNullableDateTime(value) {
   return date.toISOString();
 }
 
+function asNullableJson(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildJobPayload(formData) {
+  const workplaceType = asNullableString(formData.get('workplaceType'));
+  // A fully remote job may legitimately have zero selected locations (see
+  // JobLocationSelector/locationRequired in the job-post wizard), but
+  // Job.location has always been a required, non-empty string - both for
+  // the shared createJobSchema/updateJobSchema and for every existing
+  // reader of job.location (cards, search, serializers). Falling back to
+  // the literal "Remote" here (rather than loosening that schema) keeps
+  // every existing consumer working unchanged.
+  const rawLocation = String(formData.get('location') || '').trim();
+  const location = rawLocation || (workplaceType === 'REMOTE' ? 'Remote' : rawLocation);
+
   return {
     title: String(formData.get('title') || '').trim(),
     description: String(formData.get('description') || '').trim(),
@@ -75,7 +96,10 @@ function buildJobPayload(formData) {
     salaryMin: formData.get('salaryMin') ? Number(formData.get('salaryMin')) : null,
     salaryMax: formData.get('salaryMax') ? Number(formData.get('salaryMax')) : null,
     currency: asNullableString(formData.get('currency')),
-    location: String(formData.get('location') || '').trim(),
+    location,
+    locations: asNullableJson(formData.get('locationsJson')) || undefined,
+    candidateQualifications: asNullableJson(formData.get('candidateQualificationsJson')),
+    preferredCandidateProfile: asNullableJson(formData.get('preferredCandidateProfileJson')),
     employmentType: String(formData.get('employmentType') || 'FULL_TIME'),
     workplaceType: asNullableString(formData.get('workplaceType')),
     numberOfOpenings: Number(formData.get('numberOfOpenings') || 1),

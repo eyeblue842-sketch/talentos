@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { JobCandidateRankingPanel } from '@/components/sections/job-candidate-ranking-panel';
 import { RecruiterAiJobDescriptionPanel } from '@/components/sections/recruiter-ai-job-description-panel';
+import { RecruiterJobEditForm } from '@/components/sections/recruiter-job-edit-form';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -157,72 +158,12 @@ export default async function RecruiterJobDetailPage({ params, searchParams }) {
             </Card>
 
             <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <Card>
-                <h2 className="font-[var(--font-display)] text-2xl font-semibold">Edit job</h2>
-                <form action={updateJobAction.bind(null, job.id)} className="mt-5 grid gap-3 md:grid-cols-2">
-                  <input name="title" defaultValue={job.title} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="location" defaultValue={job.location} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="skillsRequired" defaultValue={job.skillsRequired.join(', ')} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <select name="employmentType" defaultValue={job.employmentType} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="FULL_TIME">Full time</option>
-                    <option value="PART_TIME">Part time</option>
-                    <option value="CONTRACT">Contract</option>
-                    <option value="INTERN">Intern</option>
-                  </select>
-                  <select name="workplaceType" defaultValue={job.workplaceType || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="">Workplace type</option>
-                    <option value="ONSITE">Onsite</option>
-                    <option value="REMOTE">Remote</option>
-                    <option value="HYBRID">Hybrid</option>
-                  </select>
-                  <select name="recruiterId" defaultValue={job.recruiter?.id || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="">Recruiter owner</option>
-                    {assignees.map((member) => <option key={member.id} value={member.userId}>{member.user?.email}</option>)}
-                  </select>
-                  <select name="hiringManagerId" defaultValue={job.hiringManager?.id || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="">Hiring manager</option>
-                    {assignees.map((member) => <option key={member.id} value={member.userId}>{member.user?.email}</option>)}
-                  </select>
-                  <select name="requisitionId" defaultValue={job.requisition?.id || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="">Approved requisition</option>
-                    {requisitions.map((requisition) => <option key={requisition.id} value={requisition.id}>{requisition.requisitionCode} - {requisition.title}</option>)}
-                  </select>
-                  <input name="experienceMin" type="number" min="0" defaultValue={job.experienceMin} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="experienceMax" type="number" min="0" defaultValue={job.experienceMax} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="salaryMin" type="number" min="0" defaultValue={job.salaryMin ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="salaryMax" type="number" min="0" defaultValue={job.salaryMax ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <input name="currency" defaultValue={job.currency || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="numberOfOpenings" type="number" min="1" defaultValue={job.numberOfOpenings || 1} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="department" defaultValue={job.department || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="businessUnit" defaultValue={job.businessUnit || ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="applicationDeadline" type="datetime-local" defaultValue={job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="applicationOpensAt" type="datetime-local" defaultValue={job.applicationOpensAt ? new Date(job.applicationOpensAt).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="applicationClosesAt" type="datetime-local" defaultValue={job.applicationClosesAt ? new Date(job.applicationClosesAt).toISOString().slice(0, 16) : ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-                  <input name="maxApplications" type="number" min="1" defaultValue={job.maxApplications ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Max applications" />
-                  <input name="targetHires" type="number" min="1" defaultValue={job.targetHires ?? ''} className="rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Target hires" />
-                  <select name="visibility" defaultValue={job.visibility || 'EXTERNAL'} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="EXTERNAL">External visibility</option>
-                    <option value="INTERNAL">Internal visibility</option>
-                    <option value="BOTH">Both</option>
-                  </select>
-                  <label className="flex items-center gap-2 text-sm"><input name="isPublic" type="checkbox" defaultChecked={job.isPublic} /> Public job page</label>
-                  <label className="flex items-center gap-2 text-sm" title="Salary stays required internally for matching and hiring intelligence; this only controls the public/candidate-facing job page.">
-                    <input name="hideSalaryFromCandidates" type="checkbox" defaultChecked={!job.publicSalaryEnabled} /> Hide salary from candidates
-                    {!job.publicSalaryEnabled ? <span className="text-xs font-semibold text-amber-600">Salary hidden from candidates</span> : null}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm"><input name="featuredInPortal" type="checkbox" defaultChecked={job.featuredInPortal} /> Feature on portal</label>
-                  <label className="flex items-center gap-2 text-sm"><input name="autoCloseOnTargetHire" type="checkbox" defaultChecked={job.autoCloseOnTargetHire} /> Auto-close on target hires</label>
-                  <select name="status" defaultValue={job.status} className="rounded-2xl border border-[var(--line)] px-4 py-3">
-                    <option value="DRAFT">Draft</option>
-                    <option value="OPEN">Open</option>
-                    <option value="CLOSED">Closed</option>
-                    <option value="ON_HOLD">On hold</option>
-                    <option value="ARCHIVED">Archived</option>
-                  </select>
-                  <textarea name="description" defaultValue={job.description} className="md:col-span-2 min-h-40 rounded-2xl border border-[var(--line)] px-4 py-3" required />
-                  <button className="rounded-2xl bg-[var(--brand)] px-5 py-3 font-semibold text-white">Save changes</button>
-                </form>
-              </Card>
+              <RecruiterJobEditForm
+                job={job}
+                assignees={assignees}
+                requisitions={requisitions}
+                updateJobAction={updateJobAction.bind(null, job.id)}
+              />
 
               <Card>
                 <h2 className="font-[var(--font-display)] text-2xl font-semibold">Job summary</h2>

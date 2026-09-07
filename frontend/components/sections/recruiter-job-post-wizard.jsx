@@ -5,11 +5,21 @@ import { LoaderCircle, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { normalizeCtcToLpa } from '@/lib/ctc';
+import { SkillsSelector } from '@/components/sections/job-post/skills-selector';
+import { CandidateQualificationsFields } from '@/components/sections/job-post/candidate-qualifications-fields';
+import { PreferredCandidateProfileAccordion } from '@/components/sections/job-post/preferred-candidate-profile-accordion';
+import { JobLocationSelector, toCanonicalLocations } from '@/components/sections/job-post/job-location-selector';
 
+// Candidate Preferences was removed as a standalone step (feature/job-post-
+// naukri-redesign): its useful candidate-facing fields (skills, candidate
+// qualifications, preferred candidate profile) now live inside Job
+// Description, immediately below the description editor, matching the
+// Naukri recruiter job-post layout. Communication Preferences is unrelated
+// to the old Candidate Preferences step and is kept as its own step.
 const steps = [
   { id: 'job-details', label: 'Job Details' },
-  { id: 'candidate-preferences', label: 'Candidate Preferences' },
   { id: 'screening-questions', label: 'Screening Questions' },
   { id: 'job-description', label: 'Job Description' },
   { id: 'communication', label: 'Communication Preferences' },
@@ -49,7 +59,7 @@ function buildJobDescriptionPromptSource({
   const lines = [
     organisationName ? `Company: ${organisationName}` : null,
     formState.title ? `Job Title: ${formState.title}` : null,
-    formState.location ? `Location: ${formState.location}` : null,
+    formState.locations?.length ? `Location: ${formState.locations.join(', ')}` : null,
     formState.department ? `Department: ${formState.department}` : null,
     formState.businessUnit ? `Role / Business Unit: ${formState.businessUnit}` : null,
     formState.experienceMin || formState.experienceMax
@@ -81,7 +91,7 @@ function normalizeGeneratedJobDescription(result) {
 
 function StepRail({ activeStep, onSelect }) {
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2 md:grid-flow-col md:auto-cols-fr xl:grid-flow-row xl:auto-cols-auto">
       {steps.map((step, index) => {
         const active = activeStep === step.id;
         return (
@@ -89,22 +99,45 @@ function StepRail({ activeStep, onSelect }) {
             key={step.id}
             type="button"
             onClick={() => onSelect(step.id)}
-            className={`flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-left text-sm font-semibold ${
+            className={`flex min-w-0 items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-left text-sm font-semibold ${
               active
                 ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
                 : 'border-[var(--color-border)] bg-white text-[var(--color-text-secondary)]'
             }`}
           >
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-semibold text-[var(--color-text)]">
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-[var(--color-text)]">
               {index + 1}
             </span>
-            <span>{step.label}</span>
+            <span className="truncate">{step.label}</span>
           </button>
         );
       })}
     </div>
   );
 }
+
+const EMPTY_CANDIDATE_QUALIFICATIONS = {
+  minimumQualification: '',
+  educationCourse: '',
+  specialization: '',
+  relevantExperience: '',
+  industry: '',
+  noticePeriod: '',
+  certifications: [],
+};
+
+const EMPTY_PREFERRED_CANDIDATE_PROFILE = {
+  preferredExperience: '',
+  preferredIndustry: '',
+  preferredDepartmentRole: '',
+  preferredEducation: '',
+  preferredNoticePeriod: '',
+  preferredCurrentLocation: '',
+  willingToRelocate: '',
+  workAuthorization: '',
+  preferredCertifications: [],
+  additionalNotes: '',
+};
 
 export function RecruiterJobPostWizard({
   organisationName,
@@ -115,8 +148,11 @@ export function RecruiterJobPostWizard({
   createAction,
 }) {
   const [activeStep, setActiveStep] = useState(steps[0].id);
-  const [skillsInput, setSkillsInput] = useState('');
   const [skills, setSkills] = useState([]);
+  const [candidateQualifications, setCandidateQualifications] = useState(EMPTY_CANDIDATE_QUALIFICATIONS);
+  const [preferredCandidateProfile, setPreferredCandidateProfile] = useState(EMPTY_PREFERRED_CANDIDATE_PROFILE);
+  const [locations, setLocations] = useState([]);
+  const [locationError, setLocationError] = useState('');
   const [salaryMinAmount, setSalaryMinAmount] = useState('');
   const [salaryMinUnit, setSalaryMinUnit] = useState('LAKH_PER_ANNUM');
   const [salaryMaxAmount, setSalaryMaxAmount] = useState('');
@@ -124,7 +160,6 @@ export function RecruiterJobPostWizard({
   const [screeningQuestions, setScreeningQuestions] = useState([defaultQuestion()]);
   const [wizardState, setWizardState] = useState({
     title: '',
-    location: '',
     experienceMin: '',
     experienceMax: '',
     employmentType: 'FULL_TIME',
@@ -133,7 +168,6 @@ export function RecruiterJobPostWizard({
     businessUnit: '',
     description: '',
     responsibilities: '',
-    requirements: '',
     benefits: '',
     applicationNotificationEmail: recruiterEmail || '',
   });
@@ -141,29 +175,8 @@ export function RecruiterJobPostWizard({
   const [generationError, setGenerationError] = useState('');
   const [generatingDescription, startDescriptionGeneration] = useTransition();
 
-  function commitSkills(nextValue) {
-    const tokens = String(nextValue || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    if (!tokens.length) return;
-
-    setSkills((current) => {
-      const seen = new Set(current.map((item) => item.toLowerCase()));
-      const additions = tokens.filter((item) => {
-        const key = item.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      return [...current, ...additions];
-    });
-    setSkillsInput('');
-  }
-
-  function removeSkill(skill) {
-    setSkills((current) => current.filter((item) => item !== skill));
+  function updateWizardField(field, value) {
+    setWizardState((current) => ({ ...current, [field]: value }));
   }
 
   function updateQuestion(localId, field, value) {
@@ -172,9 +185,12 @@ export function RecruiterJobPostWizard({
     )));
   }
 
-  function updateWizardField(field, value) {
-    setWizardState((current) => ({ ...current, [field]: value }));
-  }
+  // Workplace-conditional requirement (on-site/hybrid need at least one
+  // location, remote does not) only ever toggles whether submission blocks
+  // on an empty selection - changing Workplace never clears an
+  // already-made location selection, even if it was made while a different
+  // Workplace value was briefly required.
+  const locationRequired = wizardState.workplaceType !== 'REMOTE';
 
   function applyGeneratedDescription() {
     if (!generatedDescription) return;
@@ -183,7 +199,6 @@ export function RecruiterJobPostWizard({
       ...current,
       description: generatedDescription.summary || current.description,
       responsibilities: generatedDescription.responsibilities.join('\n') || current.responsibilities,
-      requirements: generatedDescription.preferredSkills.join('\n') || current.requirements,
       benefits: current.benefits,
     }));
 
@@ -211,7 +226,7 @@ export function RecruiterJobPostWizard({
           sourceDescription: buildJobDescriptionPromptSource({
             organisationName,
             organisationAbout,
-            formState: wizardState,
+            formState: { ...wizardState, locations },
             skills,
           }),
           forceRegenerate: true,
@@ -223,6 +238,16 @@ export function RecruiterJobPostWizard({
     });
   }
 
+  function handleSubmit(event) {
+    if (locationRequired && locations.length === 0) {
+      event.preventDefault();
+      setLocationError('Add at least one job location for on-site or hybrid roles.');
+      setActiveStep('job-details');
+      return;
+    }
+    setLocationError('');
+  }
+
   const activeStepIndex = steps.findIndex((step) => step.id === activeStep);
   const normalizedSalaryMin = useMemo(
     () => normalizeCtcToLpa(salaryMinAmount, salaryMinUnit),
@@ -232,13 +257,18 @@ export function RecruiterJobPostWizard({
     () => normalizeCtcToLpa(salaryMaxAmount, salaryMaxUnit),
     [salaryMaxAmount, salaryMaxUnit],
   );
+  const canonicalLocations = useMemo(() => toCanonicalLocations(locations), [locations]);
 
   return (
-    <form action={createAction} className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+    <form action={createAction} onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
       <input type="hidden" name="skillsRequired" value={skills.join(', ')} />
       <input type="hidden" name="salaryMin" value={normalizedSalaryMin ?? ''} />
       <input type="hidden" name="salaryMax" value={normalizedSalaryMax ?? ''} />
       <input type="hidden" name="currency" value="INR" />
+      <input type="hidden" name="location" value={locations.join(', ')} />
+      <input type="hidden" name="locationsJson" value={JSON.stringify(canonicalLocations)} />
+      <input type="hidden" name="candidateQualificationsJson" value={JSON.stringify(candidateQualifications)} />
+      <input type="hidden" name="preferredCandidateProfileJson" value={JSON.stringify(preferredCandidateProfile)} />
       {screeningQuestions.map((question) => (
         <div key={question.localId} className="hidden">
           <input name="screeningQuestionText" value={question.questionText} readOnly />
@@ -251,7 +281,7 @@ export function RecruiterJobPostWizard({
 
       <StepRail activeStep={activeStep} onSelect={setActiveStep} />
 
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         {/* Every step stays mounted (hidden via CSS, not unmounted) so FormData
             at final submit includes fields from every step, not just the one
             currently in view - a step-by-step wizard whose earlier steps
@@ -267,27 +297,28 @@ export function RecruiterJobPostWizard({
               <Input label="Posting as" value={organisationName} readOnly />
               <Input label="Company name" name="companyNameDisplay" defaultValue={organisationName} readOnly />
               <Input label="Job title" name="title" value={wizardState.title} onChange={(event) => updateWizardField('title', event.target.value)} placeholder="Senior Java Developer" required />
-              <Input label="Job location" name="location" value={wizardState.location} onChange={(event) => updateWizardField('location', event.target.value)} placeholder="Bengaluru, Hyderabad" required />
-              <Input label="Minimum experience" name="experienceMin" type="number" min="0" value={wizardState.experienceMin} onChange={(event) => updateWizardField('experienceMin', event.target.value)} required />
-              <Input label="Maximum experience" name="experienceMax" type="number" min="0" value={wizardState.experienceMax} onChange={(event) => updateWizardField('experienceMax', event.target.value)} required />
+              <div className="md:col-span-2">
+                <JobLocationSelector values={locations} onChange={(next) => { setLocations(next); setLocationError(''); }} required={locationRequired} />
+                {locationError ? <p className="mt-1.5 text-sm text-[var(--color-danger)]">{locationError}</p> : null}
+              </div>
               <div className="grid gap-2">
                 <span className="text-sm font-semibold text-[var(--color-text)]">Minimum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
                   <Input value={salaryMinAmount} onChange={(event) => setSalaryMinAmount(event.target.value)} placeholder="10" required />
-                  <select value={salaryMinUnit} onChange={(event) => setSalaryMinUnit(event.target.value)} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
+                  <Select value={salaryMinUnit} onChange={(event) => setSalaryMinUnit(event.target.value)}>
                     <option value="LAKH_PER_ANNUM">Lakh per annum</option>
                     <option value="CRORE_PER_ANNUM">Crore per annum</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
               <div className="grid gap-2">
                 <span className="text-sm font-semibold text-[var(--color-text)]">Maximum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
                   <Input value={salaryMaxAmount} onChange={(event) => setSalaryMaxAmount(event.target.value)} placeholder="25" required />
-                  <select value={salaryMaxUnit} onChange={(event) => setSalaryMaxUnit(event.target.value)} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
+                  <Select value={salaryMaxUnit} onChange={(event) => setSalaryMaxUnit(event.target.value)}>
                     <option value="LAKH_PER_ANNUM">Lakh per annum</option>
                     <option value="CRORE_PER_ANNUM">Crore per annum</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label className="flex items-start gap-2 md:col-span-2">
@@ -298,120 +329,44 @@ export function RecruiterJobPostWizard({
                   Salary will be used internally for matching and hiring intelligence but will not be displayed on the public job posting.
                 </span>
               </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Employment type</span>
-                <select name="employmentType" value={wizardState.employmentType} onChange={(event) => updateWizardField('employmentType', event.target.value)} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                  <option value="FULL_TIME">Full Time</option>
-                  <option value="PART_TIME">Part Time</option>
-                  <option value="CONTRACT">Contract</option>
-                  <option value="INTERN">Internship</option>
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Workplace</span>
-                <select name="workplaceType" value={wizardState.workplaceType} onChange={(event) => updateWizardField('workplaceType', event.target.value)} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                  <option value="">Select workplace</option>
-                  <option value="ONSITE">Onsite</option>
-                  <option value="HYBRID">Hybrid</option>
-                  <option value="REMOTE">Remote</option>
-                </select>
-              </label>
-              <Input label="Department" name="department" value={wizardState.department} onChange={(event) => updateWizardField('department', event.target.value)} placeholder="Engineering" />
+              <Select label="Employment type" name="employmentType" value={wizardState.employmentType} onChange={(event) => updateWizardField('employmentType', event.target.value)}>
+                <option value="FULL_TIME">Full Time</option>
+                <option value="PART_TIME">Part Time</option>
+                <option value="CONTRACT">Contract</option>
+                <option value="INTERN">Internship</option>
+              </Select>
+              <Select
+                label="Workplace"
+                name="workplaceType"
+                value={wizardState.workplaceType}
+                onChange={(event) => updateWizardField('workplaceType', event.target.value)}
+                helpText={wizardState.workplaceType === 'REMOTE' ? 'Job location is optional for fully remote roles.' : 'Job location is required for on-site and hybrid roles.'}
+              >
+                <option value="">Select workplace</option>
+                <option value="ONSITE">Onsite</option>
+                <option value="HYBRID">Hybrid</option>
+                <option value="REMOTE">Remote</option>
+              </Select>
               <Input label="Business unit" name="businessUnit" value={wizardState.businessUnit} onChange={(event) => updateWizardField('businessUnit', event.target.value)} placeholder="Product Engineering" />
               <Input label="Openings" name="numberOfOpenings" type="number" min="1" defaultValue="1" />
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Recruiter owner</span>
-                <select name="recruiterId" defaultValue="" className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                  <option value="">Use my recruiter account</option>
-                  {assignees.map((member) => (
-                    <option key={member.id} value={member.userId}>{member.user?.email || member.userId}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Hiring manager</span>
-                <select name="hiringManagerId" defaultValue="" className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                  <option value="">Select hiring manager</option>
-                  {assignees.map((member) => (
-                    <option key={member.id} value={member.userId}>{member.user?.email || member.userId}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2 md:col-span-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Approved requisition</span>
-                <select name="requisitionId" defaultValue="" className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                  <option value="">No linked requisition</option>
-                  {requisitions.map((requisition) => (
-                    <option key={requisition.id} value={requisition.id}>{requisition.requisitionCode} - {requisition.title}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </Card>
-        </div>
-
-        <div className={activeStep === 'candidate-preferences' ? undefined : 'hidden'}>
-          <Card className="grid gap-5">
-            <div>
-              <h2 className="text-2xl font-semibold text-[var(--color-text)]">Candidate Preferences</h2>
-              <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Capture the must-have skills and hiring expectations recruiters want to screen against.</p>
-            </div>
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Add skills</span>
-                <Input
-                  value={skillsInput}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    if (nextValue.includes(',')) {
-                      commitSkills(nextValue);
-                      return;
-                    }
-                    setSkillsInput(nextValue);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      commitSkills(skillsInput);
-                    }
-                  }}
-                  onBlur={() => commitSkills(skillsInput)}
-                  placeholder="Java, Spring Boot, AWS"
-                  helpText="Type a skill and use comma or Enter to add it."
-                />
-                <div className="flex flex-wrap gap-2">
-                  {skills.map((skill) => (
-                    <span key={skill} className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
-                      {skill}
-                      <button type="button" onClick={() => removeSkill(skill)} aria-label={`Remove ${skill}`}>
-                        <Trash2 size={12} aria-hidden="true" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Candidate qualifications</span>
-                <textarea
-                  name="requirements"
-                  value={wizardState.requirements}
-                  onChange={(event) => updateWizardField('requirements', event.target.value)}
-                  rows={6}
-                  className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]"
-                  placeholder={'Graduate\nPost Graduate\nRelevant domain experience'}
-                />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Preferred candidate profile</span>
-                <textarea
-                  name="responsibilities"
-                  value={wizardState.responsibilities}
-                  onChange={(event) => updateWizardField('responsibilities', event.target.value)}
-                  rows={6}
-                  className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]"
-                  placeholder={'Design backend services\nCollaborate with product and QA\nMentor team members'}
-                />
-              </label>
+              <Select label="Recruiter owner" name="recruiterId" defaultValue="">
+                <option value="">Use my recruiter account</option>
+                {assignees.map((member) => (
+                  <option key={member.id} value={member.userId}>{member.user?.email || member.userId}</option>
+                ))}
+              </Select>
+              <Select label="Hiring manager" name="hiringManagerId" defaultValue="">
+                <option value="">Select hiring manager</option>
+                {assignees.map((member) => (
+                  <option key={member.id} value={member.userId}>{member.user?.email || member.userId}</option>
+                ))}
+              </Select>
+              <Select label="Approved requisition" name="requisitionId" defaultValue="" className="md:col-span-2">
+                <option value="">No linked requisition</option>
+                {requisitions.map((requisition) => (
+                  <option key={requisition.id} value={requisition.id}>{requisition.requisitionCode} - {requisition.title}</option>
+                ))}
+              </Select>
             </div>
           </Card>
         </div>
@@ -442,16 +397,13 @@ export function RecruiterJobPostWizard({
                   </div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <Input label="Question" value={question.questionText} onChange={(event) => updateQuestion(question.localId, 'questionText', event.target.value)} placeholder="What is your current annual CTC?" />
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[var(--color-text)]">Answer type</span>
-                      <select value={question.questionType} onChange={(event) => updateQuestion(question.localId, 'questionType', event.target.value)} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]">
-                        <option value="SHORT_TEXT">Text</option>
-                        <option value="YES_NO">Yes / No</option>
-                        <option value="NUMBER">Number</option>
-                        <option value="SINGLE_SELECT">Single Select</option>
-                        <option value="MULTI_SELECT">Multi Select</option>
-                      </select>
-                    </label>
+                    <Select label="Answer type" value={question.questionType} onChange={(event) => updateQuestion(question.localId, 'questionType', event.target.value)}>
+                      <option value="SHORT_TEXT">Text</option>
+                      <option value="YES_NO">Yes / No</option>
+                      <option value="NUMBER">Number</option>
+                      <option value="SINGLE_SELECT">Single Select</option>
+                      <option value="MULTI_SELECT">Multi Select</option>
+                    </Select>
                     <Input label="Placeholder" value={question.placeholder} onChange={(event) => updateQuestion(question.localId, 'placeholder', event.target.value)} placeholder="Enter candidate answer" />
                     {(question.questionType === 'SINGLE_SELECT' || question.questionType === 'MULTI_SELECT') ? (
                       <Input label="Options" value={question.options} onChange={(event) => updateQuestion(question.localId, 'options', event.target.value)} placeholder="Yes, No, Maybe" />
@@ -468,88 +420,114 @@ export function RecruiterJobPostWizard({
         </div>
 
         <div className={activeStep === 'job-description' ? undefined : 'hidden'}>
-          <Card className="grid gap-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-              <h2 className="text-2xl font-semibold text-[var(--color-text)]">Job Description</h2>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Write the recruiter-facing brief, then add responsibilities, requirements, and benefits in structured lists.</p>
-              </div>
-              <Button type="button" variant="outline" onClick={handleGenerateJobDescription} disabled={generatingDescription || wizardState.title.trim().length < 2}>
-                <Sparkles size={16} aria-hidden="true" />
-                {generatedDescription ? 'Regenerate' : 'Generate with AI'}
-              </Button>
-            </div>
-            <div className="grid gap-4">
-              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-4">
-                <p className="text-sm font-semibold text-[var(--color-text)]">About company preview</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                  {organisationAbout || 'Add an organisation overview on the recruiter Home page to auto-fill company context here.'}
-                </p>
-              </div>
-              {generatingDescription ? (
-                <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-text-secondary)]">
-                  <LoaderCircle className="animate-spin" size={18} aria-hidden="true" />
-                  Generating recruiter-reviewable job description...
+          <div className="grid gap-5">
+            <Card className="grid gap-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold text-[var(--color-text)]">Job Description</h2>
+                  <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Write the recruiter-facing brief, then add responsibilities, requirements, and benefits in structured lists.</p>
                 </div>
-              ) : null}
-              {generationError ? (
-                <div className="rounded-[var(--radius-lg)] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
-                  {generationError}
+                <Button type="button" variant="outline" onClick={handleGenerateJobDescription} disabled={generatingDescription || wizardState.title.trim().length < 2}>
+                  <Sparkles size={16} aria-hidden="true" />
+                  {generatedDescription ? 'Regenerate' : 'Generate with AI'}
+                </Button>
+              </div>
+              <div className="grid gap-4">
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-4">
+                  <p className="text-sm font-semibold text-[var(--color-text)]">About company preview</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+                    {organisationAbout || 'Add an organisation overview on the recruiter Home page to auto-fill company context here.'}
+                  </p>
                 </div>
-              ) : null}
-              {generatedDescription ? (
-                <div className="grid gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--color-text)]">AI-generated draft</p>
-                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Review the generated summary and apply it only when you want to replace the current draft.</p>
-                    </div>
-                    <Button type="button" variant="outline" onClick={applyGeneratedDescription}>
-                      Apply generated content
-                    </Button>
+                {generatingDescription ? (
+                  <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-text-secondary)]">
+                    <LoaderCircle className="animate-spin" size={18} aria-hidden="true" />
+                    Generating recruiter-reviewable job description...
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">Job summary</p>
-                      <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{generatedDescription.summary || 'No summary generated yet.'}</p>
+                ) : null}
+                {generationError ? (
+                  <div className="rounded-[var(--radius-lg)] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                    {generationError}
+                  </div>
+                ) : null}
+                {generatedDescription ? (
+                  <div className="grid gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--color-text)]">AI-generated draft</p>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Review the generated summary and apply it only when you want to replace the current draft.</p>
+                      </div>
+                      <Button type="button" variant="outline" onClick={applyGeneratedDescription}>
+                        Apply generated content
+                      </Button>
                     </div>
-                    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">Required skills</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {generatedDescription.requiredSkills.length ? generatedDescription.requiredSkills.map((skill) => (
-                          <span key={skill} className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{skill}</span>
-                        )) : <p className="text-sm text-[var(--color-text-secondary)]">No required skills generated.</p>}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
+                        <p className="text-sm font-semibold text-[var(--color-text)]">Job summary</p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{generatedDescription.summary || 'No summary generated yet.'}</p>
+                      </div>
+                      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
+                        <p className="text-sm font-semibold text-[var(--color-text)]">Required skills</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {generatedDescription.requiredSkills.length ? generatedDescription.requiredSkills.map((skill) => (
+                            <span key={skill} className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{skill}</span>
+                          )) : <p className="text-sm text-[var(--color-text-secondary)]">No required skills generated.</p>}
+                        </div>
+                      </div>
+                      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
+                        <p className="text-sm font-semibold text-[var(--color-text)]">Responsibilities</p>
+                        <ul className="mt-2 grid gap-2 text-sm text-[var(--color-text-secondary)]">
+                          {generatedDescription.responsibilities.length ? generatedDescription.responsibilities.map((item) => (
+                            <li key={item}>{item}</li>
+                          )) : <li>No responsibilities generated.</li>}
+                        </ul>
+                      </div>
+                      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
+                        <p className="text-sm font-semibold text-[var(--color-text)]">Review notes</p>
+                        <ul className="mt-2 grid gap-2 text-sm text-[var(--color-text-secondary)]">
+                          {[...generatedDescription.assumptions, ...generatedDescription.missingFields].length
+                            ? [...generatedDescription.assumptions, ...generatedDescription.missingFields].map((item) => <li key={item}>{item}</li>)
+                            : <li>No review notes.</li>}
+                        </ul>
                       </div>
                     </div>
-                    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">Responsibilities</p>
-                      <ul className="mt-2 grid gap-2 text-sm text-[var(--color-text-secondary)]">
-                        {generatedDescription.responsibilities.length ? generatedDescription.responsibilities.map((item) => (
-                          <li key={item}>{item}</li>
-                        )) : <li>No responsibilities generated.</li>}
-                      </ul>
-                    </div>
-                    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-4">
-                      <p className="text-sm font-semibold text-[var(--color-text)]">Review notes</p>
-                      <ul className="mt-2 grid gap-2 text-sm text-[var(--color-text-secondary)]">
-                        {[...generatedDescription.assumptions, ...generatedDescription.missingFields].length
-                          ? [...generatedDescription.assumptions, ...generatedDescription.missingFields].map((item) => <li key={item}>{item}</li>)
-                          : <li>No review notes.</li>}
-                      </ul>
-                    </div>
                   </div>
-                </div>
-              ) : null}
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Job summary</span>
-                <textarea name="description" value={wizardState.description} onChange={(event) => updateWizardField('description', event.target.value)} rows={8} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder="Write the job summary, role scope, and why the opportunity matters." required />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Perks & benefits</span>
-                <textarea name="benefits" value={wizardState.benefits} onChange={(event) => updateWizardField('benefits', event.target.value)} rows={5} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder={'Health insurance\nProvident fund\nFlexible working'} />
-              </label>
-            </div>
-          </Card>
+                ) : null}
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Job summary</span>
+                  <textarea name="description" value={wizardState.description} onChange={(event) => updateWizardField('description', event.target.value)} rows={8} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder="Write the job summary, role scope, and why the opportunity matters." required />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Key responsibilities</span>
+                  <textarea name="responsibilities" value={wizardState.responsibilities} onChange={(event) => updateWizardField('responsibilities', event.target.value)} rows={6} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder={'Design backend services\nCollaborate with product and QA\nMentor team members'} />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Perks & benefits</span>
+                  <textarea name="benefits" value={wizardState.benefits} onChange={(event) => updateWizardField('benefits', event.target.value)} rows={5} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder={'Health insurance\nProvident fund\nFlexible working'} />
+                </label>
+              </div>
+            </Card>
+
+            {/* Required order (feature/job-post-naukri-redesign): Job Description,
+                Add Skills, Candidate Qualifications, Preferred Candidate Profile -
+                all three sit immediately below the description editor above. */}
+            <Card>
+              <SkillsSelector label="Add skills" value={skills} onChange={setSkills} required />
+            </Card>
+
+            <CandidateQualificationsFields
+              experienceMin={wizardState.experienceMin}
+              experienceMax={wizardState.experienceMax}
+              onExperienceMinChange={(value) => updateWizardField('experienceMin', value)}
+              onExperienceMaxChange={(value) => updateWizardField('experienceMax', value)}
+              department={wizardState.department}
+              onDepartmentChange={(value) => updateWizardField('department', value)}
+              value={candidateQualifications}
+              onChange={setCandidateQualifications}
+            />
+
+            <PreferredCandidateProfileAccordion value={preferredCandidateProfile} onChange={setPreferredCandidateProfile} />
+          </div>
         </div>
 
         <div className={activeStep === 'communication' ? undefined : 'hidden'}>
@@ -598,15 +576,31 @@ export function RecruiterJobPostWizard({
               <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Confirm the core role details before saving a draft or publishing the job.</p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
+              <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
+                <p className="text-sm font-semibold text-[var(--color-text)]">Job locations</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {locations.length ? locations.map((location) => (
+                    <span key={location} className="max-w-full truncate rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{location}</span>
+                  )) : <p className="text-sm text-[var(--color-text-secondary)]">No locations selected yet.</p>}
+                </div>
+              </div>
+              <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
                 <p className="text-sm font-semibold text-[var(--color-text)]">Skills</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {skills.length ? skills.map((skill) => (
-                    <span key={skill} className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{skill}</span>
+                    <span key={skill} className="max-w-full truncate rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{skill}</span>
                   )) : <p className="text-sm text-[var(--color-text-secondary)]">No skills added yet.</p>}
                 </div>
               </div>
-              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
+              <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
+                <p className="text-sm font-semibold text-[var(--color-text)]">Candidate qualifications</p>
+                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                  {wizardState.experienceMin || 0}-{wizardState.experienceMax || 0} yrs
+                  {candidateQualifications.minimumQualification ? ` • ${candidateQualifications.minimumQualification.toUpperCase()}` : ''}
+                  {candidateQualifications.industry ? ` • ${candidateQualifications.industry}` : ''}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
                 <p className="text-sm font-semibold text-[var(--color-text)]">Screening questions</p>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{screeningQuestions.filter((item) => item.questionText).length} questions will be attached after the job is created.</p>
               </div>
