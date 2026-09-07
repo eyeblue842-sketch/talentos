@@ -19,7 +19,11 @@ export function CareerizAppShell({
   defaultProfileExpanded = false,
   maxWidthClassName = 'max-w-7xl',
   paddingClassName = 'px-4 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8',
-  sidebarCollapsible = false,
+  // Collapsed-by-default, hover/keyboard-expand navigation is now the
+  // application-wide standard (see Sidebar/useCollapsibleRail) - opting a
+  // page OUT requires passing sidebarCollapsible={false} explicitly, which
+  // no caller currently does.
+  sidebarCollapsible = true,
   rightContext = null,
   pageTitle,
   pageDescription,

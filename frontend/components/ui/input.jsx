@@ -36,14 +36,14 @@ export function Input({
   const describedBy = [helpText ? `${inputId}-help` : null, error ? `${inputId}-error` : null].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className={cn('grid gap-2.5', className)}>
+    <div className={cn('grid min-w-0 max-w-full gap-2.5', className)}>
       {label ? (
-        <label htmlFor={inputId} className="text-sm font-semibold text-[var(--color-text)]">
+        <label htmlFor={inputId} className="truncate text-sm font-semibold text-[var(--color-text)]">
           {label}
           {required ? <span className="ml-1 text-[var(--color-danger)]">*</span> : null}
         </label>
       ) : null}
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full">
         {LeadingIcon ? <LeadingIcon aria-hidden="true" size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" /> : null}
         <input
           id={inputId}

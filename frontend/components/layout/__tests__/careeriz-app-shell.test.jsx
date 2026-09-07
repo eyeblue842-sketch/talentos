@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { axe } from 'vitest-axe';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { Sidebar } from '@/components/layout/sidebar';
@@ -27,6 +27,21 @@ describe('CareerizAppShell / collapsible navigation rail', () => {
     render(<Sidebar brand="Careeriz" items={recruiterNav} collapsible />);
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('CareerizAppShell renders the collapsible rail by default (sidebarCollapsible defaults to true) across recruiter, candidate, and admin navigation sets', () => {
+    [recruiterNav, candidateNav, adminNav].forEach((navItems, index) => {
+      const { unmount } = render(
+        <CareerizAppShell brand="Careeriz" items={navItems}>
+          <div>Workspace content {index}</div>
+        </CareerizAppShell>,
+      );
+      // Omitting sidebarCollapsible entirely (no page in the app currently
+      // passes it as false) must still produce the collapsed-by-default
+      // hover/keyboard rail, not the old permanently-wide static aside.
+      expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+      unmount();
+    });
   });
 
   test('hovering the collapsed rail temporarily expands it, and pointer-leave closes it again', () => {
@@ -175,25 +190,51 @@ describe('CareerizAppShell / collapsible navigation rail', () => {
     expect(screen.getByRole('link', { name: 'Billing' })).toBeInTheDocument();
   });
 
-  test('collapsed-rail icons show a visible tooltip on keyboard focus, not just an aria-label', () => {
-    // Focus (not hover) deliberately: React's onMouseEnter/onMouseLeave
-    // propagate special "entered/left" semantics up through ancestors
-    // (unlike native mouseenter), so firing it on a nested icon here would
-    // also trigger the rail's OWN hover-to-expand handler one level up,
-    // which then aria-hides this whole collapsed rail (correctly, since
-    // it's now expanded) - masking the very tooltip being tested. Focus
-    // has no such interaction and is the more load-bearing a11y check
-    // here in any case (keyboard users, not just mouse users, need the
-    // label).
+  // A standalone "tooltip shows on hover while the rail stays collapsed"
+  // test is no longer expressible: React's onMouseEnter bubbles specially
+  // (see the file-level note above), so hovering ANY collapsed-rail icon
+  // now also fires the rail's own hover-to-expand handler one level up -
+  // by design, matching "moves the cursor over the sidebar, it expands".
+  // The pre-existing "hovering the collapsed rail temporarily expands it"
+  // test above already covers that real, reachable interaction.
+
+  test('focusing a collapsed-rail icon expands the rail so keyboard users reach the real label, superseding the hover-only tooltip; blur collapses it back', async () => {
+    // Keyboard focus now bubbles up through the rail container exactly like
+    // hover does (see useCollapsibleRail's handleFocus/handleBlur), so
+    // Tab-ing onto a collapsed icon expands the full panel with real,
+    // focusable link text rather than only a floating tooltip label. Uses
+    // real .focus()/.blur() wrapped in act() (not fireEvent.focus/blur,
+    // which only dispatch the event without moving document.activeElement)
+    // since handleBlur's deferred check reads document.activeElement, and
+    // act() is required for React to flush the resulting state update
+    // synchronously before the assertion runs.
     render(<Sidebar brand="Careeriz" items={recruiterNav} collapsible />);
     const membersLink = screen.getByRole('link', { name: 'Members' });
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Expanded navigation' })).not.toBeInTheDocument();
 
-    fireEvent.focus(membersLink);
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Members');
+    act(() => { membersLink.focus(); });
+    expect(screen.getByRole('complementary', { name: 'Expanded navigation' })).toBeInTheDocument();
 
-    fireEvent.blur(membersLink);
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    act(() => { membersLink.blur(); });
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Expanded navigation' })).not.toBeInTheDocument());
+  });
+
+  test('focus moving between two elements inside the rail keeps it expanded (does not collapse mid-tab)', async () => {
+    render(<Sidebar brand="Careeriz" items={recruiterNav} collapsible />);
+    const membersLink = screen.getByRole('link', { name: 'Members' });
+    const billingLink = screen.getByRole('link', { name: 'Billing' });
+
+    act(() => { membersLink.focus(); });
+    expect(screen.getByRole('complementary', { name: 'Expanded navigation' })).toBeInTheDocument();
+
+    act(() => {
+      membersLink.blur();
+      billingLink.focus();
+    });
+    // The deferred blur check (next tick) must see focus has already moved
+    // to another element still inside the rail, and must not collapse it.
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(screen.getByRole('complementary', { name: 'Expanded navigation' })).toBeInTheDocument();
   });
 
   test('a nav item with a badgeCount shows an accessible count badge; items without one show none', () => {

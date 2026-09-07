@@ -21,14 +21,14 @@ export function Select({
   const describedBy = [helpText ? `${selectId}-help` : null, error ? `${selectId}-error` : null].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className={cn('grid gap-2.5', className)}>
+    <div className={cn('grid min-w-0 max-w-full gap-2.5', className)}>
       {label ? (
-        <label htmlFor={selectId} className="text-sm font-semibold text-[var(--color-text)]">
+        <label htmlFor={selectId} className="truncate text-sm font-semibold text-[var(--color-text)]">
           {label}
           {required ? <span className="ml-1 text-[var(--color-danger)]">*</span> : null}
         </label>
       ) : null}
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full">
         <select
           id={selectId}
           required={required}
@@ -36,7 +36,7 @@ export function Select({
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy}
           className={cn(
-            'w-full appearance-none rounded-[var(--radius-md)] border bg-[var(--color-bg-card)] px-3.5 py-2.5 pr-10 text-sm text-[var(--color-text)] shadow-[var(--shadow-sm)]',
+            'w-full min-w-0 max-w-full truncate appearance-none rounded-[var(--radius-md)] border bg-[var(--color-bg-card)] px-3.5 py-2.5 pr-10 text-sm text-[var(--color-text)] shadow-[var(--shadow-sm)]',
             'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]',
             error ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)] focus:border-[var(--color-primary)]',
             disabled ? 'cursor-not-allowed bg-[var(--color-bg-muted)] text-[var(--color-text-disabled)]' : '',

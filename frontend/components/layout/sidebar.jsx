@@ -93,6 +93,8 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
     expandAndPin: expandAndPinRail,
     handleMouseEnter: handleRailMouseEnter,
     handleMouseLeave: handleRailMouseLeave,
+    handleFocus: handleRailFocus,
+    handleBlur: handleRailBlur,
   } = useCollapsibleRail({ persistKey: collapsible ? RAIL_PINNED_STORAGE_KEY : null, defaultExpanded: false });
   const [lastSeenPathname, setLastSeenPathname] = useState(pathname);
 
@@ -347,6 +349,8 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
           className="sticky top-6 hidden self-start lg:block"
           onMouseEnter={handleRailMouseEnter}
           onMouseLeave={handleRailMouseLeave}
+          onFocus={handleRailFocus}
+          onBlur={handleRailBlur}
         >
           <aside
             aria-hidden={railExpanded}
@@ -420,7 +424,10 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
           </aside>
 
           {railExpanded ? (
-            <aside aria-label="Expanded navigation" className="absolute left-0 top-0 z-40 flex w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]">
+            <aside
+              aria-label="Expanded navigation"
+              className="rail-panel-enter absolute left-0 top-0 z-40 flex w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]"
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={brand} size="md" />

@@ -251,6 +251,25 @@ select {
   background: rgba(82, 56, 157, 0.18);
 }
 
+/* Entrance-only animation for the collapsible app-shell nav rail's expanded
+   overlay panel (sidebar.jsx) - it mounts/unmounts with `railExpanded`
+   rather than staying always-rendered, so only the appearance needs to
+   animate; disappearance is the existing instant unmount. */
+@keyframes rail-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.rail-panel-enter {
+  animation: rail-panel-enter 180ms ease-out;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

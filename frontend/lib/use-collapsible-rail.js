@@ -107,6 +107,29 @@ export function useCollapsibleRail({ persistKey, defaultExpanded = false } = {})
     if (!pinned) setExpanded(false);
   }
 
+  // Keyboard-focus mirrors hover: a Tab into any element inside the rail
+  // (a collapsed icon link, then the expanded panel's links once expanded)
+  // must expand it, and it must stay expanded for as long as focus is
+  // anywhere inside - not just on the first focused element. React's onFocus
+  // uses the focusin-equivalent bubble phase, so attaching this once on the
+  // rail's outer container (not on every individual link) is sufficient.
+  function handleFocus() {
+    setExpanded(true);
+  }
+
+  // onBlur fires before the newly-focused element is committed, so
+  // relatedTarget/activeElement checks here would race a focus move to
+  // another element still inside the same container. Deferring to the next
+  // tick reads the settled document.activeElement instead.
+  function handleBlur() {
+    if (pinned) return;
+    window.setTimeout(() => {
+      if (containerRef.current && !containerRef.current.contains(document.activeElement)) {
+        setExpanded(false);
+      }
+    }, 0);
+  }
+
   return {
     expanded,
     pinned,
@@ -117,5 +140,7 @@ export function useCollapsibleRail({ persistKey, defaultExpanded = false } = {})
     togglePin,
     handleMouseEnter,
     handleMouseLeave,
+    handleFocus,
+    handleBlur,
   };
 }
