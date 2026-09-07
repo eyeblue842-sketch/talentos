@@ -6,6 +6,7 @@ import { normalizeOfficeLocations } from '../utils/email.js';
 import { serializeAuthSession, serializeRecruiterProfile, serializeUser } from '../serializers/index.js';
 import { issueAuthToken, consumeAuthToken, peekAuthTokenByRawToken, issueNumericOtp, invalidTokenError } from './authTokenService.js';
 import { sendEmailVerificationEmail, sendPasswordResetEmail, sendPasswordResetOtpEmail } from './emailService.js';
+import { assertAccountLoginable } from './accountStatusService.js';
 
 // Mirrors frontend/lib/roles.js's isSafeInternalPath() - only ever used to
 // decide whether a client-supplied "return to this page after reset" hint
@@ -183,6 +184,13 @@ export async function loginUser(email, password) {
     error.statusCode = 401;
     throw error;
   }
+
+  // Must run before ensureVerifiedUser() (and before any token is issued
+  // further down) - checking account-active status first means a
+  // deactivated-and-unverified account gets the same generic response as a
+  // deactivated-and-verified one, rather than leaking verification state
+  // through a different error path.
+  await assertAccountLoginable(user, { channel: 'password' });
 
   ensureVerifiedUser(user);
 

@@ -17,6 +17,7 @@ import {
   requireEnterprisePermission,
 } from './enterprisePermissionService.js';
 import { createOrganisationInvitation } from './organisationInvitationService.js';
+import { assertOwnershipInvariant } from './organisationAccessService.js';
 import { getOrganisationAnalyticsMetrics } from '../intelligence/services/analyticsMetricsService.js';
 
 function asNullOrTrimmed(value) {
@@ -381,7 +382,39 @@ export async function updateEnterpriseUserMembership(actorUser, payload, organis
     throw error;
   }
 
+  // Mirrors the exact same field-precedence the writes below use
+  // (accountStatus wins over membership status if both are given, then
+  // falls back to the current value) so this predicts the real resulting
+  // state, not an approximation of it.
+  const nextRole = payload.role || existing.role;
+  const nextMembershipStatus = payload.status || existing.status;
+  const nextAccountStatus = payload.accountStatus || existing.user.accountStatus;
+  const nextIsActive = payload.accountStatus
+    ? payload.accountStatus === 'ACTIVE'
+    : payload.status
+      ? payload.status === 'ACTIVE'
+      : existing.user.isActive;
+
+  const wasActiveOwner = existing.role === 'OWNER'
+    && existing.status === 'ACTIVE'
+    && existing.user.isActive
+    && existing.user.accountStatus === 'ACTIVE';
+  const willBeActiveOwner = nextRole === 'OWNER'
+    && nextMembershipStatus === 'ACTIVE'
+    && nextIsActive
+    && nextAccountStatus === 'ACTIVE';
+
   const updated = await prisma.$transaction(async (tx) => {
+    // Checked first, inside the same transaction as the writes it guards -
+    // see assertOwnershipInvariant's own comment for why a plain count on
+    // its own would not be race-safe here.
+    await assertOwnershipInvariant(tx, {
+      organisationId: context.organisationId,
+      membershipId: existing.id,
+      wasActiveOwner,
+      willBeActiveOwner,
+    });
+
     const membership = await tx.organisationMembership.update({
       where: { id: existing.id },
       data: {

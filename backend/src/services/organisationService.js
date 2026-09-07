@@ -1,7 +1,7 @@
 import slugify from 'slugify';
 import { prisma } from '../config/db.js';
 import { serializeOrganisation, serializeOrganisationMembership, serializeOrganisationPost } from '../serializers/index.js';
-import { canManageMembers, requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
+import { assertOwnershipInvariant, canManageMembers, requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { createNotification } from './notificationService.js';
 import { recordAuditLog } from './auditLogService.js';
 
@@ -306,13 +306,39 @@ export async function updateOrganisationMember(actorUser, membershipId, payload,
     throw error;
   }
 
-  const updated = await prisma.organisationMembership.update({
-    where: { id: membershipId },
-    data: {
-      role: payload.role || undefined,
-      status: payload.status || undefined,
-    },
-    include: { organisation: true, user: true },
+  // This is the org-self-service twin of adminService.updateEnterpriseUserMembership
+  // (that one is the platform/enterprise-admin path, this one is any
+  // OWNER/ADMIN of the org itself) - it can equally demote/deactivate the
+  // sole owner's membership and needs the identical guard. It never touches
+  // the User row (only role/status on the membership), so only those two
+  // fields can move the "active usable owner" state here.
+  const nextRole = payload.role || membership.role;
+  const nextStatus = payload.status || membership.status;
+  const wasActiveOwner = membership.role === 'OWNER'
+    && membership.status === 'ACTIVE'
+    && membership.user.isActive
+    && membership.user.accountStatus === 'ACTIVE';
+  const willBeActiveOwner = nextRole === 'OWNER'
+    && nextStatus === 'ACTIVE'
+    && membership.user.isActive
+    && membership.user.accountStatus === 'ACTIVE';
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await assertOwnershipInvariant(tx, {
+      organisationId: context.organisationId,
+      membershipId,
+      wasActiveOwner,
+      willBeActiveOwner,
+    });
+
+    return tx.organisationMembership.update({
+      where: { id: membershipId },
+      data: {
+        role: payload.role || undefined,
+        status: payload.status || undefined,
+      },
+      include: { organisation: true, user: true },
+    });
   });
 
   await recordAuditLog({

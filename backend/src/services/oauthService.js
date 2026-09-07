@@ -5,6 +5,7 @@ import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
 import { consumeAuthToken, issueAuthToken } from './authTokenService.js';
+import { assertAccountLoginable } from './accountStatusService.js';
 import { serializeAuthSession, serializeUser } from '../serializers/index.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
 import {
@@ -426,6 +427,13 @@ async function finalizeOAuthCallback(provider, code, stateValue) {
       emailVerified: profile.emailVerified,
     });
 
+    // Must run before any token (including the short-lived OAUTH_HANDOFF
+    // token below) is issued for this user - blocks both the redirect-based
+    // and direct-POST OAuth entry points, which both call this function.
+    // A brand-new user is always ACTIVE at creation, so this is a no-op on
+    // that path.
+    await assertAccountLoginable(user, { channel: 'oauth' });
+
     if (user.candidateProfile) {
       await touchCandidateLastActive(user.candidateProfile.id);
     }
@@ -464,6 +472,13 @@ export async function handleOAuthCallbackRedirect(provider, code, stateValue) {
 
 export async function exchangeOAuthSessionToken(token) {
   const authToken = await consumeAuthToken(token, 'OAUTH_HANDOFF', { includeUser: true });
+
+  // Re-checked here (not just in finalizeOAuthCallback above) to close the
+  // race window between the handoff token being issued and it being
+  // redeemed - an account deactivated during that window must still be
+  // blocked at the point a real JWT is about to be minted.
+  await assertAccountLoginable(authToken.user, { channel: 'oauth-exchange' });
+
   const jwt = signToken({
     userId: authToken.user.id,
     role: authToken.user.role,
