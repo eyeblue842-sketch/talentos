@@ -518,6 +518,112 @@ test('duplicate active invitations are prevented and cross-organisation invite m
   );
 });
 
+test('invitation emails carry the canonical accept link (route + non-empty token param) and the raw token is never persisted', async () => {
+  const { __getSentEmails: getSentEmails, __resetSentEmails: resetSentEmails } = await import('../services/emailService.js');
+  resetSentEmails();
+
+  await createOrganisationInvitation(actor('owner-1'), {
+    email: 'link-check@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+
+  const sent = getSentEmails();
+  assert.equal(sent.length, 1);
+  const match = sent[0].text.match(/\/auth\/invitations\/accept\?token=([^\s]+)/);
+  assert.ok(match, 'Expected the canonical accept URL with a token param in the email body.');
+  const [, rawTokenFromEmail] = match;
+  assert.ok(rawTokenFromEmail.length > 0);
+
+  const stored = state.invitations.at(-1);
+  assert.equal(stored.tokenHash, (await import('crypto')).createHash('sha256').update(rawTokenFromEmail).digest('hex'));
+  // The raw token must never appear anywhere on the persisted row - only its hash.
+  assert.equal(JSON.stringify(stored).includes(rawTokenFromEmail), false);
+});
+
+test('an expired invitation is rejected with a distinct, safe message and never leaks the token', async () => {
+  const invitation = await createOrganisationInvitation(actor('owner-1'), {
+    email: 'expired-check@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+  const stored = state.invitations.find((item) => item.id === invitation.id);
+  stored.expiresAt = new Date(Date.now() - 1000);
+
+  const rawToken = 'expired-token-value';
+  stored.tokenHash = (await import('crypto')).createHash('sha256').update(rawToken).digest('hex');
+
+  await assert.rejects(
+    () => getInvitationByToken(rawToken),
+    (error) => {
+      assert.match(error.message, /expired/i);
+      assert.equal(error.message.includes(rawToken), false);
+      return true;
+    }
+  );
+});
+
+test('a revoked invitation cannot be accepted and reports a distinct, safe message', async () => {
+  const invitation = await createOrganisationInvitation(actor('owner-1'), {
+    email: 'revoke-accept-check@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+  const rawToken = 'revoke-accept-token';
+  state.invitations.find((item) => item.id === invitation.id).tokenHash =
+    (await import('crypto')).createHash('sha256').update(rawToken).digest('hex');
+
+  await revokeOrganisationInvitation(actor('owner-1'), invitation.id, 'org-1');
+
+  state.users.push({ id: 'revoked-invitee-1', email: 'revoke-accept-check@acme.com', role: 'RECRUITER', isActive: true });
+  await assert.rejects(
+    () => acceptOrganisationInvitation(actor('revoked-invitee-1'), rawToken),
+    (error) => {
+      assert.match(error.message, /revoked/i);
+      assert.equal(error.message.includes(rawToken), false);
+      return true;
+    }
+  );
+});
+
+test('a missing/garbage token is rejected with a generic "not found" message that never echoes the input', async () => {
+  const garbageToken = 'this-token-does-not-exist-at-all';
+  await assert.rejects(
+    () => getInvitationByToken(garbageToken),
+    (error) => {
+      assert.match(error.message, /not found/i);
+      assert.equal(error.message.includes(garbageToken), false);
+      return true;
+    }
+  );
+});
+
+test('invitation create/resend audit log entries never contain the raw token', async () => {
+  await createOrganisationInvitation(actor('owner-1'), {
+    email: 'audit-check@acme.com',
+    role: 'RECRUITER',
+  }, 'org-1');
+  const invitation = state.invitations.at(-1);
+  await resendOrganisationInvitation(actor('owner-1'), invitation.id, 'org-1');
+
+  const relevantLogs = state.auditLogs.filter((item) => item.entityId === invitation.id);
+  assert.ok(relevantLogs.length >= 2);
+  for (const log of relevantLogs) {
+    const serialized = JSON.stringify(log);
+    assert.equal(/[0-9a-f]{64}/i.test(serialized), false, 'Audit log must not contain a raw 32-byte hex invitation token.');
+  }
+});
+
+test('the canonical invitation accept URL is built identically for localhost and 127.0.0.1 frontend origins', async () => {
+  const { buildInvitationAcceptUrl } = await import('@careeriz/shared');
+  const rawToken = 'origin-parity-token';
+
+  const localhostUrl = buildInvitationAcceptUrl('http://localhost:3000', rawToken);
+  const loopbackUrl = buildInvitationAcceptUrl('http://127.0.0.1:3000', rawToken);
+
+  assert.equal(localhostUrl.pathname, '/auth/invitations/accept');
+  assert.equal(loopbackUrl.pathname, '/auth/invitations/accept');
+  assert.equal(localhostUrl.searchParams.get('token'), rawToken);
+  assert.equal(loopbackUrl.searchParams.get('token'), rawToken);
+});
+
 test('requisition creation and approval obey organisation roles', async () => {
   const requisition = await createRequisition(actor('recruiter-1'), {
     requisitionCode: 'REQ-100',

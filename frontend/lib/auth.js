@@ -48,7 +48,11 @@ export async function requestBackend(path, options = {}, token) {
 
   const body = await parseJson(response);
   if (!response.ok) {
-    const error = new Error(body?.message || `Request failed for ${path}`);
+    // Never falls back to interpolating `path` here - several call sites
+    // (e.g. the invitation-token lookup) embed a raw secret token as a URL
+    // segment, and that path would otherwise end up in a thrown Error's
+    // message, which callers routinely render straight to the page.
+    const error = new Error(body?.message || `Request failed with status ${response.status}.`);
     error.statusCode = response.status;
     error.details = body?.details;
     throw error;

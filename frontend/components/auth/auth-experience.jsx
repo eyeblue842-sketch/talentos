@@ -228,6 +228,13 @@ export function AuthExperience({
         payload.fullName = registerForm.fullName.trim();
       }
 
+      // Preserved so the emailed verification link can send the user back
+      // here once they've verified (e.g. an organisation invitation they
+      // arrived from) - see registerUser/confirmEmailVerification.
+      if (initialSearchParams.next) {
+        payload.next = initialSearchParams.next;
+      }
+
       const response = await postJson('/api/auth/signup', payload);
       const pendingDomainReview = audience === 'employer'
         && employerType === 'COMPANY'

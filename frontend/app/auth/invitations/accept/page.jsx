@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { buildInvitationAcceptPath, INVITATION_TOKEN_PARAM } from '@careeriz/shared';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -10,7 +11,7 @@ import { getCurrentUser } from '@/lib/auth';
 
 export default async function InvitationAcceptPage({ searchParams }) {
   const params = await searchParams;
-  const token = typeof params?.token === 'string' ? params.token : '';
+  const token = typeof params?.[INVITATION_TOKEN_PARAM] === 'string' ? params[INVITATION_TOKEN_PARAM] : '';
   const user = await getCurrentUser();
 
   if (!token) {
@@ -39,7 +40,7 @@ export default async function InvitationAcceptPage({ searchParams }) {
   // tell us which recruiter type the invitee should authenticate as), so per
   // the employer-login contract they route through the /hire chooser rather
   // than straight to /hire/login or /hire/register.
-  const employerEntryHref = buildPathWithParams(employerAuthRoutes.landing, { next: `/auth/invitations/accept?token=${encodeURIComponent(token)}` });
+  const employerEntryHref = buildPathWithParams(employerAuthRoutes.landing, { next: buildInvitationAcceptPath(token) });
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">

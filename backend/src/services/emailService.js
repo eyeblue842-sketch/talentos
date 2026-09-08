@@ -5,6 +5,11 @@ import { enqueueBackgroundTask } from './backgroundTaskService.js';
 
 const sentEmails = [];
 
+// Exported so a real-SMTP-acceptance test can send with the exact same
+// transfer-encoding deliverEmail() below uses, instead of the two drifting
+// apart silently.
+export const TRANSACTIONAL_EMAIL_ENCODING = 'base64';
+
 // Exported (with an overridable config) so a test can point a real transport
 // at a local SMTP listener without needing the app's own test-mode gate
 // (env.isTest, always true under this project's `node --test` runner) to be
@@ -133,6 +138,14 @@ async function deliverEmail({ to, subject, text }) {
     to,
     subject,
     text,
+    // Forces base64 instead of nodemailer's default quoted-printable, which
+    // soft-wraps at ~76 chars (RFC 2045) - long transactional URLs (password
+    // reset, email verification, invitation accept links) sit right at that
+    // boundary, so QP would sometimes split the line inside the query
+    // string and silently drop it for email clients that auto-link before
+    // rejoining soft-wrapped lines. Base64 has no line-break-vs-content
+    // ambiguity.
+    encoding: TRANSACTIONAL_EMAIL_ENCODING,
   });
 }
 
@@ -249,12 +262,21 @@ export async function sendEmailVerificationEmail(to, token) {
   });
 }
 
-export async function sendOrganisationInvitationEmail({ to, organisationName, role, invitationUrl, expiresAt }) {
-  await sendTransactionalEmail({
+// Exported alongside buildPasswordResetEmailMessage/buildPasswordResetOtpEmailMessage
+// above so a real-SMTP-acceptance test can construct and send the exact same
+// message the app sends without going through the transport-selection gate.
+export function buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt }) {
+  return {
     to,
     subject: `Join ${organisationName} on Careeriz Hire`,
     text: `You were invited to join ${organisationName} on Careeriz Hire as ${role}. Use this link before ${dayjs(expiresAt).format('DD MMM YYYY, hh:mm A')}: ${invitationUrl}`,
-  });
+  };
+}
+
+export async function sendOrganisationInvitationEmail({ to, organisationName, role, invitationUrl, expiresAt }) {
+  await sendTransactionalEmail(
+    buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt })
+  );
 }
 
 export async function sendOfferReleasedEmail({ to, candidateName, jobTitle, organisationName, offerUrl, expiryAt }) {

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { buildInvitationAcceptUrl } from '@careeriz/shared';
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { serializeOrganisationInvitation } from '../serializers/index.js';
@@ -114,8 +115,7 @@ async function ensureNoDuplicateActiveInvitation(organisationId, email) {
 }
 
 async function sendInvitationEmail(invitation, rawToken) {
-  const invitationUrl = new URL('/auth/invitations/accept', env.frontendUrl);
-  invitationUrl.searchParams.set('token', rawToken);
+  const invitationUrl = buildInvitationAcceptUrl(env.frontendUrl, rawToken);
   await sendOrganisationInvitationEmail({
     to: invitation.email,
     organisationName: invitation.organisation.name,

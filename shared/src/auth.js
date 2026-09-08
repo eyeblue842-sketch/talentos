@@ -29,6 +29,12 @@ export const signupSchema = z.object({
   location: z.string().trim().optional(),
   totalExperience: z.coerce.number().int().min(0).max(50).optional(),
   skills: z.array(z.string().trim().min(1)).optional(),
+  // A safe post-signup destination (e.g. an organisation invitation the
+  // user arrived from) - stored against the issued EMAIL_VERIFICATION
+  // token's context so the verification-confirm redirect can send the
+  // user back to it once their email is verified, mirroring the identical
+  // `next` field already on passwordResetRequestSchema below.
+  next: z.string().trim().min(1).max(2048).optional(),
 });
 
 export const loginSchema = z.object({

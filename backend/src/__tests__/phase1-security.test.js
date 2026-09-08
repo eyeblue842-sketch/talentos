@@ -1106,6 +1106,64 @@ test('wrong token type, expired token, and replayed tokens are rejected', async 
   assert.equal(expired.statusCode, 400);
 });
 
+test('a safe "next" supplied at signup is preserved through email verification (e.g. returning to an organisation invitation)', async () => {
+  const invitationNext = '/auth/invitations/accept?token=some-invitation-token';
+
+  const signupResponse = await request(app).post('/api/auth/signup').send({
+    email: 'invitee-signup@example.com',
+    password: 'Password123',
+    role: 'CANDIDATE',
+    next: invitationNext,
+  });
+  assert.equal(signupResponse.statusCode, 201);
+
+  const verificationToken = latestEmailLinkToken('token');
+  const confirmResponse = await request(app)
+    .post('/api/auth/email-verification/confirm')
+    .send({ token: verificationToken });
+
+  assert.equal(confirmResponse.statusCode, 200);
+  assert.equal(confirmResponse.body.data.next, invitationNext);
+});
+
+test('an unsafe "next" supplied at signup (open-redirect attempt) is never stored or echoed back', async () => {
+  const signupResponse = await request(app).post('/api/auth/signup').send({
+    email: 'invitee-signup-unsafe@example.com',
+    password: 'Password123',
+    role: 'CANDIDATE',
+    next: '//evil.example.com/steal-session',
+  });
+  assert.equal(signupResponse.statusCode, 201);
+
+  const verificationRecord = state.authTokens.find((item) => item.type === 'EMAIL_VERIFICATION' && item.userId === signupResponse.body.data.user.id);
+  assert.equal(verificationRecord.context, undefined);
+
+  const verificationToken = latestEmailLinkToken('token');
+  const confirmResponse = await request(app)
+    .post('/api/auth/email-verification/confirm')
+    .send({ token: verificationToken });
+
+  assert.equal(confirmResponse.statusCode, 200);
+  assert.equal(confirmResponse.body.data.next, null);
+});
+
+test('signup with no "next" leaves email verification behaving exactly as before (next is null)', async () => {
+  const signupResponse = await request(app).post('/api/auth/signup').send({
+    email: 'invitee-signup-no-next@example.com',
+    password: 'Password123',
+    role: 'CANDIDATE',
+  });
+  assert.equal(signupResponse.statusCode, 201);
+
+  const verificationToken = latestEmailLinkToken('token');
+  const confirmResponse = await request(app)
+    .post('/api/auth/email-verification/confirm')
+    .send({ token: verificationToken });
+
+  assert.equal(confirmResponse.statusCode, 200);
+  assert.equal(confirmResponse.body.data.next, null);
+});
+
 test('concurrent token consumption allows one success and one rejection', async () => {
   const requestReset = await request(app)
     .post('/api/auth/password-reset/request')

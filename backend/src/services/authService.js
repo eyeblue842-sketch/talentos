@@ -118,7 +118,15 @@ export async function registerUser(payload) {
     });
   });
 
-  const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION');
+  // Preserves a safe post-verification destination (e.g. an organisation
+  // invitation the user arrived from) against the EMAIL_VERIFICATION token
+  // itself, so confirmEmailVerification can hand it back to the
+  // verification-confirm redirect - mirrors requestPasswordReset's
+  // identical `next` handling below.
+  const signupNext = isSafeInternalPath(payload.next) ? payload.next : null;
+  const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION', {
+    context: signupNext ? { next: signupNext } : undefined,
+  });
   await sendEmailVerificationEmail(user.email, token);
 
   return {
@@ -355,7 +363,12 @@ export async function confirmEmailVerification(token) {
     data: { emailVerifiedAt: new Date() },
   });
 
-  return { verified: true };
+  // Re-validated here (not just trusted from what registerUser stored) so
+  // a malformed/stale context value can never become an open redirect -
+  // mirrors confirmPasswordReset's identical `next` handling.
+  const next = isSafeInternalPath(consumedToken.context?.next) ? consumedToken.context.next : null;
+
+  return { verified: true, next };
 }
 
 export async function changePassword(userId, currentPassword, newPassword) {
