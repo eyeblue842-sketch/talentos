@@ -120,8 +120,9 @@ export async function getRecruiterWorkspaceOnboarding(actorUser, organisationId 
   };
 }
 
-export async function completeRecruiterWorkspaceOnboarding(actorUser, payload, organisationId = null, requestMeta = {}) {
-  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'], organisationId);
+export async function completeRecruiterWorkspaceOnboarding(actorUser, payload, organisationId = null, requestMeta = {}, options = {}) {
+  const allowedRoles = options.edit ? ['OWNER', 'ADMIN'] : ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
+  const context = await requireOrganisationRole(actorUser, allowedRoles, organisationId);
   const recruiterProfile = await prisma.recruiterProfile.findUnique({
     where: { userId: actorUser.id },
   });
@@ -205,6 +206,73 @@ export async function completeRecruiterWorkspaceOnboarding(actorUser, payload, o
     ...requestMeta,
   });
 
+  return {
+    organisation: serializeOrganisation(result.updatedOrganisation),
+    recruiterProfile: {
+      companyName: result.updatedProfile.companyName,
+      industryDomain: result.updatedProfile.industryDomain,
+      companySize: result.updatedProfile.companySize,
+      headquartersLocation: result.updatedProfile.headquartersLocation,
+      designation: result.updatedProfile.designation,
+      website: result.updatedProfile.website,
+      profileCompleted: result.updatedProfile.profileCompleted,
+    },
+    onboardingCompleted: Boolean(result.updatedProfile.profileCompleted),
+  };
+}
+
+export async function updateRecruiterOrganisationProfile(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN'], organisationId);
+  const recruiterProfile = await prisma.recruiterProfile.findUnique({ where: { userId: actorUser.id } });
+  if (!recruiterProfile) {
+    const error = new Error('Recruiter profile not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const existingOrganisation = await prisma.organisation.findUnique({ where: { id: context.organisationId } });
+  const data = {};
+  const profileData = {};
+  const has = (name) => Object.prototype.hasOwnProperty.call(payload, name);
+  if (has('organisationName')) { data.name = payload.organisationName; profileData.companyName = payload.organisationName; }
+  if (has('workspaceSlug')) {
+    const requestedSlug = payload.workspaceSlug;
+    if (requestedSlug && requestedSlug !== existingOrganisation.slug) {
+      const slugOwner = await prisma.organisation.findUnique({ where: { slug: requestedSlug } });
+      if (slugOwner && slugOwner.id !== existingOrganisation.id) {
+        const error = new Error('Workspace slug is already in use.');
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+    data.slug = requestedSlug || existingOrganisation.slug;
+  }
+  if (has('companyWebsite')) { data.website = normalizeOptionalString(payload.companyWebsite); profileData.website = normalizeOptionalString(payload.companyWebsite); }
+  if (has('industry')) { data.industry = payload.industry; profileData.industryDomain = payload.industry; }
+  if (has('companySize')) { data.organisationSize = payload.companySize; profileData.companySize = payload.companySize; }
+  if (has('location')) { data.headquarters = payload.location; profileData.headquartersLocation = payload.location; }
+  if (has('designation')) profileData.designation = payload.designation;
+  if (has('publicDescription')) data.publicDescription = normalizeOptionalString(payload.publicDescription);
+  if (has('publicLocations')) data.publicLocations = Array.from(new Set((payload.publicLocations || []).map((item) => String(item).trim()).filter(Boolean)));
+  if (has('cultureSummary')) data.cultureSummary = normalizeOptionalString(payload.cultureSummary);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedOrganisation = Object.keys(data).length
+      ? await tx.organisation.update({ where: { id: context.organisationId }, data })
+      : existingOrganisation;
+    const updatedProfile = Object.keys(profileData).length
+      ? await tx.recruiterProfile.update({ where: { userId: actorUser.id }, data: profileData })
+      : recruiterProfile;
+    return { updatedOrganisation, updatedProfile };
+  });
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'organisation.profile.update',
+    entityType: 'Organisation',
+    entityId: context.organisationId,
+    afterData: { fields: Object.keys(data).concat(Object.keys(profileData)) },
+    ...requestMeta,
+  });
   return {
     organisation: serializeOrganisation(result.updatedOrganisation),
     recruiterProfile: {

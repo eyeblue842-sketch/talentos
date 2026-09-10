@@ -7,6 +7,7 @@ import {
   getRecruiterWorkspaceOnboarding,
   listOrganisationMembers,
   updateOrganisationMember,
+  updateRecruiterOrganisationProfile,
 } from '../services/organisationService.js';
 import {
   acceptOrganisationInvitation,
@@ -117,6 +118,18 @@ export async function postOrganisationPost(req, res, next) {
       { ipAddress: req.ip, userAgent: req.get('user-agent') }
     );
     sendSuccess(res, 201, post);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function patchOrganisationProfile(req, res, next) {
+  try {
+    const result = await updateRecruiterOrganisationProfile(req.user, req.body, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, result);
   } catch (error) {
     next(error);
   }

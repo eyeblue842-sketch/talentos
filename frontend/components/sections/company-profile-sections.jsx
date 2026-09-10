@@ -72,7 +72,7 @@ export function CompanyHeaderCard({
                   <div className="flex flex-wrap items-center gap-3">
                     <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text)]">{organisation?.name || 'Organisation'}</h1>
                     {canEdit ? (
-                      <Button as="a" href="/recruiter/onboarding" variant="outline" size="sm" className="gap-2">
+                      <Button as="a" href="/recruiter/company/edit" variant="outline" size="sm" className="gap-2">
                         <Pencil size={14} aria-hidden="true" />
                         Edit company profile
                       </Button>
@@ -137,7 +137,7 @@ export function CompanyAboutSection({ organisation, canEdit = false, preview = f
             {description}
           </p>
         </div>
-        {canEdit ? <Button as="a" href="/recruiter/onboarding" variant="outline" size="sm">Edit</Button> : null}
+        {canEdit ? <Button as="a" href="/recruiter/company/edit" variant="outline" size="sm">Edit</Button> : null}
       </div>
       {!preview ? (
         <dl className="mt-6 grid gap-4 text-sm text-[var(--color-text-secondary)] md:grid-cols-2">

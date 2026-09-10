@@ -147,7 +147,7 @@ describe('RecruiterHomePage', () => {
     expect(screen.getByText('Staffing & Recruiting')).toBeInTheDocument();
     expect(screen.getByText('Bengaluru, Karnataka')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Company website' })).toHaveAttribute('href', 'https://northstar.example');
-    expect(screen.getByRole('link', { name: 'Edit company profile' })).toHaveAttribute('href', '/recruiter/onboarding');
+    expect(screen.getByRole('link', { name: 'Edit company profile' })).toHaveAttribute('href', '/recruiter/company/edit');
   });
 
   test('shows hiring snapshot, recent jobs, people highlights, and notification bell', async () => {

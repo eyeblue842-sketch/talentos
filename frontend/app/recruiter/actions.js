@@ -299,11 +299,39 @@ export async function createJobAction(formData) {
   redirect(`/recruiter/jobs/${created.data.id}?notice=job-created`);
 }
 
-export async function completeRecruiterOnboardingAction(formData) {
+const onboardingInitialState = {
+  status: 'idle',
+  message: '',
+  fieldErrors: {},
+  formErrors: [],
+  values: {},
+};
+
+function onboardingValues(formData) {
+  return Object.fromEntries([
+    'organisationName', 'workspaceSlug', 'companyWebsite', 'industry', 'companySize',
+    'location', 'designation', 'teamInvitationEmail', 'teamInvitationRole', 'companyLocationsJson',
+    'publicDescription', 'cultureSummary',
+  ].map((name) => [name, String(formData.get(name) || '')]));
+}
+
+function normaliseWebsite(value) {
+  const normalized = asNullableString(value);
+  if (!normalized) return null;
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(normalized)) return normalized;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(normalized)) return `https://${normalized}`;
+  return normalized;
+}
+
+function normaliseWorkspaceSlug(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+function buildOnboardingPayload(formData) {
   const payload = {
     organisationName: String(formData.get('organisationName') || '').trim(),
-    workspaceSlug: String(formData.get('workspaceSlug') || '').trim(),
-    companyWebsite: asNullableString(formData.get('companyWebsite')),
+    workspaceSlug: normaliseWorkspaceSlug(formData.get('workspaceSlug')),
+    companyWebsite: normaliseWebsite(formData.get('companyWebsite')),
     industry: String(formData.get('industry') || '').trim(),
     companySize: String(formData.get('companySize') || '').trim(),
     location: String(formData.get('location') || '').trim(),
@@ -311,27 +339,61 @@ export async function completeRecruiterOnboardingAction(formData) {
     teamInvitationEmail: asNullableString(formData.get('teamInvitationEmail')),
     teamInvitationRole: asNullableString(formData.get('teamInvitationRole')),
   };
-
-  const response = await recruiterRequest('/organisations/current/onboarding', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-
-  if (payload.teamInvitationEmail && payload.teamInvitationRole) {
-    await recruiterRequest('/organisations/invitations', {
-      method: 'POST',
-      body: JSON.stringify({
-        email: payload.teamInvitationEmail,
-        role: payload.teamInvitationRole,
-      }),
-    });
+  const locationsValue = String(formData.get('companyLocationsJson') || '').trim();
+  if (locationsValue) {
+    try { payload.publicLocations = JSON.parse(locationsValue); } catch { payload.publicLocations = []; }
   }
+  if (formData.has('publicDescription')) payload.publicDescription = String(formData.get('publicDescription') || '');
+  if (formData.has('cultureSummary')) payload.cultureSummary = String(formData.get('cultureSummary') || '');
+  return payload;
+}
 
-  await setActiveOrganisationCookie(response.data.organisation?.id);
-  revalidatePath('/recruiter');
-  revalidatePath('/recruiter/home');
-  revalidatePath('/recruiter/onboarding');
-  redirect('/recruiter/home?notice=workspace-ready');
+async function saveRecruiterOrganisation(previousState = onboardingInitialState, formData, options = {}) {
+  const payload = buildOnboardingPayload(formData);
+  try {
+    const response = await recruiterRequest(options.edit ? '/organisations/current/profile' : '/organisations/current/onboarding', {
+      method: options.edit ? 'PATCH' : 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (!options.edit && payload.teamInvitationEmail && payload.teamInvitationRole) {
+      await recruiterRequest('/organisations/invitations', {
+        method: 'POST',
+        body: JSON.stringify({ email: payload.teamInvitationEmail, role: payload.teamInvitationRole }),
+      });
+    }
+
+    await setActiveOrganisationCookie(response.data.organisation?.id);
+    revalidatePath('/recruiter');
+    revalidatePath('/recruiter/home');
+    revalidatePath('/recruiter/onboarding');
+    redirect(options.edit ? '/recruiter/home?tab=about' : '/recruiter/home?notice=workspace-ready');
+  } catch (error) {
+    if (error?.digest?.startsWith('NEXT_REDIRECT')) throw error;
+    const validation = error?.statusCode === 422 || error?.statusCode === 409;
+    const fieldErrors = validation ? (error.details?.fieldErrors || {}) : {};
+    if (fieldErrors.companyWebsite?.length) {
+      fieldErrors.companyWebsite = ['Enter a valid website such as https://example.com.'];
+    }
+    if (error?.statusCode === 409 && /slug/i.test(error.message || '')) {
+      fieldErrors.workspaceSlug = [error.message];
+    }
+    return {
+      status: 'error',
+      message: validation ? 'Please correct the highlighted fields.' : 'We could not save your workspace details. Please try again.',
+      fieldErrors,
+      formErrors: validation ? (error.details?.formErrors || []) : [],
+      values: onboardingValues(formData),
+    };
+  }
+}
+
+export async function completeRecruiterOnboardingAction(previousState = onboardingInitialState, formData) {
+  return saveRecruiterOrganisation(previousState, formData);
+}
+
+export async function editRecruiterOrganisationAction(previousState = onboardingInitialState, formData) {
+  return saveRecruiterOrganisation(previousState, formData, { edit: true });
 }
 
 export async function createOrganisationPostAction(formData) {

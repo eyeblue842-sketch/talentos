@@ -587,6 +587,12 @@ export const recruiterOnboardingSchema = z.object({
   teamInvitationRole: organisationRoleSchema.optional().nullable(),
 });
 
+export const recruiterOrganisationProfileUpdateSchema = recruiterOnboardingSchema.partial().extend({
+  publicDescription: z.string().trim().max(4000).optional().nullable().or(z.literal('')),
+  publicLocations: z.array(z.string().trim().min(1).max(160)).max(50).optional(),
+  cultureSummary: z.string().trim().max(2000).optional().nullable().or(z.literal('')),
+});
+
 export const organisationInvitationCreateSchema = z.object({
   email: z.string().email(),
   role: organisationRoleSchema.refine((value) => value !== 'OWNER', {

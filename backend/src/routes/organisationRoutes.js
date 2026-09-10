@@ -10,10 +10,12 @@ import {
   organisationMemberCreateSchema,
   organisationMemberUpdateSchema,
   recruiterOnboardingSchema,
+  recruiterOrganisationProfileUpdateSchema,
 } from '@careeriz/shared';
 import {
   acceptInvitationToken,
   completeOrganisationOnboarding,
+  patchOrganisationProfile,
   createOrganisation,
   getInvitationTokenDetail,
   createOrganisationMember,
@@ -35,6 +37,7 @@ organisationRouter.post('/', auth(['RECRUITER']), validateSchema(organisationCre
 organisationRouter.get('/current', auth(['RECRUITER']), getOrganisation);
 organisationRouter.get('/current/onboarding', auth(['RECRUITER']), getOrganisationOnboarding);
 organisationRouter.post('/current/onboarding', auth(['RECRUITER']), validateSchema(recruiterOnboardingSchema), completeOrganisationOnboarding);
+organisationRouter.patch('/current/profile', auth(['RECRUITER']), validateSchema(recruiterOrganisationProfileUpdateSchema), patchOrganisationProfile);
 organisationRouter.get('/members', auth(['RECRUITER']), getOrganisationMembers);
 // Inviting/adding a NEW member ("invite additional recruiter members" -
 // domain-ownership closure section 1) is gated; managing an ALREADY-active
