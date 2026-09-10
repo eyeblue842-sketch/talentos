@@ -28,10 +28,18 @@ describe('getNavigationForRole', () => {
       '/recruiter/home',
       '/recruiter/jobs',
       '/recruiter/database',
+      '/recruiter/candidates/import',
       '/recruiter/ats',
       '/recruiter/interviews',
       '/recruiter/members',
       '/recruiter/settings',
     ]));
   });
+  test('Resume Databank is recruiter-only and uses the canonical import route', () => {
+    const recruitment = recruiterNav.find((item) => item.label === 'Recruitment');
+    const databank = recruitment.children.find((item) => item.href === '/recruiter/candidates/import');
+    expect(databank).toMatchObject({ label: 'Resume Databank', icon: 'Database' });
+    expect(candidateNav.flatMap((item) => (item.children ? item.children : [item])).some((item) => item.href === '/recruiter/candidates/import')).toBe(false);
+  });
+
 });

@@ -423,7 +423,7 @@ export function ResumeImportUploadExperience({
             <Upload size={22} aria-hidden="true" />
           </div>
           <div className="grid gap-2">
-            <h2 className="text-xl font-semibold text-[var(--color-text)]">Upload resumes for bulk import</h2>
+            <h2 className="text-xl font-semibold text-[var(--color-text)]">Upload &amp; Parse Resumes</h2>
             <p className="max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
               Drag and drop multiple PDF, DOC, or DOCX resumes, or upload one ZIP archive containing supported resume files.
             </p>
@@ -467,7 +467,7 @@ export function ResumeImportUploadExperience({
               Clear all
             </Button>
             <Button type="button" onClick={submitUpload} loading={uploading} disabled={!selectedFiles.length || !totals.valid || errorSummary.length > 0}>
-              Start import
+              Upload &amp; Parse Resumes
             </Button>
           </div>
         </div>

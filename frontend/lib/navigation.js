@@ -14,6 +14,7 @@ export const recruiterNav = [
       { id: 'recruitment-network', label: 'Network', href: '/recruiter/network', icon: 'Users' },
       { id: 'recruitment-messages', label: 'Messages', href: '/recruiter/messages', icon: 'Mail' },
       { id: 'recruitment-resume-search', label: 'Resume Search', href: '/recruiter/database', icon: 'Database' },
+      { id: 'recruitment-resume-databank', label: 'Resume Databank', href: '/recruiter/candidates/import', icon: 'Database' },
       { id: 'recruitment-ats', label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
       { id: 'recruitment-interviews', label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
       ...(bulkResumeImportEnabled ? [{ id: 'recruitment-import', label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),

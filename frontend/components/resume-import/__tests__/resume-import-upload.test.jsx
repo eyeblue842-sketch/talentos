@@ -88,7 +88,7 @@ describe('ResumeImportUploadExperience', () => {
       },
     });
 
-    await user.click(screen.getByRole('button', { name: /start import/i }));
+    await user.click(screen.getByRole('button', { name: /upload & parse resumes/i }));
 
     expect(await screen.findByText(/batch created/i)).toBeInTheDocument();
     expect(screen.getByText(/batch-123/i)).toBeInTheDocument();
@@ -96,4 +96,3 @@ describe('ResumeImportUploadExperience', () => {
     expect(toastPush).toHaveBeenCalledWith(expect.objectContaining({ tone: 'success' }));
   });
 });
-

@@ -1,9 +1,7 @@
 import { PageHeader } from '@/components/ui/page-header';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
-import { ResumeImportFeatureUnavailable } from '@/components/resume-import/feature-unavailable';
 import { ResumeImportUploadExperience } from '@/components/resume-import/experience';
 import { recruiterNav } from '@/lib/navigation';
-import { isFeatureEnabled } from '@/lib/feature-flags';
 import { getCurrentOrganisation } from '@/lib/api';
 
 function getLimits() {
@@ -23,21 +21,16 @@ export default async function RecruiterResumeImportPage() {
     <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Candidate management'}
-        title="Bulk Resume Import"
-        description="Upload multiple resumes or one ZIP archive, create a batch reference immediately, and review parsed candidate records as processing completes."
-        breadcrumb={[{ label: 'Recruiter' }, { label: 'Bulk Resume Import' }]}
+        title="Resume Databank"
+        description="Upload and parse resumes, review extracted candidate records, and add eligible profiles to your organisation's databank."
+        breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Databank' }]}
         secondaryActions={[{ label: 'Import history', href: '/recruiter/candidates/import/history' }]}
       />
-      {isFeatureEnabled('bulkResumeImport') ? (
-        <ResumeImportUploadExperience
-          limits={getLimits()}
-          batchHrefPrefix="/recruiter/candidates/import"
-          historyHref="/recruiter/candidates/import/history"
-        />
-      ) : (
-        <ResumeImportFeatureUnavailable backHref="/recruiter" />
-      )}
+      <ResumeImportUploadExperience
+        limits={getLimits()}
+        batchHrefPrefix="/recruiter/candidates/import"
+        historyHref="/recruiter/candidates/import/history"
+      />
     </WorkspaceShell>
   );
 }
-
