@@ -1,6 +1,7 @@
 import { PageHeader } from '@/components/ui/page-header';
 import { Sidebar } from '@/components/layout/sidebar';
 import { cn } from '@/lib/utils';
+import { GlobalMessageLink } from '@/components/messaging/global-message-link';
 
 // The single authenticated application shell every workspace route enters
 // through. `items` is always computed server-side (see lib/navigation.js's
@@ -32,6 +33,7 @@ export function CareerizAppShell({
   secondaryActions,
 }) {
   const hasHeader = Boolean(pageTitle || breadcrumb?.length);
+  const recruiterWorkspace = items?.some((item) => item.children?.some((child) => child.href === '/recruiter/candidates/import'));
   const header = hasHeader ? (
     <PageHeader
       title={pageTitle}
@@ -62,6 +64,7 @@ export function CareerizAppShell({
       {rightContext ? (
         <section className="min-w-0 space-y-6 xl:grid xl:grid-cols-[1fr_var(--shell-width-context-rail)] xl:items-start xl:gap-6 xl:space-y-0">
           <div className="space-y-6">
+            {recruiterWorkspace ? <div className="flex justify-end"><GlobalMessageLink /></div> : null}
             {header}
             {children}
           </div>
@@ -69,6 +72,7 @@ export function CareerizAppShell({
         </section>
       ) : (
         <section className="min-w-0 space-y-6">
+          {recruiterWorkspace ? <div className="flex justify-end"><GlobalMessageLink /></div> : null}
           {header}
           {children}
         </section>

@@ -7,10 +7,25 @@ import { Card } from '@/components/ui/card';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getNotifications, getPublicOrganisation, getRecruiterDashboard } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
-import { CompanyAboutSection, CompanyHeaderCard, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
+import { CompanyAboutSection, CompanyHeaderCard, CompanyInsightsSection, CompanyJobsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
 import { createOrganisationPostAction } from '@/app/recruiter/actions';
+import {
+  getConversationMessages,
+  getMessageConversation,
+  getMessageConversations,
+  getNetworkConnections,
+  getNetworkReceivedRequests,
+  getNetworkSentRequests,
+  getNetworkPrivacy,
+  getNetworkSuggestions,
+  getOrganisationInvitations,
+  getOrganisationMembers,
+  searchNetworkPeople,
+} from '@/lib/api';
+import { ConnectionsSections } from '@/components/connections/connections-sections';
 
-const COMPANY_TABS = new Set(['home', 'about', 'jobs', 'people', 'insights']);
+const COMPANY_TABS = new Set(['home', 'about', 'jobs', 'connections', 'insights']);
+const CONNECTION_SECTIONS = new Set(['company-people', 'discover', 'my-connections', 'invitations', 'messages']);
 
 function NotificationBell({ unreadCount }) {
   const displayCount = unreadCount > 99 ? '99+' : String(unreadCount);
@@ -35,12 +50,16 @@ function NotificationBell({ unreadCount }) {
 export default async function RecruiterHomePage({ searchParams }) {
   const queryParams = await searchParams;
   const activeTab = COMPANY_TABS.has(String(queryParams?.tab || 'home')) ? String(queryParams?.tab || 'home') : 'home';
+  const connectionSection = CONNECTION_SECTIONS.has(String(queryParams?.section || 'company-people'))
+    ? String(queryParams?.section || 'company-people')
+    : 'company-people';
 
   let organisation = null;
   let companyData = null;
   let dashboard = null;
   let notifications = [];
   let currentUser = null;
+  let connectionData = null;
   let error = '';
 
   try {
@@ -52,6 +71,26 @@ export default async function RecruiterHomePage({ searchParams }) {
     ]);
 
     companyData = await getPublicOrganisation(organisation.slug);
+    if (activeTab === 'connections') {
+      const params = queryParams || {};
+      const [connections, receivedRequests, sentRequests, suggestions, searchResults, privacy, members, invitations, conversations] = await Promise.all([
+        getNetworkConnections({ pageSize: 8 }),
+        getNetworkReceivedRequests({ pageSize: 8 }),
+        getNetworkSentRequests({ pageSize: 8 }),
+        getNetworkSuggestions({ pageSize: 8 }),
+        searchNetworkPeople({ ...params, pageSize: 8 }),
+        getNetworkPrivacy(),
+        getOrganisationMembers(),
+        getOrganisationInvitations(),
+        getMessageConversations({ pageSize: 20 }),
+      ]);
+      const activeConversationId = typeof params.conversation === 'string' ? params.conversation : '';
+      const [activeConversation, messages] = await Promise.all([
+        activeConversationId ? getMessageConversation(activeConversationId).catch(() => null) : Promise.resolve(null),
+        activeConversationId ? getConversationMessages(activeConversationId, { limit: 25 }).catch(() => ({ items: [], meta: { nextCursor: null } })) : Promise.resolve({ items: [], meta: { nextCursor: null } }),
+      ]);
+      connectionData = { connections, receivedRequests, sentRequests, suggestions, searchResults, privacy, members, invitations, conversations, activeConversation, messages, activeConversationId };
+    }
   } catch (caught) {
     error = caught.message || 'Recruiter home could not be loaded.';
   }
@@ -155,7 +194,14 @@ export default async function RecruiterHomePage({ searchParams }) {
 
             {activeTab === 'about' ? <CompanyAboutSection organisation={companyData.organisation} canEdit={canEditOrganisation} /> : null}
             {activeTab === 'jobs' ? <CompanyJobsSection jobs={companyData.jobs.items} title="Open jobs" companyName={companyData.organisation.name} /> : null}
-            {activeTab === 'people' ? <CompanyPeopleInsightsSection organisation={companyData.organisation} peopleInsights={companyData.peopleInsights} /> : null}
+            {activeTab === 'connections' && connectionData ? (
+              <ConnectionsSections
+                section={connectionSection}
+                organisation={organisation}
+                data={connectionData}
+                redirectTo={`${basePath}?tab=connections&section=${connectionSection}`}
+              />
+            ) : null}
             {activeTab === 'insights' ? <CompanyInsightsSection publicInsights={companyData.publicInsights} /> : null}
           </>
         ) : null}

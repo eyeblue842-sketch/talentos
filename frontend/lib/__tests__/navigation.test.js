@@ -42,4 +42,12 @@ describe('getNavigationForRole', () => {
     expect(candidateNav.flatMap((item) => (item.children ? item.children : [item])).some((item) => item.href === '/recruiter/candidates/import')).toBe(false);
   });
 
+  test('recruiter sidebar folds Network and Messages into Connections', () => {
+    const recruitment = recruiterNav.find((item) => item.label === 'Recruitment');
+    expect(recruitment.children.map((item) => item.label)).not.toEqual(expect.arrayContaining(['Network', 'Messages']));
+    expect(recruitment.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Resume Databank' }),
+    ]));
+  });
+
 });

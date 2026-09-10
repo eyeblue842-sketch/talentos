@@ -56,7 +56,7 @@ export function CompanyHeaderCard({
     { id: 'home', label: 'Home' },
     { id: 'about', label: 'About' },
     { id: 'jobs', label: 'Jobs' },
-    { id: 'people', label: 'People' },
+    ...(mode === 'recruiter' ? [{ id: 'connections', label: 'Connections' }] : []),
     { id: 'insights', label: 'Insights' },
   ];
 

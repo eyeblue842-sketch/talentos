@@ -11,8 +11,6 @@ export const recruiterNav = [
       { id: 'recruitment-overview', label: 'Overview', href: '/recruiter', icon: 'LayoutDashboard', exact: true },
       { id: 'recruitment-jobs', label: 'Job Posts', href: '/recruiter/jobs', icon: 'ClipboardList' },
       { id: 'recruitment-job-responses', label: 'Job Responses', href: '/recruiter/job-responses', icon: 'GitPullRequestArrow' },
-      { id: 'recruitment-network', label: 'Network', href: '/recruiter/network', icon: 'Users' },
-      { id: 'recruitment-messages', label: 'Messages', href: '/recruiter/messages', icon: 'Mail' },
       { id: 'recruitment-resume-search', label: 'Resume Search', href: '/recruiter/database', icon: 'Database' },
       { id: 'recruitment-resume-databank', label: 'Resume Databank', href: '/recruiter/candidates/import', icon: 'Database' },
       { id: 'recruitment-ats', label: 'ATS Pipeline', href: '/recruiter/ats', icon: 'GitPullRequestArrow' },
