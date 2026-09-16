@@ -8,7 +8,9 @@ let getJobDescriptionStatus;
 let regenerateJobDescription;
 let runJobDescriptionGenerationTask;
 let buildJobDescriptionSourceFingerprint;
+let applyAuthoritativeJobFacts;
 let getJobIntelligence;
+let serializePublicJob;
 let listJobDescriptionDrafts;
 let getJobDescriptionDraft;
 let createJobDescriptionDraft;
@@ -25,6 +27,8 @@ let resetIntelligenceProvider;
 let state;
 let idCounter = 1;
 let originalEnv = {};
+const originalFetch = global.fetch;
+const allowedExecutionStatuses = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'SKIPPED']);
 
 function now() {
   return new Date('2026-07-28T10:00:00.000Z');
@@ -96,6 +100,7 @@ function seedState() {
         department: 'Engineering',
         businessUnit: 'Platform',
         targetHires: 2,
+        status: 'DRAFT',
         updatedAt: now(),
         createdAt: now(),
       },
@@ -134,8 +139,8 @@ function seedState() {
           title: 'Senior Backend Engineer',
           summary: 'System template summary.',
           responsibilities: ['Build services'],
-          requiredSkills: ['Java'],
-          preferredSkills: ['Kafka'],
+          requiredQualifications: ['Java'],
+          preferredQualifications: ['Kafka'],
           screeningQuestions: [],
           assumptions: [],
           exclusionaryWordingWarnings: [],
@@ -447,6 +452,7 @@ function installPrismaMocks() {
   );
 
   prisma.intelligenceExecution.create = async ({ data } = {}) => {
+    assert.equal(allowedExecutionStatuses.has(data.status || 'PENDING'), true, `Unexpected intelligence execution status ${data.status}`);
     const created = {
       id: nextId('exec'),
       createdAt: now(),
@@ -466,6 +472,9 @@ function installPrismaMocks() {
     return clone(created);
   };
   prisma.intelligenceExecution.update = async ({ where = {}, data = {} } = {}) => {
+    if (data.status !== undefined) {
+      assert.equal(allowedExecutionStatuses.has(data.status), true, `Unexpected intelligence execution status ${data.status}`);
+    }
     const record = state.intelligenceExecutions.find((item) => item.id === where.id);
     Object.assign(record, clone(data));
     return clone(record);
@@ -559,6 +568,61 @@ function viewerActor() {
   return clone(state.users.find((item) => item.id === 'viewer-1'));
 }
 
+function validAiJobDescription(overrides = {}) {
+  return {
+    openingSummary: 'Build reliable backend services for the payments platform.',
+    roleOverview: 'This Senior Backend Engineer role builds reliable backend services for the payments platform. The engineer will collaborate with product partners and support operational quality for backend services.',
+    keyResponsibilities: [
+      'Own backend services for payments workflows.',
+      'Collaborate with product partners on reliable delivery.',
+      'Troubleshoot operational issues in production services.',
+    ],
+    requiredQualifications: ['Java', 'Spring Boot', 'AWS'],
+    preferredQualifications: [],
+    additionalSections: [],
+    screeningQuestions: [],
+    assumptions: [],
+    exclusionaryWordingWarnings: [],
+    missingFields: [],
+    interviewFocus: [],
+    ...overrides,
+  };
+}
+
+function installOpenAiMockResponse(output) {
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-4o';
+  env.intelligenceBaseUrl = 'https://api.openai.test/v1';
+  env.intelligenceApiKey = 'test-key';
+  env.intelligenceMaxRetries = 0;
+  resetIntelligenceProvider();
+
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      model: 'gpt-4o',
+      choices: [{
+        message: { content: JSON.stringify(output) },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 10 },
+    }),
+  });
+}
+
+function generationTask(id = 'task-1') {
+  return {
+    id,
+    organisationId: 'org-1',
+    entityType: 'Job',
+    entityId: 'job-1',
+    payload: { jobId: 'job-1', requestedByUserId: 'recruiter-1' },
+    createdByUserId: 'recruiter-1',
+    attemptCount: 1,
+  };
+}
+
 before(async () => {
   ({ prisma } = await import('../config/db.js'));
   ({ env } = await import('../config/env.js'));
@@ -568,6 +632,7 @@ before(async () => {
     regenerateJobDescription,
     runJobDescriptionGenerationTask,
     buildJobDescriptionSourceFingerprint,
+    applyAuthoritativeJobFacts,
   } = await import('../intelligence/services/jobDescriptionGenerationService.js'));
   ({
     listJobDescriptionDrafts,
@@ -583,6 +648,7 @@ before(async () => {
     getJobDescriptionHistory,
   } = await import('../intelligence/services/jobDescriptionManagementService.js'));
   ({ getJobIntelligence } = await import('../intelligence/services/jobIntelligenceService.js'));
+  ({ serializePublicJob } = await import('../serializers/index.js'));
   ({ resetIntelligenceProvider } = await import('../intelligence/services/providerService.js'));
 });
 
@@ -613,6 +679,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  global.fetch = originalFetch;
   Object.assign(env, originalEnv);
   resetIntelligenceProvider();
 });
@@ -638,7 +705,7 @@ test('AI-disabled reads return deterministic baseline and persist disabled state
 
   assert.equal(response.execution.status, 'DISABLED');
   assert.equal(response.execution.provider, 'DISABLED');
-  assert.equal(response.summary, 'Build reliable backend services with Java, Spring Boot, and AWS.');
+  assert.equal(response.openingSummary, 'Build reliable backend services with Java, Spring Boot, and AWS.');
   assert.equal(state.jobDescriptionStates[0].status, 'DISABLED');
   assert.equal(state.intelligenceResults.length, 1);
 });
@@ -676,10 +743,11 @@ test('cached job description result is reused without enqueueing a duplicate tas
     normalizedOutput: {
       jobId: 'job-1',
       kind: 'FULL_DESCRIPTION',
-      summary: 'Cached job description summary.',
-      responsibilities: [],
-      requiredSkills: ['Java'],
-      preferredSkills: [],
+      openingSummary: 'Cached job description summary.',
+      roleOverview: 'This cached Backend Engineer role supports payments services. The engineer will maintain reliable delivery for product teams.',
+      keyResponsibilities: [],
+      requiredQualifications: ['Java'],
+      preferredQualifications: [],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -722,7 +790,7 @@ test('cached job description result is reused without enqueueing a duplicate tas
   const response = await getJobDescription(adminActor(), { jobId: 'job-1' });
 
   assert.equal(response.execution.cacheHit, true);
-  assert.equal(response.summary, 'Cached job description summary.');
+  assert.equal(response.openingSummary, 'Cached job description summary.');
   assert.equal(state.backgroundTasks.length, 0);
 });
 
@@ -781,8 +849,8 @@ test('meaningful job changes mark state stale and queue regeneration', async () 
       kind: 'FULL_DESCRIPTION',
       summary: 'Existing summary.',
       responsibilities: [],
-      requiredSkills: [],
-      preferredSkills: [],
+      requiredQualifications: [],
+      preferredQualifications: [],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -814,8 +882,246 @@ test('regeneration queues a job description generation task and status endpoint 
 });
 
 test('worker generation stores a ready result with the mock provider', async () => {
+  const task = generationTask();
+
+  const result = await runJobDescriptionGenerationTask(task);
+
+  assert.equal(result, 'success');
+  assert.equal(state.intelligenceResults.length, 1);
+  assert.equal(state.intelligenceExecutions.length, 1);
+  assert.equal(state.intelligenceExecutions[0].status, 'SUCCEEDED');
+  assert.equal(state.jobDescriptionStates[0].status, 'READY');
+  assert.equal(state.jobDescriptionStates[0].latestResultId, state.intelligenceResults[0].id);
+  assert.equal(state.intelligenceResults[0].normalizedOutput.requiredQualifications.includes('Java'), true);
+});
+
+test('stored generation result can become an editable draft through the source result handoff', async () => {
+  await runJobDescriptionGenerationTask(generationTask('task-draft-handoff'));
+  const stored = state.intelligenceResults[0];
+
+  const draft = await createJobDescriptionDraft(recruiterActor(), {
+    jobId: 'job-1',
+    sourceResultId: stored.id,
+    content: stored.normalizedOutput,
+    approve: false,
+  });
+  const drafts = await listJobDescriptionDrafts(recruiterActor(), { jobId: 'job-1' });
+
+  assert.equal(draft.sourceResultId, stored.id);
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].sourceResultId, stored.id);
+  assert.equal(drafts[0].content.openingSummary, stored.normalizedOutput.openingSummary);
+  assert.equal(drafts[0].content.roleOverview, stored.normalizedOutput.roleOverview);
+  assert.notEqual(drafts[0].content.openingSummary, drafts[0].content.roleOverview);
+  assert.equal(state.jobs[0].status, 'DRAFT');
+});
+
+test('authoritative structured skills override model-added, omitted, or replaced skills', () => {
+  state.jobs[0].skillsRequired = ['Anaplan model building', 'Finance planning'];
+  state.jobs[0].skillsPreferred = ['Connected planning'];
+  state.jobs[0].title = 'Anaplan Developer';
+  state.jobs[0].description = 'Build Anaplan planning models for finance forecasting.';
+
+  const added = applyAuthoritativeJobFacts(validAiJobDescription({
+    openingSummary: 'Build Anaplan planning models for finance teams.',
+    roleOverview: 'This Anaplan Developer role builds Anaplan planning models for finance forecasting. The developer will support finance teams with maintainable planning workflows.',
+    responsibilities: [
+      'Build Anaplan planning workflows for finance teams.',
+      'Support forecasting model updates with business stakeholders.',
+      'Maintain planning models using recruiter-confirmed Anaplan practices.',
+    ],
+    requiredQualifications: ['Anaplan model building', 'Finance planning', 'SQL'],
+    preferredQualifications: ['Connected planning', 'AWS Certified Developer'],
+  }), state.jobs[0], state.requisitions[0]);
+
+  assert.deepEqual(added.requiredQualifications, ['Anaplan model building', 'Finance planning']);
+  assert.deepEqual(added.preferredQualifications, ['Connected planning']);
+  assert.equal(added.assumptions.some((item) => /AI suggested additional required skills/i.test(item)), true);
+  assert.equal(added.assumptions.some((item) => /AI suggested additional preferred skills/i.test(item)), true);
+
+  const omitted = applyAuthoritativeJobFacts(validAiJobDescription({
+    openingSummary: 'Build Anaplan planning models for finance teams.',
+    roleOverview: 'This Anaplan Developer role builds Anaplan planning models for finance forecasting. The developer will support finance teams with maintainable planning workflows.',
+    responsibilities: [
+      'Build Anaplan planning workflows for finance teams.',
+      'Support forecasting model updates with business stakeholders.',
+      'Maintain planning models using recruiter-confirmed Anaplan practices.',
+    ],
+    requiredQualifications: ['Anaplan model building'],
+    preferredQualifications: [],
+  }), state.jobs[0], state.requisitions[0]);
+  assert.deepEqual(omitted.requiredQualifications, ['Anaplan model building', 'Finance planning']);
+
+  const replaced = applyAuthoritativeJobFacts(validAiJobDescription({
+    openingSummary: 'Build Anaplan planning models for finance teams.',
+    roleOverview: 'This Anaplan Developer role builds Anaplan planning models for finance forecasting. The developer will support finance teams with maintainable planning workflows.',
+    responsibilities: [
+      'Build Anaplan planning workflows for finance teams.',
+      'Support forecasting model updates with business stakeholders.',
+      'Maintain planning models using recruiter-confirmed Anaplan practices.',
+    ],
+    requiredQualifications: ['SQL', 'Tableau'],
+  }), state.jobs[0], state.requisitions[0]);
+  assert.deepEqual(replaced.requiredQualifications, ['Anaplan model building', 'Finance planning']);
+});
+
+test('authoritative fact validation accepts case, spacing, and approved aliases', () => {
+  state.jobs[0].skillsRequired = ['SpringBoot', 'AWS Cloud'];
+  const output = applyAuthoritativeJobFacts(validAiJobDescription({
+    roleOverview: 'This Senior Backend Engineer role builds Spring Boot services on AWS. The engineer will support backend services for product teams.',
+    responsibilities: [
+      'Build Spring Boot services for backend workflows.',
+      'Operate AWS-backed services with product partners.',
+      'Maintain Java services using recruiter-confirmed practices.',
+    ],
+    requiredQualifications: ['spring boot', 'Amazon Web Services'],
+  }), state.jobs[0], state.requisitions[0]);
+
+  assert.deepEqual(output.requiredQualifications, ['SpringBoot', 'AWS Cloud']);
+});
+
+test('authoritative fact validation blocks invented certification, degree, and experience requirements', () => {
+  state.jobs[0].skillsRequired = ['Anaplan model building', 'Finance planning'];
+  state.jobs[0].experienceMin = 2;
+  state.jobs[0].experienceMax = 5;
+  state.jobs[0].title = 'Anaplan Developer';
+  state.jobs[0].description = 'Build Anaplan planning models for finance forecasting.';
+
+  assert.throws(
+    () => applyAuthoritativeJobFacts(validAiJobDescription({
+      openingSummary: 'Build Anaplan planning models for finance teams.',
+      roleOverview: 'This Anaplan Developer role requires PMP certification and an MBA. The developer must bring 8+ years of Anaplan delivery experience.',
+      responsibilities: [
+        'Build Anaplan planning workflows for finance teams.',
+        'Support forecasting model updates with business stakeholders.',
+        'Maintain planning models using recruiter-confirmed Anaplan practices.',
+      ],
+      requiredQualifications: ['Anaplan model building', 'Finance planning'],
+    }), state.jobs[0], state.requisitions[0]),
+    (error) => error.code === 'JOB_DESCRIPTION_SCHEMA_INVALID'
+      && error.diagnostics.some((item) => item.reason === 'unsupported_named_fact' && item.term === 'PMP')
+      && error.diagnostics.some((item) => item.reason === 'unsupported_named_fact' && item.term === 'MBA')
+      && error.diagnostics.some((item) => item.reason === 'unsupported_experience_requirement'),
+  );
+});
+
+test('provider-added skills are not persisted or published; preview and published job use source facts', async () => {
+  state.jobs[0].skillsRequired = ['Anaplan model building', 'Finance planning'];
+  state.jobs[0].skillsPreferred = [];
+  state.jobs[0].title = 'Anaplan Developer';
+  state.jobs[0].description = 'Build Anaplan planning models for finance forecasting.';
+  installOpenAiMockResponse(validAiJobDescription({
+    openingSummary: 'Build Anaplan planning models for finance teams.',
+    roleOverview: 'This Anaplan Developer role builds Anaplan planning models for finance forecasting. The developer will support finance teams with maintainable planning workflows.',
+    responsibilities: [
+      'Build Anaplan planning workflows for finance teams.',
+      'Support forecasting model updates with business stakeholders.',
+      'Maintain planning models using recruiter-confirmed Anaplan practices.',
+    ],
+    requiredQualifications: ['Anaplan model building', 'Finance planning', 'SQL'],
+    preferredQualifications: ['Tableau'],
+  }));
+
+  await runJobDescriptionGenerationTask(generationTask('task-skill-addition'));
+  const stored = state.intelligenceResults[0].normalizedOutput;
+  assert.deepEqual(stored.requiredQualifications, ['Anaplan model building', 'Finance planning']);
+  assert.deepEqual(stored.preferredQualifications, []);
+
+  const draft = await createJobDescriptionDraft(recruiterActor(), {
+    jobId: 'job-1',
+    sourceResultId: state.intelligenceResults[0].id,
+    content: stored,
+    approve: true,
+  });
+  assert.deepEqual(draft.jobSnapshot.skillsRequired, ['Anaplan model building', 'Finance planning']);
+
+  const applied = await applyJobDescriptionDraft(recruiterActor(), {
+    draftId: draft.id,
+    applyTitle: false,
+    publishStatus: 'DRAFT',
+  });
+  assert.equal(applied.applied, true);
+  assert.deepEqual(state.jobs[0].skillsRequired, ['Anaplan model building', 'Finance planning']);
+  assert.deepEqual(serializePublicJob(state.jobs[0]).skillsRequired, ['Anaplan model building', 'Finance planning']);
+  assert.equal(JSON.stringify(serializePublicJob(state.jobs[0])).includes('Tableau'), false);
+});
+
+test('invalid AI job description output preserves recruiter edits and does not publish', async () => {
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-4o';
+  env.intelligenceBaseUrl = 'https://api.openai.test/v1';
+  env.intelligenceApiKey = 'test-key';
+  env.intelligenceMaxRetries = 0;
+  resetIntelligenceProvider();
+
+  state.jobs[0].status = 'DRAFT';
+  state.jobDescriptionDrafts.push({
+    id: 'draft-edited-1',
+    organisationId: 'org-1',
+    jobId: 'job-1',
+    versionGroupId: 'draft-edited-1',
+    version: 1,
+    previousVersionId: null,
+    status: 'DRAFT',
+    isLatestVersion: true,
+    title: 'Edited backend draft',
+    content: {
+      title: 'Edited backend draft',
+      openingSummary: 'Recruiter edited summary must remain intact.',
+      keyResponsibilities: ['Recruiter edited responsibility'],
+      requiredQualifications: ['Java'],
+      preferredQualifications: [],
+      screeningQuestions: [],
+      assumptions: [],
+      exclusionaryWordingWarnings: [],
+      missingFields: [],
+      interviewFocus: [],
+    },
+    jobSnapshot: null,
+    sourceStateId: null,
+    sourceExecutionId: null,
+    sourceResultId: null,
+    templateId: null,
+    templateVersionId: null,
+    approvedAt: null,
+    approvedByUserId: null,
+    appliedAt: null,
+    appliedByUserId: null,
+    createdByUserId: 'recruiter-1',
+    updatedByUserId: 'recruiter-1',
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      model: 'gpt-4o',
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            openingSummary: 'Backend role.',
+            roleOverview: 'This Backend Engineer role owns backend services for product teams. The engineer will ship APIs and support production reliability.',
+            responsibilities: ['Own services', 'Ship features', 'Support operations'],
+            requiredQualifications: ['Java', 'Any', 'AWS'],
+            preferredQualifications: [],
+            screeningQuestions: [],
+            assumptions: [],
+            exclusionaryWordingWarnings: [],
+            missingFields: [],
+            interviewFocus: [],
+            title: 'Unexpected title',
+          }),
+        },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 10 },
+    }),
+  });
+
   const task = {
-    id: 'task-1',
+    id: 'task-invalid',
     organisationId: 'org-1',
     entityType: 'Job',
     entityId: 'job-1',
@@ -824,13 +1130,17 @@ test('worker generation stores a ready result with the mock provider', async () 
     attemptCount: 1,
   };
 
-  const result = await runJobDescriptionGenerationTask(task);
+  await assert.rejects(
+    () => runJobDescriptionGenerationTask(task),
+    (error) => error.code === 'JOB_DESCRIPTION_SCHEMA_INVALID',
+  );
 
-  assert.equal(result, 'success');
-  assert.equal(state.intelligenceResults.length, 1);
-  assert.equal(state.jobDescriptionStates[0].status, 'READY');
-  assert.equal(state.jobDescriptionStates[0].latestResultId, state.intelligenceResults[0].id);
-  assert.equal(state.intelligenceResults[0].normalizedOutput.requiredSkills.includes('Java'), true);
+  assert.equal(state.intelligenceResults.length, 0);
+  assert.equal(state.jobDescriptionStates[0].status, 'FAILED');
+  assert.equal(state.jobDescriptionStates[0].latestResultId || null, null);
+  assert.equal(state.jobDescriptionStates[0].metadata.validationDiagnostics.some((item) => item.path === 'title'), true);
+  assert.equal(state.jobDescriptionDrafts[0].content.openingSummary, 'Recruiter edited summary must remain intact.');
+  assert.equal(state.jobs[0].status, 'DRAFT');
 });
 
 test('feature flag disabled falls back to deterministic output without queueing AI generation', async () => {
@@ -840,7 +1150,7 @@ test('feature flag disabled falls back to deterministic output without queueing 
 
   assert.equal(response.execution.status, 'DISABLED');
   assert.equal(state.backgroundTasks.length, 0);
-  assert.equal(response.summary, 'Build reliable backend services with Java, Spring Boot, and AWS.');
+  assert.equal(response.openingSummary, 'Build reliable backend services with Java, Spring Boot, and AWS.');
 });
 
 test('users without job intelligence permission are denied', async () => {
@@ -861,7 +1171,7 @@ test('legacy job intelligence compatibility path remains functional', async () =
   assert.equal(typeof response.generatedLabel, 'string');
   assert.equal(response.mode, 'DRAFT_DESCRIPTION');
   assert.ok(response.assisted || response.deterministic);
-  assert.equal(Array.isArray((response.assisted || response.deterministic).requiredSkills), true);
+  assert.equal(Array.isArray((response.assisted || response.deterministic).requiredQualifications), true);
 });
 
 test('draft workflow supports create, list, get, versioned update, and apply', async () => {
@@ -871,13 +1181,15 @@ test('draft workflow supports create, list, get, versioned update, and apply', a
     content: {
       title: 'Senior Backend Engineer',
       summary: 'Draft summary for backend role.',
-      responsibilities: ['Own backend systems'],
-      requiredSkills: ['Java', 'AWS'],
-      preferredSkills: ['Kafka'],
+      openingSummary: 'Opening summary for backend candidates.',
+      roleOverview: 'This Backend Engineer role supports product APIs and platform reliability. The engineer will partner with product teams on delivery.',
+      keyResponsibilities: ['Own backend systems'],
+      requiredQualifications: ['Java', 'AWS'],
+      preferredQualifications: ['Kafka'],
       screeningQuestions: [],
-      assumptions: [],
+      assumptions: ['Internal assumption must stay out of the public job.'],
       exclusionaryWordingWarnings: [],
-      missingFields: [],
+      missingFields: ['Internal missing-field note must stay out of the public job.'],
       interviewFocus: ['Validate AWS depth'],
     },
     approve: false,
@@ -889,7 +1201,7 @@ test('draft workflow supports create, list, get, versioned update, and apply', a
     draftId: created.id,
     content: {
       summary: 'Approved summary for backend role.',
-      requiredSkills: ['Java', 'AWS', 'Kafka'],
+      requiredQualifications: ['Java', 'AWS', 'Kafka'],
     },
     approve: true,
   });
@@ -907,7 +1219,13 @@ test('draft workflow supports create, list, get, versioned update, and apply', a
   assert.equal(state.jobDescriptionDrafts.find((item) => item.id === created.id).isLatestVersion, false);
   assert.equal(applied.applied, true);
   assert.equal(applied.draft.status, 'APPLIED');
-  assert.equal(state.jobs[0].description, 'Approved summary for backend role.');
+  assert.equal(state.jobs[0].description, [
+    'Opening summary for backend candidates.',
+    'This Backend Engineer role supports product APIs and platform reliability. The engineer will partner with product teams on delivery.',
+  ].join('\n\n'));
+  assert.equal(state.jobs[0].requirements.some((item) => item.includes('Internal assumption')), false);
+  assert.equal(state.jobs[0].requirements.some((item) => item.includes('Internal missing-field')), false);
+  assert.equal(state.jobs[0].description.includes('Validate AWS depth'), false);
   assert.deepEqual(state.jobs[0].skillsRequired, ['Java', 'AWS', 'Kafka']);
 });
 
@@ -917,8 +1235,8 @@ test('draft apply rejects unapproved drafts and viewer access is denied', async 
     content: {
       summary: 'Unapproved draft.',
       responsibilities: [],
-      requiredSkills: ['Java'],
-      preferredSkills: [],
+      requiredQualifications: ['Java'],
+      preferredQualifications: [],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -946,8 +1264,8 @@ test('template workflow supports create, versioning, activation, and system visi
     content: {
       summary: 'Template summary.',
       responsibilities: ['Build services'],
-      requiredSkills: ['Java'],
-      preferredSkills: ['Kafka'],
+      requiredQualifications: ['Java'],
+      preferredQualifications: ['Kafka'],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -961,8 +1279,8 @@ test('template workflow supports create, versioning, activation, and system visi
     content: {
       summary: 'Template summary v2.',
       responsibilities: ['Build services', 'Improve reliability'],
-      requiredSkills: ['Java', 'AWS'],
-      preferredSkills: ['Kafka'],
+      requiredQualifications: ['Java', 'AWS'],
+      preferredQualifications: ['Kafka'],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -1017,8 +1335,8 @@ test('job history returns draft versions and generation records', async () => {
       kind: 'FULL_DESCRIPTION',
       summary: 'History result',
       responsibilities: [],
-      requiredSkills: ['Java'],
-      preferredSkills: [],
+      requiredQualifications: ['Java'],
+      preferredQualifications: [],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -1058,8 +1376,8 @@ test('job history returns draft versions and generation records', async () => {
     content: {
       summary: 'History draft',
       responsibilities: [],
-      requiredSkills: ['Java'],
-      preferredSkills: [],
+      requiredQualifications: ['Java'],
+      preferredQualifications: [],
       screeningQuestions: [],
       assumptions: [],
       exclusionaryWordingWarnings: [],

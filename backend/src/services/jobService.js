@@ -10,7 +10,57 @@ import { runSerializableTransaction } from '../utils/serializableTransaction.js'
 import { addDays } from '../utils/dateUtils.js';
 import { assertOrganisationVerifiedForAction } from './organisationVerificationGate.js';
 
-const JOB_ACTIVE_DAYS = 45;
+// Default Careeriz job validity: 31 calendar days from the FIRST successful
+// publication. The first-publication date is authoritative and preserved
+// across later edits/republishes (see activateJobInTransaction).
+const JOB_ACTIVE_DAYS = 31;
+
+class JobValidationError extends Error {
+  constructor(message, code = 'JOB_VALIDATION_FAILED') {
+    super(message);
+    this.name = 'JobValidationError';
+    this.statusCode = 422;
+    this.code = code;
+  }
+}
+
+// Computes the authoritative publish window, preserving the first-publication
+// date. `current` carries the job's pre-activation state (activatedAt from a
+// prior publish, plus the applicationOpensAt/applicationDeadline resolved from
+// this request's payload). A recruiter-chosen deadline must be in the future
+// and no later than firstPublishedAt + 31 days; when omitted it defaults to
+// firstPublishedAt + 31 days. activeUntil (used by the auto-close scheduler)
+// always equals the effective deadline.
+export function resolvePublishWindow(current = {}, now = new Date()) {
+  const firstPublishedAt = current.activatedAt ? new Date(current.activatedAt) : now;
+  const defaultDeadline = addDays(firstPublishedAt, JOB_ACTIVE_DAYS);
+
+  let applicationDeadline = current.applicationDeadline ? new Date(current.applicationDeadline) : null;
+  if (applicationDeadline) {
+    if (applicationDeadline.getTime() <= now.getTime()) {
+      throw new JobValidationError('Application deadline must be a future date.', 'DEADLINE_IN_PAST');
+    }
+    if (applicationDeadline.getTime() > defaultDeadline.getTime()) {
+      throw new JobValidationError(
+        'Application deadline cannot be later than 31 days after the job is first published.',
+        'DEADLINE_TOO_LATE',
+      );
+    }
+  } else {
+    applicationDeadline = defaultDeadline;
+  }
+
+  const applicationOpensAt = current.applicationOpensAt ? new Date(current.applicationOpensAt) : firstPublishedAt;
+
+  return {
+    activatedAt: firstPublishedAt,
+    applicationOpensAt,
+    applicationClosesAt: applicationDeadline,
+    applicationDeadline,
+    activeUntil: applicationDeadline,
+    autoClosedAt: null,
+  };
+}
 
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
@@ -44,6 +94,95 @@ async function ensureOrganisationMember(client, organisationId, userId, allowedR
   }
 
   return membership.user;
+}
+
+function normaliseEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+// The set of emails Careeriz will accept as application-notification
+// recipients for an organisation: every ACTIVE member whose user account is
+// active. Returns a case-insensitive allow-set plus a canonical-casing map.
+async function loadAuthorisedOrgEmails(client, organisationId) {
+  const members = await client.organisationMembership.findMany({
+    where: { organisationId, status: 'ACTIVE', user: { isActive: true } },
+    select: { user: { select: { email: true } } },
+  });
+  const allowSet = new Set();
+  const canonical = new Map();
+  for (const member of members) {
+    const email = member.user?.email;
+    if (!email) continue;
+    const key = normaliseEmail(email);
+    if (!key) continue;
+    allowSet.add(key);
+    if (!canonical.has(key)) canonical.set(key, email.trim());
+  }
+  return { allowSet, canonical };
+}
+
+// Validates and normalises the application-notification recipients on
+// create/edit/publish. Every address must be an authorised organisation-member
+// email; arbitrary external addresses are rejected even when posted directly to
+// the API. The primary is deduplicated out of the additional list (case-
+// insensitively), and the additional list is de-duplicated within itself.
+export async function buildNotificationRecipients(client, {
+  organisationId,
+  actorUser,
+  primary,
+  additional,
+  requirePrimary = false,
+  defaultPrimaryToActor = false,
+}) {
+  const { allowSet, canonical } = await loadAuthorisedOrgEmails(client, organisationId);
+
+  let primaryEmail = primary != null && String(primary).trim() ? String(primary).trim() : null;
+  if (!primaryEmail && defaultPrimaryToActor && actorUser?.email && allowSet.has(normaliseEmail(actorUser.email))) {
+    primaryEmail = actorUser.email;
+  }
+  if (primaryEmail && !allowSet.has(normaliseEmail(primaryEmail))) {
+    throw new JobValidationError('Choose an organisation-linked email for receiving applications.', 'RECEIVING_EMAIL_NOT_AUTHORISED');
+  }
+  if (requirePrimary && !primaryEmail) {
+    throw new JobValidationError('Choose an organisation-linked email for receiving applications.', 'RECEIVING_EMAIL_REQUIRED');
+  }
+  const primaryCanonical = primaryEmail ? (canonical.get(normaliseEmail(primaryEmail)) || primaryEmail.trim()) : null;
+
+  const seen = new Set(primaryCanonical ? [normaliseEmail(primaryCanonical)] : []);
+  const additionalCanonical = [];
+  for (const raw of Array.isArray(additional) ? additional : []) {
+    const email = String(raw || '').trim();
+    if (!email) continue;
+    const key = normaliseEmail(email);
+    if (!allowSet.has(key)) {
+      throw new JobValidationError('Additional receiving emails must be organisation-linked addresses.', 'RECEIVING_EMAIL_NOT_AUTHORISED');
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additionalCanonical.push(canonical.get(key) || email);
+  }
+
+  return { primary: primaryCanonical, additional: additionalCanonical };
+}
+
+// Send-time recipient resolution (req 8): re-validate the stored primary +
+// additional emails against CURRENT active membership, so anyone who lost
+// organisation access is excluded until reauthorised. De-duplicates so no
+// recipient is delivered twice. Returns canonical addresses, primary first.
+export async function resolveActiveNotificationRecipients(organisationId, { primary, additional } = {}, client = prisma) {
+  if (!organisationId) return [];
+  const { allowSet, canonical } = await loadAuthorisedOrgEmails(client, organisationId);
+  const result = [];
+  const seen = new Set();
+  for (const raw of [primary, ...(Array.isArray(additional) ? additional : [])]) {
+    const email = String(raw || '').trim();
+    if (!email) continue;
+    const key = normaliseEmail(email);
+    if (!allowSet.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    result.push(canonical.get(key) || email);
+  }
+  return result;
 }
 
 async function ensureApprovedRequisition(client, organisationId, requisitionId) {
@@ -140,7 +279,10 @@ function normalizeJobPayload(payload) {
       : payload.applicationDeadline
         ? new Date(payload.applicationDeadline)
         : null,
-    maxApplications: payload.maxApplications ?? null,
+    // maxApplications is intentionally NOT written from the job form: Careeriz
+    // does not stop accepting suitable candidates on an arbitrary count -
+    // relevance/ranking surfaces stronger matches instead. The column remains
+    // for legacy rows but is no longer set by create/publish.
     targetHires: payload.targetHires ?? null,
     autoCloseOnTargetHire: payload.autoCloseOnTargetHire ?? false,
     status: payload.status,
@@ -228,8 +370,21 @@ const jobIncludes = {
 // updateJobStatus transitioning to OPEN, and job-description-draft
 // publish, which itself calls updateJobStatus) - closing it here closes
 // all of them at once, regardless of which route/payload shape reached it.
-async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId, organisation }) {
+async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId, organisation, current = {}, hasReceivingEmail = false }) {
+  // Organisation-verification gate runs FIRST so an unverified/PENDING employer
+  // is rejected for that reason regardless of deadline/email state.
   assertOrganisationVerifiedForAction(organisation, organisationId);
+
+  // A publishable job must have an authorised receiving email (Part 17); this
+  // is checked before any credit consumption so a rejected publish never spends
+  // a job credit or leaves a partial write.
+  if (!hasReceivingEmail) {
+    throw new JobValidationError('Choose an organisation-linked email for receiving applications.', 'RECEIVING_EMAIL_REQUIRED');
+  }
+
+  // Publish-window validation runs before credit consumption too, for the same
+  // reason - a rejected deadline never consumes a job credit.
+  const publishWindow = resolvePublishWindow(current);
 
   const enforced = isEntitlementEnforcementEnabled(organisationId);
 
@@ -251,8 +406,7 @@ async function activateJobInTransaction(tx, { organisationId, jobId, actorUserId
     });
   }
 
-  const now = new Date();
-  return { activatedAt: now, activeUntil: addDays(now, JOB_ACTIVE_DAYS), autoClosedAt: null };
+  return publishWindow;
 }
 
 export async function createJob(actorUser, payload, organisationId = null, requestMeta = {}) {
@@ -288,11 +442,32 @@ export async function createJob(actorUser, payload, organisationId = null, reque
     jobData.hiringManagerId = hiringManager?.id || null;
     jobData.requisitionId = requisition?.id || null;
 
+    const recipients = await buildNotificationRecipients(tx, {
+      organisationId: context.organisationId,
+      actorUser,
+      primary: payload.applicationNotificationEmail,
+      additional: payload.applicationNotificationEmails,
+      defaultPrimaryToActor: true,
+    });
+    jobData.applicationNotificationEmail = recipients.primary;
+    jobData.applicationNotificationEmails = recipients.additional;
+
     const createdJob = await tx.job.create({ data: jobData, include: jobIncludes });
 
     let finalJob = createdJob;
     if (isPublishing) {
-      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId: createdJob.id, actorUserId: actorUser.id, organisation: context.activeMembership.organisation });
+      const activation = await activateJobInTransaction(tx, {
+        organisationId: context.organisationId,
+        jobId: createdJob.id,
+        actorUserId: actorUser.id,
+        organisation: context.activeMembership.organisation,
+        current: {
+          activatedAt: createdJob.activatedAt,
+          applicationOpensAt: createdJob.applicationOpensAt,
+          applicationDeadline: createdJob.applicationDeadline,
+        },
+        hasReceivingEmail: Boolean(recipients.primary),
+      });
       finalJob = await tx.job.update({
         where: { id: createdJob.id },
         data: { status: 'OPEN', ...activation },
@@ -403,8 +578,36 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
     data.hiringManagerId = hiringManager?.id || null;
     data.requisitionId = requisition?.id || null;
 
+    const recipients = await buildNotificationRecipients(tx, {
+      organisationId: context.organisationId,
+      actorUser,
+      // Validate only what this request carries; unrelated edits keep the
+      // stored recipients (which were validated when set). Send-time
+      // re-validation still excludes anyone who has since lost access.
+      primary: 'applicationNotificationEmail' in payload ? payload.applicationNotificationEmail : existing.applicationNotificationEmail,
+      additional: 'applicationNotificationEmails' in payload ? payload.applicationNotificationEmails : existing.applicationNotificationEmails,
+      defaultPrimaryToActor: false,
+    });
+    data.applicationNotificationEmail = recipients.primary;
+    data.applicationNotificationEmails = recipients.additional;
+
     if (isPublishing) {
-      const activation = await activateJobInTransaction(tx, { organisationId: context.organisationId, jobId, actorUserId: actorUser.id, organisation: context.activeMembership.organisation });
+      const activation = await activateJobInTransaction(tx, {
+        organisationId: context.organisationId,
+        jobId,
+        actorUserId: actorUser.id,
+        organisation: context.activeMembership.organisation,
+        current: {
+          // existing.activatedAt preserves the authoritative first-publication
+          // date across republishes; the deadline/opens come from this
+          // request's resolved payload (data), so a recruiter can still tighten
+          // the deadline on edit but never push the first-publish clock forward.
+          activatedAt: existing.activatedAt,
+          applicationOpensAt: data.applicationOpensAt,
+          applicationDeadline: data.applicationDeadline,
+        },
+        hasReceivingEmail: Boolean(recipients.primary),
+      });
       Object.assign(data, activation);
     }
 

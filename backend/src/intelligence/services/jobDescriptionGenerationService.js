@@ -13,7 +13,9 @@ import {
   supersedeCachedResults,
 } from './governanceService.js';
 import { executeStructuredPrompt } from './intelligenceRuntimeService.js';
+import { summarizeJobDescriptionValidationError } from './jobDescriptionOutputNormalizer.js';
 import { projectJobForIntelligence } from '../redaction/projectionService.js';
+import { normalizeSkillName } from './candidateIntelligenceService.js';
 
 const FEATURE = 'JOB_DESCRIPTION';
 const ENTITY_TYPE = 'JobDescription';
@@ -24,6 +26,70 @@ const SCHEMA_VERSION = '1.0.0';
 const STATE_METADATA_VERSION = '1.0.0';
 const PROMPT_KEY = 'JOB_DESCRIPTION_FULL';
 const PROMPT_VERSION = '1.0.0';
+
+const KNOWN_TECH_TERMS = [
+  'Anaplan',
+  'Java',
+  'Spring Boot',
+  'AWS',
+  'Amazon Web Services',
+  'Kafka',
+  'Docker',
+  'Kubernetes',
+  'React',
+  'Node.js',
+  'NodeJS',
+  'Next.js',
+  'TypeScript',
+  'JavaScript',
+  'Python',
+  'SQL',
+  'PostgreSQL',
+  'MongoDB',
+  'Snowflake',
+  'Tableau',
+  'Power BI',
+  'Salesforce',
+  'SAP',
+  'Oracle',
+  'Azure',
+  'GCP',
+];
+
+const DEGREE_TERMS = [
+  'MBA',
+  'PGDM',
+  'MCA',
+  'M.Tech',
+  'MTech',
+  'M.Sc',
+  'MSc',
+  'B.Tech',
+  'BTech',
+  'B.E',
+  'BE',
+  'B.Sc',
+  'BSc',
+  'Bachelor',
+  'Bachelor\'s',
+  'Master',
+  'Master\'s',
+  'PhD',
+  'Doctorate',
+];
+
+const CERTIFICATION_TERMS = [
+  'PMP',
+  'CPA',
+  'CA',
+  'CKA',
+  'AWS Certified',
+  'Microsoft Certified',
+  'Google Professional',
+  'Anaplan Certified',
+  'Certified Scrum Master',
+  'Scrum Master',
+];
 
 function iso(value) {
   if (!value) return null;
@@ -46,15 +112,219 @@ function cleanArray(value, maxItems = 20, maxLength = 160) {
     : [];
 }
 
+function normalizeFact(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\bamazon web services\b/g, 'aws')
+    .replace(/\bnodejs\b/g, 'node.js')
+    .replace(/\bnextjs\b/g, 'next.js')
+    .replace(/\bspringboot\b/g, 'spring boot')
+    .replace(/[^a-z0-9+#.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function factKey(value = '') {
+  return normalizeFact(normalizeSkillName(value) || value);
+}
+
+function addFact(set, value) {
+  const normalized = factKey(value);
+  if (normalized) set.add(normalized);
+}
+
+function addTextFacts(set, value) {
+  const text = scrubText(value, 12000);
+  if (!text) return;
+  addFact(set, text);
+  for (const term of [...KNOWN_TECH_TERMS, ...DEGREE_TERMS, ...CERTIFICATION_TERMS]) {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9+#])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9+#]|$)`, 'i');
+    if (pattern.test(text)) addFact(set, term);
+  }
+}
+
+function buildAuthoritativeJobFacts(job = {}, requisition = null) {
+  const requiredSkills = cleanArray(job?.skillsRequired, 40, 120);
+  const preferredSkills = cleanArray(job?.skillsPreferred, 40, 120);
+  const approvedFacts = new Set();
+
+  [
+    job?.title,
+    requisition?.title,
+    job?.location,
+    requisition?.location,
+    job?.workplaceType,
+    job?.employmentType,
+    requisition?.employmentType,
+    job?.department,
+    requisition?.department,
+    job?.businessUnit,
+    requisition?.businessUnit,
+    job?.candidateQualifications?.educationCourse,
+    job?.candidateQualifications?.educationCourseOther,
+    job?.candidateQualifications?.shiftTiming,
+    job?.candidateQualifications?.shiftTimingOther,
+  ].forEach((value) => addFact(approvedFacts, value));
+
+  [
+    ...requiredSkills,
+    ...preferredSkills,
+    ...cleanArray(job?.responsibilities, 60, 300),
+    ...cleanArray(job?.requirements, 60, 300),
+    ...cleanArray(job?.benefits, 60, 300),
+    ...cleanArray(job?.candidateQualifications?.certifications, 20, 160),
+  ].forEach((value) => addTextFacts(approvedFacts, value));
+
+  addTextFacts(approvedFacts, job?.description);
+  addTextFacts(approvedFacts, requisition?.reasonForHiring);
+
+  const experienceClaims = [];
+  if (job?.experienceMin != null || job?.experienceMax != null) {
+    experienceClaims.push({
+      min: Number.isFinite(Number(job.experienceMin)) ? Number(job.experienceMin) : null,
+      max: Number.isFinite(Number(job.experienceMax)) ? Number(job.experienceMax) : null,
+    });
+  }
+
+  return {
+    requiredSkills,
+    preferredSkills,
+    approvedFacts,
+    experienceClaims,
+  };
+}
+
+function extractExperienceClaims(text = '') {
+  const claims = [];
+  const pattern = /\b(?:(\d{1,2})\s*(?:-|to)\s*(\d{1,2})|(\d{1,2})\+?)\s*(?:years?|yrs?)\b/gi;
+  let match = pattern.exec(text);
+  while (match) {
+    claims.push({
+      min: Number(match[1] || match[3]),
+      max: match[2] ? Number(match[2]) : null,
+      raw: match[0],
+    });
+    match = pattern.exec(text);
+  }
+  return claims;
+}
+
+function experienceClaimAllowed(claim, allowedClaims) {
+  if (!claim.min || !allowedClaims.length) return false;
+  return allowedClaims.some((allowed) => {
+    if (allowed.min != null && allowed.max != null) {
+      return claim.min === allowed.min && (claim.max == null || claim.max === allowed.max);
+    }
+    if (allowed.min != null) return claim.min === allowed.min;
+    if (allowed.max != null) return claim.max === allowed.max || claim.min === allowed.max;
+    return false;
+  });
+}
+
+function extractNamedClaims(text = '') {
+  const claims = [];
+  const catalog = [
+    ...KNOWN_TECH_TERMS.map((term) => ({ term, type: 'technology' })),
+    ...DEGREE_TERMS.map((term) => ({ term, type: 'degree' })),
+    ...CERTIFICATION_TERMS.map((term) => ({ term, type: 'certification' })),
+  ];
+  for (const { term, type } of catalog) {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9+#])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9+#]|$)`, 'i');
+    if (pattern.test(text)) {
+      claims.push({ type, term, key: factKey(term) });
+    }
+  }
+  return claims;
+}
+
+function validateGeneratedNarrativeFacts(output, authoritativeFacts) {
+  const diagnostics = [];
+  const sectionEntries = [
+    ['openingSummary', output.openingSummary],
+    ['roleOverview', output.roleOverview],
+    ...cleanArray(output.keyResponsibilities, 40, 400).map((item, index) => [`keyResponsibilities.${index}`, item]),
+    ...(Array.isArray(output.additionalSections) ? output.additionalSections : [])
+      .map((section, index) => [`additionalSections.${index}`, `${section?.heading || ''} ${section?.body || ''}`]),
+  ];
+
+  for (const [path, text] of sectionEntries) {
+    for (const claim of extractNamedClaims(text)) {
+      if (!authoritativeFacts.approvedFacts.has(claim.key)) {
+        diagnostics.push({
+          path,
+          reason: 'unsupported_named_fact',
+          claimType: claim.type,
+          term: claim.term,
+        });
+      }
+    }
+    for (const claim of extractExperienceClaims(text)) {
+      if (!experienceClaimAllowed(claim, authoritativeFacts.experienceClaims)) {
+        diagnostics.push({
+          path,
+          reason: 'unsupported_experience_requirement',
+          claim: claim.raw,
+        });
+      }
+    }
+  }
+
+  if (diagnostics.length) {
+    const error = new Error('AI job description narrative introduced unsupported job facts.');
+    error.name = 'JobDescriptionValidationError';
+    error.code = 'JOB_DESCRIPTION_SCHEMA_INVALID';
+    error.statusCode = 502;
+    error.diagnostics = diagnostics;
+    throw error;
+  }
+}
+
+export function applyAuthoritativeJobFacts(output, job, requisition = null) {
+  const authoritativeFacts = buildAuthoritativeJobFacts(job, requisition);
+  validateGeneratedNarrativeFacts(output, authoritativeFacts);
+
+  const aiRequiredSuggestions = cleanArray(output.requiredQualifications, 40, 160)
+    .filter((skill) => !authoritativeFacts.requiredSkills.map(factKey).includes(factKey(skill)));
+  const aiPreferredSuggestions = cleanArray(output.preferredQualifications, 40, 160)
+    .filter((skill) => !authoritativeFacts.preferredSkills.map(factKey).includes(factKey(skill)));
+
+  return {
+    ...output,
+    requiredQualifications: authoritativeFacts.requiredSkills,
+    preferredQualifications: authoritativeFacts.preferredSkills,
+    assumptions: cleanArray([
+      ...(output.assumptions || []),
+      aiRequiredSuggestions.length
+        ? 'AI suggested additional required skills that were not recruiter-confirmed; review separately before accepting.'
+        : null,
+      aiPreferredSuggestions.length
+        ? 'AI suggested additional preferred skills that were not recruiter-confirmed; review separately before accepting.'
+        : null,
+      authoritativeFacts.requiredSkills.length < 3
+        ? 'Recruiter provided fewer than three required skills; confirm whether additional required skills are missing.'
+        : null,
+    ].filter(Boolean), 30, 400),
+  };
+}
+
 function buildDeterministicJobDescription(job, requisition = null) {
   const description = scrubText(job?.description || requisition?.reasonForHiring, 1400);
+  const openingSummary = description
+    ? description.split(/(?<=[.!?])\s+/).slice(0, 1).join(' ')
+    : 'No source description has been provided yet.';
+  const roleOverview = description && description !== openingSummary
+    ? description
+    : `${job?.title || requisition?.title || 'This role'} should be reviewed with complete recruiter-provided responsibilities and requirements. Add role-specific context before publishing.`;
   return {
     jobId: job.id,
     kind: DEFAULT_KIND,
-    summary: description || 'No source description provided yet.',
-    responsibilities: cleanArray(job?.responsibilities, 30, 300),
-    requiredSkills: cleanArray(job?.skillsRequired, 40, 120),
-    preferredSkills: cleanArray(job?.skillsPreferred, 30, 120),
+    openingSummary,
+    roleOverview,
+    keyResponsibilities: cleanArray(job?.responsibilities, 30, 300),
+    requiredQualifications: cleanArray(job?.skillsRequired, 40, 160),
+    preferredQualifications: cleanArray(job?.skillsPreferred, 30, 160),
+    additionalSections: [],
     screeningQuestions: [],
     assumptions: [
       !job?.location ? 'Location is missing and must be confirmed manually.' : null,
@@ -92,6 +362,7 @@ function buildMeaningfulSource(job, requisition = null) {
       experienceMin: job?.experienceMin ?? null,
       experienceMax: job?.experienceMax ?? null,
       skillsRequired: cleanArray(job?.skillsRequired, 50, 120),
+      skillsPreferred: cleanArray(job?.skillsPreferred, 50, 120),
       responsibilities: cleanArray(job?.responsibilities, 50, 300),
       requirements: cleanArray(job?.requirements, 50, 300),
       benefits: cleanArray(job?.benefits, 50, 300),
@@ -164,12 +435,29 @@ function buildExecutionSection(state, execution, extra = {}) {
   };
 }
 
+function canonicalizeJobDescriptionOutput(output = {}) {
+  return {
+    ...output,
+    openingSummary: output.openingSummary || '',
+    roleOverview: output.roleOverview || '',
+    keyResponsibilities: Array.isArray(output.keyResponsibilities) ? output.keyResponsibilities : [],
+    requiredQualifications: Array.isArray(output.requiredQualifications) ? output.requiredQualifications : [],
+    preferredQualifications: Array.isArray(output.preferredQualifications) ? output.preferredQualifications : [],
+    additionalSections: Array.isArray(output.additionalSections) ? output.additionalSections : [],
+    screeningQuestions: Array.isArray(output.screeningQuestions) ? output.screeningQuestions : [],
+    assumptions: Array.isArray(output.assumptions) ? output.assumptions : [],
+    exclusionaryWordingWarnings: Array.isArray(output.exclusionaryWordingWarnings) ? output.exclusionaryWordingWarnings : [],
+    missingFields: Array.isArray(output.missingFields) ? output.missingFields : [],
+    interviewFocus: Array.isArray(output.interviewFocus) ? output.interviewFocus : [],
+  };
+}
+
 function buildApiResponseFromStoredResult(jobId, state, result, extra = {}) {
   const output = result?.normalizedOutput || extra.fallbackOutput;
   return {
     jobId,
     kind: DEFAULT_KIND,
-    ...(output || {}),
+    ...(output ? canonicalizeJobDescriptionOutput(output) : {}),
     execution: buildExecutionSection(state, result?.execution, extra),
   };
 }
@@ -381,7 +669,7 @@ async function storeDeterministicOnlyResult(context) {
     resultVersion: RESULT_VERSION,
     promptVersion: PROMPT_VERSION,
     normalizedOutput,
-    explanation: normalizedOutput.summary,
+    explanation: normalizedOutput.roleOverview || normalizedOutput.openingSummary,
     confidence: null,
     feature: FEATURE,
   });
@@ -625,7 +913,7 @@ export async function runJobDescriptionGenerationTask(task) {
       normalizedOutput = {
         jobId: context.job.id,
         kind: DEFAULT_KIND,
-        ...runtime.output,
+        ...applyAuthoritativeJobFacts(runtime.output, context.job, context.requisition),
       };
       promptTokens = runtime.promptTokens || 0;
       completionTokens = runtime.completionTokens || 0;
@@ -648,7 +936,7 @@ export async function runJobDescriptionGenerationTask(task) {
       resultVersion: RESULT_VERSION,
       promptVersion: PROMPT_VERSION,
       normalizedOutput,
-      explanation: normalizedOutput.summary,
+      explanation: normalizedOutput.roleOverview || normalizedOutput.openingSummary,
       confidence: null,
       feature: FEATURE,
     });
@@ -703,6 +991,7 @@ export async function runJobDescriptionGenerationTask(task) {
 
     return 'success';
   } catch (error) {
+    const validationDiagnostics = summarizeJobDescriptionValidationError(error);
     await recordIntelligenceFailure(execution.id, error).catch(() => {});
     await upsertJobDescriptionState(context.job, {
       organisationId: context.permissionContext.organisationId,
@@ -715,7 +1004,11 @@ export async function runJobDescriptionGenerationTask(task) {
       model: context.aiEnabled ? (env.awsBedrockModelId || env.intelligenceModel || null) : null,
       modelVersion: context.aiEnabled ? (env.awsBedrockModelId || env.intelligenceModel || null) : null,
       staleReason: error.code || 'JOB_DESCRIPTION_FAILED',
-      metadata: { version: STATE_METADATA_VERSION, deterministicOnly: !context.aiEnabled },
+      metadata: {
+        version: STATE_METADATA_VERSION,
+        deterministicOnly: !context.aiEnabled,
+        validationDiagnostics,
+      },
     });
     throw error;
   }

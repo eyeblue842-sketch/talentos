@@ -24,7 +24,7 @@ function poison(label) {
 }
 
 function actor(id) {
-  return { id, role: 'RECRUITER' };
+  return { id, role: 'RECRUITER', email: `${id}@acme.test` };
 }
 
 before(async () => {
@@ -35,7 +35,7 @@ before(async () => {
 beforeEach(() => {
   state = {
     memberships: [
-      { id: 'm1', organisationId: 'org-1', userId: 'recruiter-1', status: 'ACTIVE', role: 'RECRUITER', user: { id: 'recruiter-1' } },
+      { id: 'm1', organisationId: 'org-1', userId: 'recruiter-1', status: 'ACTIVE', role: 'RECRUITER', user: { id: 'recruiter-1', email: 'recruiter-1@acme.test', isActive: true } },
     ],
     jobs: [],
     auditLogs: [],

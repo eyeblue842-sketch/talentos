@@ -5,6 +5,7 @@ import { requireOrganisationRole, requireOrganisationContext } from './organisat
 import { recordAuditLog } from './auditLogService.js';
 import { enqueueBackgroundTask } from './backgroundTaskService.js';
 import { sendRecruiterApplicationNotificationEmail } from './emailService.js';
+import { resolveActiveNotificationRecipients } from './jobService.js';
 import { markCandidateIntelligenceStale } from '../intelligence/services/candidateIntelligenceService.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
 import {
@@ -202,6 +203,7 @@ function normalizeQuestionPayload(payload, displayOrder = 0) {
   const config = payload.config || {};
   const validationConfig = payload.validationConfig || {};
   return {
+    clientRequestId: payload.clientRequestId || null,
     templateId: payload.templateId || null,
     questionText: String(payload.questionText || '').trim(),
     internalLabel: sanitizeText(payload.internalLabel, 160),
@@ -450,8 +452,9 @@ function getFileExtension(filename) {
 function validateAnswerAgainstQuestion(question, rawAnswer) {
   const value = rawAnswer?.value;
   const fileAssetId = rawAnswer?.fileAssetId || null;
+  const textValue = typeof value === 'string' ? value.trim() : value;
 
-  if (question.required && (value == null || value === '' || (Array.isArray(value) && !value.length)) && !fileAssetId) {
+  if (question.required && (textValue == null || textValue === '' || (Array.isArray(textValue) && !textValue.length)) && !fileAssetId) {
     const error = new Error(`Answer required for "${question.questionText}".`);
     error.statusCode = 422;
     throw error;
@@ -467,10 +470,10 @@ function validateAnswerAgainstQuestion(question, rawAnswer) {
       if (typeof value === 'string') {
         const min = question.validationConfig?.minTextLength;
         const max = question.validationConfig?.maxTextLength;
-        if (min != null && value.length < min) throw validationError(question, `Answer must be at least ${min} characters.`);
-        if (max != null && value.length > max) throw validationError(question, `Answer must be at most ${max} characters.`);
+        if (min != null && textValue.length < min) throw validationError(question, `Answer must be at least ${min} characters.`);
+        if (max != null && textValue.length > max) throw validationError(question, `Answer must be at most ${max} characters.`);
       }
-      return { answerValue: value ?? null, fileAssetId: null };
+      return { answerValue: textValue ?? null, fileAssetId: null };
     case 'EMAIL':
       if (value != null && (typeof value !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))) throw validationError(question, 'Expected a valid email address.');
       return { answerValue: value ?? null, fileAssetId: null };
@@ -736,7 +739,8 @@ export async function addJobScreeningQuestion(actorUser, jobId, payload, organis
   await ensureJobForOrganisation(jobId, context.organisationId);
   const nextOrder = await countJobScreeningQuestions({ organisationId: context.organisationId, jobId });
   const normalized = validateQuestionConfiguration({ ...payload, displayOrder: payload.displayOrder ?? nextOrder });
-  const created = await createJobScreeningQuestionRecord({
+  const questionData = {
+    ...(normalized.clientRequestId ? { id: normalized.clientRequestId } : {}),
     organisationId: context.organisationId,
     jobId,
     templateId: normalized.templateId,
@@ -752,17 +756,30 @@ export async function addJobScreeningQuestion(actorUser, jobId, payload, organis
     config: normalized.config,
     validationConfig: normalized.validationConfig,
     rules: normalized.rules,
-  });
-  await recordAuditLog({
-    organisationId: context.organisationId,
-    actorUserId: actorUser.id,
-    action: 'job-screening-question.create',
-    entityType: 'JobScreeningQuestion',
-    entityId: created.id,
-    afterData: created,
-    ...requestMeta,
-  });
-  return serializeQuestion(created);
+  };
+  try {
+    const created = await createJobScreeningQuestionRecord(questionData);
+    await recordAuditLog({
+      organisationId: context.organisationId,
+      actorUserId: actorUser.id,
+      action: 'job-screening-question.create',
+      entityType: 'JobScreeningQuestion',
+      entityId: created.id,
+      afterData: created,
+      ...requestMeta,
+    });
+    return serializeQuestion(created);
+  } catch (error) {
+    if (error?.code !== 'P2002' || !normalized.clientRequestId) throw error;
+    const existing = await findJobScreeningQuestion({ id: normalized.clientRequestId });
+    if (!existing || existing.organisationId !== context.organisationId || existing.jobId !== jobId
+      || existing.questionText !== normalized.questionText || existing.questionType !== normalized.questionType) {
+      const conflict = new Error('This question request identity is already in use.');
+      conflict.statusCode = 409;
+      throw conflict;
+    }
+    return serializeQuestion(existing);
+  }
 }
 
 export async function addJobQuestionFromLibrary(actorUser, jobId, templateId, organisationId = null, requestMeta = {}) {
@@ -1106,8 +1123,22 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
 
     const submission = await getCandidateApplicationDetail(candidateUser, result.jobApplication.id);
 
-    const applicationNotificationEmail = submission.job?.applicationNotificationEmail || null;
-    if (applicationNotificationEmail) {
+    // Resolve recipients from the job's stored primary + additional emails,
+    // re-validated against CURRENT active membership at send time so anyone who
+    // has lost organisation access is excluded, and de-duplicated so no
+    // recipient is delivered twice.
+    const jobEmailFields = await prisma.job.findUnique({
+      where: { id: submission.job?.id || payload.jobId },
+      select: { applicationNotificationEmail: true, applicationNotificationEmails: true },
+    });
+    const notificationRecipients = await resolveActiveNotificationRecipients(
+      submission.organisationId || result.jobApplication.organisationId,
+      {
+        primary: jobEmailFields?.applicationNotificationEmail,
+        additional: jobEmailFields?.applicationNotificationEmails,
+      },
+    );
+    if (notificationRecipients.length) {
       const recruiterName = submission.job?.organisation?.name || 'Recruiter';
       const frontendBaseUrl = process.env.FRONTEND_URL || '';
       const applicationPath = `/recruiter/job-responses?jobId=${encodeURIComponent(submission.job?.id || payload.jobId)}`;
@@ -1115,8 +1146,8 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
         ? new URL(applicationPath, frontendBaseUrl).toString()
         : applicationPath;
 
-      await sendRecruiterApplicationNotificationEmail({
-        to: applicationNotificationEmail,
+      await Promise.all(notificationRecipients.map((to) => sendRecruiterApplicationNotificationEmail({
+        to,
         recruiterName,
         candidateName: submission.candidate?.fullName || candidateProfile.fullName || 'A candidate',
         jobTitle: submission.job?.title || 'your job',
@@ -1130,7 +1161,7 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
           jobId: submission.job?.id || payload.jobId,
           organisationId: submission.organisationId || null,
         });
-      });
+      })));
     }
 
     return submission;

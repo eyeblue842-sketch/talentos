@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  canonicalJobDescriptionOutputShape,
+  JOB_DESCRIPTION_FIELD_LIMITS,
+  JOB_DESCRIPTION_LIST_LIMITS,
+} from './job-description-contract.js';
 
 export const intelligenceProviderSchema = z.enum([
   'DISABLED',
@@ -1096,15 +1101,7 @@ export const jobDescriptionRegenerateSchema = z.object({
 export const jobDescriptionResultSchema = z.object({
   jobId: z.string().trim().min(1).max(120),
   kind: jobDescriptionGenerationKindSchema,
-  summary: z.string().trim().min(1).max(4000),
-  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
-  requiredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
-  preferredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
-  screeningQuestions: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
-  assumptions: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
-  exclusionaryWordingWarnings: z.array(z.string().trim().min(1).max(400)).max(20).default([]),
-  missingFields: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
-  interviewFocus: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  ...canonicalJobDescriptionOutputShape,
   execution: z.object({
     stateId: z.string().trim().min(1).max(120).nullable(),
     executionId: z.string().trim().min(1).max(120).nullable(),
@@ -1156,15 +1153,20 @@ export const jobDescriptionTemplateScopeSchema = z.enum([
 
 export const jobDescriptionDraftContentSchema = z.object({
   title: z.string().trim().min(1).max(240).nullable().optional(),
-  summary: z.string().trim().min(1).max(4000),
-  responsibilities: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
-  requiredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
-  preferredSkills: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
-  screeningQuestions: z.array(z.string().trim().min(1).max(400)).max(40).default([]),
-  assumptions: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
-  exclusionaryWordingWarnings: z.array(z.string().trim().min(1).max(400)).max(20).default([]),
-  missingFields: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
-  interviewFocus: z.array(z.string().trim().min(1).max(400)).max(30).default([]),
+  openingSummary: z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.openingSummary).optional(),
+  roleOverview: z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.roleOverview).optional(),
+  keyResponsibilities: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.keyResponsibility)).max(JOB_DESCRIPTION_LIST_LIMITS.keyResponsibilities).default([]),
+  requiredQualifications: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.qualification)).max(JOB_DESCRIPTION_LIST_LIMITS.requiredQualifications).default([]),
+  preferredQualifications: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.qualification)).max(JOB_DESCRIPTION_LIST_LIMITS.preferredQualifications).default([]),
+  additionalSections: z.array(z.object({
+    heading: z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.additionalSectionHeading),
+    body: z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.additionalSectionBody),
+  }).strict()).max(JOB_DESCRIPTION_LIST_LIMITS.additionalSections).default([]),
+  screeningQuestions: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.screeningQuestion)).max(JOB_DESCRIPTION_LIST_LIMITS.screeningQuestions).default([]),
+  assumptions: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.assumption)).max(JOB_DESCRIPTION_LIST_LIMITS.assumptions).default([]),
+  exclusionaryWordingWarnings: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.warning)).max(JOB_DESCRIPTION_LIST_LIMITS.exclusionaryWordingWarnings).default([]),
+  missingFields: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.missingField)).max(JOB_DESCRIPTION_LIST_LIMITS.missingFields).default([]),
+  interviewFocus: z.array(z.string().trim().min(1).max(JOB_DESCRIPTION_FIELD_LIMITS.interviewFocus)).max(JOB_DESCRIPTION_LIST_LIMITS.interviewFocus).default([]),
 });
 
 export const jobDescriptionDraftSnapshotSchema = z.object({

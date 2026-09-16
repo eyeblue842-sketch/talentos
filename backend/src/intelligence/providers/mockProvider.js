@@ -1,15 +1,16 @@
 function buildJobDescriptionOutput() {
   return {
-    summary: 'Senior backend engineering role focused on cloud-native service development and operational ownership.',
-    responsibilities: [
+    openingSummary: 'Build reliable cloud-native services for production applications.',
+    roleOverview: 'This Senior Backend Engineer role focuses on building reliable cloud-native services for production applications. The engineer will own service delivery, collaborate with product partners, and support operational quality for backend platforms.',
+    keyResponsibilities: [
       'Design and deliver backend services for production applications.',
       'Collaborate with cross-functional teams to ship reliable features.',
+      'Troubleshoot operational issues and improve service reliability.',
     ],
-    requiredSkills: ['Java', 'Spring Boot', 'AWS'],
-    preferredSkills: ['Docker', 'Kafka'],
-    screeningQuestions: [
-      'Describe a backend service you designed and operated in production.',
-    ],
+    requiredQualifications: ['Java', 'Spring Boot', 'AWS'],
+    preferredQualifications: ['Docker', 'Kafka'],
+    additionalSections: [],
+    screeningQuestions: [],
     assumptions: [],
     exclusionaryWordingWarnings: [],
     missingFields: [],

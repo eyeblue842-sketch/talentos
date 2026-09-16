@@ -1957,6 +1957,12 @@ model Job {
   requirements                     String[]                   @default([])
   benefits                         String[]                   @default([])
   applicationNotificationEmail     String?
+  // Additional internal recipients for new-application notifications, beyond
+  // the primary applicationNotificationEmail. Every entry must be a verified,
+  // active organisation-member email (validated server-side on create/edit/
+  // publish and re-validated at send time). Never exposed on the public job
+  // page or any candidate-facing API.
+  applicationNotificationEmails    String[]                   @default([])
   applicationDeadline              DateTime?
   applicationOpensAt               DateTime?
   applicationClosesAt              DateTime?

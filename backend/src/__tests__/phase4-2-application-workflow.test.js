@@ -97,7 +97,7 @@ function seedState() {
       createdAt: now(),
     },
     organisationMemberships: [
-      { userId: 'recruiter-1' },
+      { userId: 'recruiter-1', status: 'ACTIVE', user: { email: 'recruiter@acme.example', isActive: true } },
     ],
     createdApplications: [],
     createdFlags: [],
@@ -144,6 +144,11 @@ beforeEach(() => {
       ...clone(state.candidateProfile),
       user: include?.user ? { id: 'user-1', email: 'candidate@example.com' } : undefined,
     };
+  };
+  prisma.candidateProfile.update = async ({ where, data } = {}) => {
+    if (where.id !== state.candidateProfile.id) return null;
+    Object.assign(state.candidateProfile, clone(data));
+    return clone(state.candidateProfile);
   };
 
   prisma.jobApplication.findUnique = async ({ where } = {}) => {
@@ -209,6 +214,28 @@ test('application answer validation rejects missing required answers', async () 
     () => validateApplicationAnswers(state.candidateUser, {
       jobId: 'job-1',
       answers: [],
+    }),
+    /Answer required/,
+  );
+});
+
+test('application answer validation treats whitespace-only text as missing for required questions', async () => {
+  state.publicJob.screeningQuestions = [{
+    id: 'question-text-1',
+    questionText: 'Why are you interested in this role?',
+    questionType: 'SHORT_TEXT',
+    required: true,
+    displayOrder: 0,
+    isActive: true,
+    config: {},
+    validationConfig: { minTextLength: 1, maxTextLength: 500 },
+    rules: [],
+  }];
+
+  await assert.rejects(
+    () => validateApplicationAnswers(state.candidateUser, {
+      jobId: 'job-1',
+      answers: [{ questionId: 'question-text-1', value: '    ' }],
     }),
     /Answer required/,
   );

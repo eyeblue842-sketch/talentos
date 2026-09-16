@@ -187,7 +187,11 @@ const jobLocationEntrySchema = z.object({
 const candidateQualificationsSchema = z.object({
   minimumQualification: z.string().trim().max(20).optional().nullable(),
   educationCourse: z.string().trim().max(160).optional().nullable(),
+  educationCourseOther: z.string().trim().max(160).optional().nullable(),
   specialization: z.string().trim().max(160).optional().nullable(),
+  specializationOther: z.string().trim().max(160).optional().nullable(),
+  shiftTiming: z.enum(['GENERAL_DAY', 'EVENING', 'NIGHT', 'ROTATIONAL', 'FLEXIBLE', 'OTHER']).optional().nullable(),
+  shiftTimingOther: z.string().trim().max(120).optional().nullable(),
   relevantExperience: z.coerce.number().min(0).max(60).optional().nullable(),
   industry: z.string().trim().max(160).optional().nullable(),
   noticePeriod: z.string().trim().max(60).optional().nullable(),
@@ -218,6 +222,10 @@ const jobBaseFieldsSchema = z.object({
   requirements: z.array(z.string().trim().min(1).max(400)).max(60).optional().default([]),
   benefits: z.array(z.string().trim().min(1).max(240)).max(40).optional().default([]),
   applicationNotificationEmail: z.string().trim().email().max(320).optional().nullable(),
+  // Additional internal recipients. Format-only here; server-side validation
+  // (jobService) enforces that every address is a verified active
+  // organisation-member email and rejects arbitrary external addresses.
+  applicationNotificationEmails: z.array(z.string().trim().email().max(320)).max(20).optional().default([]),
   experienceMin: z.coerce.number().int().min(0).max(60),
   experienceMax: z.coerce.number().int().min(0).max(60),
   // Mandatory: Careeriz AI/matching/ranking business logic requires the actual

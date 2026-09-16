@@ -10,6 +10,154 @@ function resumeDownloadUrl(profile) {
   return `/api/resumes/candidate/${profile.id}/download`;
 }
 
+const PUBLIC_JOB_ALLOWED_PATHS = new Set([
+  'id',
+  'slug',
+  'title',
+  'description',
+  'location',
+  'locations',
+  'employmentType',
+  'workplaceType',
+  'experienceMin',
+  'experienceMax',
+  'salaryVisible',
+  'salaryMin',
+  'salaryMax',
+  'currency',
+  'numberOfOpenings',
+  'candidateQualifications',
+  'candidateQualifications.minimumQualification',
+  'candidateQualifications.educationCourse',
+  'candidateQualifications.educationCourseOther',
+  'candidateQualifications.specialization',
+  'candidateQualifications.specializationOther',
+  'candidateQualifications.shiftTiming',
+  'candidateQualifications.shiftTimingOther',
+  'applicationDeadline',
+  'applicationOpensAt',
+  'applicationClosesAt',
+  'visibility',
+  'createdAt',
+  'updatedAt',
+  'postedAt',
+  'skillsRequired',
+  'responsibilities',
+  'requirements',
+  'benefits',
+  'organisation',
+  'organisation.id',
+  'organisation.name',
+  'organisation.slug',
+  'organisation.website',
+  'organisation.logoUrl',
+  'organisation.publicDescription',
+  'organisation.industry',
+  'organisation.organisationSize',
+  'organisation.headquarters',
+  'organisation.publicLocations',
+  'organisation.cultureSummary',
+  'organisation.benefitsSummary',
+  'recruiter',
+  'recruiter.userId',
+  'recruiter.fullName',
+  'recruiter.designation',
+  'recruiter.company',
+  'recruiter.location',
+  'recruiter.headline',
+  'recruiter.connectionStatus',
+  'saved',
+  'applyPath',
+]);
+
+const PUBLIC_JOB_ALLOWED_ARRAY_PREFIXES = new Set([
+  'locations',
+  'skillsRequired',
+  'responsibilities',
+  'requirements',
+  'benefits',
+  'organisation.publicLocations',
+]);
+
+const PUBLIC_JOB_PRIVATE_FIELD_NAMES = new Set([
+  'assumptions',
+  'missingFields',
+  'exclusionaryWordingWarnings',
+  'interviewFocus',
+  'rawProviderResponse',
+  'rawPrompt',
+  'systemInstructions',
+  'systemPrompt',
+  'prompt',
+  'messages',
+  'executionDiagnostics',
+  'diagnostics',
+  'providerMetadata',
+  'providerRawMetadata',
+  'tokenUsage',
+  'promptTokens',
+  'completionTokens',
+  'estimatedCost',
+  'sourceResultId',
+  'sourceExecutionId',
+  'sourceStateId',
+  'latestExecutionId',
+  'latestResultId',
+  'executionId',
+  'resultId',
+  'stateId',
+  'screeningQuestions',
+  'screeningQuestionSuggestions',
+  'skillSuggestions',
+  'unacceptedSkillSuggestions',
+  'unacceptedScreeningQuestions',
+  'preferredCandidateProfile',
+]);
+
+function pathWith(parent, key) {
+  return parent ? `${parent}.${key}` : key;
+}
+
+function isAllowedPublicJobPath(path) {
+  if (PUBLIC_JOB_ALLOWED_PATHS.has(path)) return true;
+  for (const prefix of PUBLIC_JOB_ALLOWED_ARRAY_PREFIXES) {
+    if (path === prefix || path.startsWith(`${prefix}.`)) return true;
+  }
+  return false;
+}
+
+export function collectPublicJobProjectionPrivacyViolations(value, path = '') {
+  if (value == null || typeof value !== 'object') return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectPublicJobProjectionPrivacyViolations(item, pathWith(path, index)));
+  }
+
+  const violations = [];
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = pathWith(path, key);
+    if (PUBLIC_JOB_PRIVATE_FIELD_NAMES.has(key)) {
+      violations.push({ path: childPath, reason: 'private_field' });
+      continue;
+    }
+    if (!isAllowedPublicJobPath(childPath)) {
+      violations.push({ path: childPath, reason: 'unsupported_public_field' });
+      continue;
+    }
+    violations.push(...collectPublicJobProjectionPrivacyViolations(child, childPath));
+  }
+  return violations;
+}
+
+export function assertPublicJobProjectionContract(value) {
+  const violations = collectPublicJobProjectionPrivacyViolations(value);
+  if (!violations.length) return value;
+  const error = new Error('Public job projection contains unsupported or private fields.');
+  error.code = 'PUBLIC_JOB_PROJECTION_PRIVACY_VIOLATION';
+  error.violations = violations;
+  throw error;
+}
+
 export function serializeOrganisation(organisation) {
   if (!organisation) return null;
   return {
@@ -557,6 +705,7 @@ export function serializeJob(job, options = {}) {
     requirements: job.requirements,
     benefits: job.benefits,
     applicationNotificationEmail: job.applicationNotificationEmail,
+    applicationNotificationEmails: job.applicationNotificationEmails || [],
     applicationDeadline: iso(job.applicationDeadline),
     applicationOpensAt: iso(job.applicationOpensAt),
     applicationClosesAt: iso(job.applicationClosesAt),
@@ -600,7 +749,7 @@ export function serializeJob(job, options = {}) {
 export function serializePublicJob(job, options = {}) {
   if (!job) return null;
   const salaryVisible = Boolean(job.publicSalaryEnabled);
-  return {
+  return assertPublicJobProjectionContract({
     id: job.id,
     slug: job.slug,
     title: job.title,
@@ -615,6 +764,15 @@ export function serializePublicJob(job, options = {}) {
     salaryMax: salaryVisible ? job.salaryMax : null,
     currency: salaryVisible ? job.currency : null,
     numberOfOpenings: job.numberOfOpenings,
+    candidateQualifications: job.candidateQualifications ? {
+      minimumQualification: job.candidateQualifications.minimumQualification || null,
+      educationCourse: job.candidateQualifications.educationCourse || null,
+      educationCourseOther: job.candidateQualifications.educationCourseOther || null,
+      specialization: job.candidateQualifications.specialization || null,
+      specializationOther: job.candidateQualifications.specializationOther || null,
+      shiftTiming: job.candidateQualifications.shiftTiming || null,
+      shiftTimingOther: job.candidateQualifications.shiftTimingOther || null,
+    } : null,
     applicationDeadline: iso(job.applicationDeadline),
     applicationOpensAt: iso(job.applicationOpensAt),
     applicationClosesAt: iso(job.applicationClosesAt),
@@ -638,7 +796,7 @@ export function serializePublicJob(job, options = {}) {
     } : undefined,
     saved: options.saved ?? undefined,
     applyPath: `/jobs/${job.slug}#apply`,
-  };
+  });
 }
 
 export function serializeActivity(activity) {

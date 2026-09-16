@@ -31,13 +31,29 @@ function cleanArray(value, maxItems = 40, maxLength = 400) {
     : [];
 }
 
+function normalizeAdditionalSections(value) {
+  return Array.isArray(value)
+    ? value
+        .map((entry) => ({
+          heading: scrubText(entry?.heading, 80),
+          body: scrubText(entry?.body, 2000),
+        }))
+        .filter((entry) => entry.heading && entry.body)
+        .slice(0, 8)
+    : [];
+}
+
 function normalizeDraftContent(content = {}) {
+  const openingSummary = scrubText(content.openingSummary, 600);
+  const roleOverview = scrubText(content.roleOverview, 4000);
   return {
     title: content.title ? scrubText(content.title, 240) : null,
-    summary: scrubText(content.summary, 4000),
-    responsibilities: cleanArray(content.responsibilities, 40, 400),
-    requiredSkills: cleanArray(content.requiredSkills, 40, 120),
-    preferredSkills: cleanArray(content.preferredSkills, 40, 120),
+    openingSummary: openingSummary || null,
+    roleOverview: roleOverview || null,
+    keyResponsibilities: cleanArray(content.keyResponsibilities, 40, 400),
+    requiredQualifications: cleanArray(content.requiredQualifications, 40, 160),
+    preferredQualifications: cleanArray(content.preferredQualifications, 40, 160),
+    additionalSections: normalizeAdditionalSections(content.additionalSections),
     screeningQuestions: cleanArray(content.screeningQuestions, 40, 400),
     assumptions: cleanArray(content.assumptions, 30, 400),
     exclusionaryWordingWarnings: cleanArray(content.exclusionaryWordingWarnings, 20, 400),
@@ -51,20 +67,21 @@ function buildJobSnapshotFromContent(content, currentJob = null, applyTitle = fa
   const title = applyTitle && normalized.title
     ? normalized.title
     : scrubText(currentJob?.title || normalized.title || '', 240);
-  const requirements = [
-    ...normalized.preferredSkills.map((skill) => `Preferred skill: ${skill}`),
-    ...normalized.assumptions.map((item) => `Assumption: ${item}`),
-    ...normalized.missingFields.map((item) => `Clarify: ${item}`),
-  ].slice(0, 60);
+  const requirements = normalized.preferredQualifications.map((item) => `Preferred: ${item}`).slice(0, 60);
+  const description = [
+    normalized.openingSummary,
+    normalized.roleOverview,
+    ...normalized.additionalSections.map((section) => `${section.heading}\n${section.body}`),
+  ].filter(Boolean).join('\n\n');
 
   return {
     title: title || scrubText(currentJob?.title || '', 240),
-    description: normalized.summary,
-    responsibilities: normalized.responsibilities,
+    description,
+    responsibilities: normalized.keyResponsibilities,
     requirements,
-    skillsRequired: normalized.requiredSkills.length
-      ? normalized.requiredSkills
-      : cleanArray(currentJob?.skillsRequired, 40, 120),
+    skillsRequired: normalized.requiredQualifications.length
+      ? normalized.requiredQualifications
+      : cleanArray(currentJob?.skillsRequired, 40, 160),
   };
 }
 

@@ -3,6 +3,7 @@ export * from './ats.js';
 export * from './phase4.js';
 export * from './admin.js';
 export * from './intelligence.js';
+export * from './job-description-contract.js';
 export * from './setup.js';
 export * from './resume-import.js';
 export * from './resume-search-v2.js';

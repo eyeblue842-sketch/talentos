@@ -11,6 +11,8 @@ import {
   resumeSummaryOutputSchema,
   talentSearchParseOutputSchema,
 } from '../schemas/outputSchemas.js';
+import { canonicalJobDescriptionJsonSchema } from '@careeriz/shared';
+import { normalizeJobDescriptionOutput } from '../services/jobDescriptionOutputNormalizer.js';
 
 const promptRegistry = {
   RESUME_SUMMARY: {
@@ -90,6 +92,8 @@ ${JSON.stringify(input, null, 2)}`,
     version: '1.0.0',
     purpose: 'Generate a full recruiter-reviewable job description payload from structured job and requisition data.',
     outputSchema: jobDescriptionOutputSchema,
+    jsonSchema: canonicalJobDescriptionJsonSchema,
+    normalizeOutput: normalizeJobDescriptionOutput,
     allowedDataClasses: ['PUBLIC_JOB_DATA', 'ORGANIZATION_INTERNAL'],
     prohibitedData: ['CANDIDATE_CONTACT', 'HIGHLY_SENSITIVE', 'PROHIBITED_FOR_AI'],
     humanReviewRequired: true,
@@ -99,7 +103,17 @@ ${JSON.stringify(input, null, 2)}`,
 
 Rules:
 - Return valid JSON only.
-- Do not invent salary, benefits, compliance requirements, visa terms, or location details.
+- Return only the schema fields. Do not include jobId, title, department, location, seniority, employmentType, or other metadata fields.
+- openingSummary is a concise candidate-facing introduction written as prose (not a list), using only supplied facts.
+- roleOverview must be 2-3 meaningful, role-specific sentences.
+- keyResponsibilities must be useful role-specific statements, not generic filler.
+- requiredQualifications and preferredQualifications are non-authoritative suggestions only; the application copies recruiter-confirmed structured skills directly from the job record. If you include suggestions, they must come only from recruiter input or clearly confirmed structured facts. Do not invent extra items to reach a count; return fewer and add a missingFields note when source facts are thin. When no preferred qualifications are supported by the facts, return an empty array - never a placeholder.
+- additionalSections is for genuinely supplied facts that do not fit the fixed sections; return [] when none and never invent a section to fill space.
+- Do not produce a closing invitation, "apply now" prose, or any call to action - the product renders its own Apply button.
+- Screening questions are optional suggestions. Return [] when useful suggestions are not justified by source facts.
+- interviewFocus, assumptions, missingFields, and exclusionaryWordingWarnings are internal recruiter-review metadata, not public JD content.
+- Do not invent salary, benefits, compliance requirements, visa terms, working hours, certifications, or location details.
+- Do not output "Any" as a skill, qualification, requirement, or placeholder.
 - Do not use HTML or Markdown.
 - Use assumptions only when the source data is incomplete.
 - Flag exclusionary or ambiguous wording when present.
