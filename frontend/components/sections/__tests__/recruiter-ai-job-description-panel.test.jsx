@@ -36,14 +36,17 @@ function makeResult(overrides = {}) {
   return {
     jobId: 'cmjob12345678901234567890',
     kind: 'FULL_DESCRIPTION',
-    summary: 'Build and operate modern backend services for a fast-moving product team.',
-    responsibilities: [
+    openingSummary: 'Build and operate modern backend services for a product team.',
+    roleOverview: 'This Senior Backend Engineer role builds and operates modern backend services for a product team. The engineer will partner with product and platform teams to deliver reliable services and improve operational quality.',
+    keyResponsibilities: [
       'Design and deliver backend services.',
       'Partner with product and platform teams.',
+      'Improve service reliability through production support and observability.',
     ],
-    requiredSkills: ['Node.js', 'PostgreSQL', 'AWS'],
-    preferredSkills: ['SQS', 'Terraform'],
-    screeningQuestions: ['How have you handled service scalability?'],
+    requiredQualifications: ['Node.js', 'PostgreSQL', 'AWS'],
+    preferredQualifications: ['SQS', 'Terraform'],
+    additionalSections: [],
+    screeningQuestions: [],
     assumptions: ['The team is hiring for a product backend role.'],
     exclusionaryWordingWarnings: ['Avoid unnecessary years-of-experience thresholds.'],
     missingFields: ['Compensation range not provided.'],
@@ -103,10 +106,10 @@ function makeDraft(overrides = {}) {
     title: 'Senior Backend Engineer Draft',
     content: {
       title: 'Senior Backend Engineer Draft',
-      summary: 'Draft summary from saved draft.',
-      responsibilities: ['Lead backend delivery'],
-      requiredSkills: ['Node.js', 'AWS'],
-      preferredSkills: ['Terraform'],
+      roleOverview: 'Draft summary from saved draft.',
+      keyResponsibilities: ['Lead backend delivery'],
+      requiredQualifications: ['Node.js', 'AWS'],
+      preferredQualifications: ['Terraform'],
       screeningQuestions: ['Describe your AWS experience.'],
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -154,10 +157,10 @@ function makeTemplate(overrides = {}) {
         title: 'Backend Template Title',
         content: {
           title: 'Backend Template Title',
-          summary: 'Template summary.',
-          responsibilities: ['Template responsibility'],
-          requiredSkills: ['Java'],
-          preferredSkills: ['Kafka'],
+          roleOverview: 'Template summary.',
+          keyResponsibilities: ['Template responsibility'],
+          requiredQualifications: ['Java'],
+          preferredQualifications: ['Kafka'],
           screeningQuestions: ['Template question'],
           assumptions: [],
           exclusionaryWordingWarnings: [],
@@ -191,8 +194,8 @@ function makeHistory(overrides = {}) {
         appliedByUserId: 'cmuser99999999999999999999',
         content: {
           ...makeDraft().content,
-          summary: 'Older applied draft summary.',
-          responsibilities: ['Earlier responsibility'],
+          roleOverview: 'Older applied draft summary.',
+          keyResponsibilities: ['Earlier responsibility'],
         },
       }),
     ],
@@ -330,7 +333,7 @@ describe('RecruiterAiJobDescriptionPanel', () => {
     });
 
     expect(screen.getByText(/previous successful result stays visible/i)).toBeInTheDocument();
-    expect(screen.getByText(/Build and operate modern backend services/i)).toBeInTheDocument();
+    expect(screen.getByText(/Senior Backend Engineer role builds/i)).toBeInTheDocument();
   });
 
   it('shows failure state messaging', () => {
@@ -353,7 +356,7 @@ describe('RecruiterAiJobDescriptionPanel', () => {
       content: {
         ...makeDraft().content,
         title: 'Updated Draft Title',
-        summary: 'Updated saved draft summary.',
+        roleOverview: 'Updated saved draft summary.',
       },
       updatedAt: '2026-07-28T10:05:00.000Z',
     });
@@ -365,7 +368,7 @@ describe('RecruiterAiJobDescriptionPanel', () => {
 
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Job Description'), {
+    fireEvent.change(screen.getByLabelText('Role overview'), {
       target: { value: 'Updated saved draft summary.' },
     });
 
@@ -381,10 +384,64 @@ describe('RecruiterAiJobDescriptionPanel', () => {
     expect(screen.getByDisplayValue('Updated saved draft summary.')).toBeInTheDocument();
   });
 
+  it('preserves every other structured JD section when one section is edited and saved', async () => {
+    const structuredContent = {
+      title: 'Structured Draft',
+      openingSummary: 'Opening summary that must survive the edit.',
+      roleOverview: 'Role overview that must survive the edit across a save.',
+      keyResponsibilities: ['Original responsibility one', 'Original responsibility two', 'Original responsibility three'],
+      requiredQualifications: ['Java', 'AWS'],
+      preferredQualifications: ['Kafka'],
+      additionalSections: [{ heading: 'Team & tooling', body: 'You will work with the platform team using confirmed tools.' }],
+      screeningQuestions: ['Describe your AWS experience.'],
+      assumptions: [],
+      exclusionaryWordingWarnings: [],
+      missingFields: [],
+      interviewFocus: ['Platform ownership'],
+    };
+    const structuredDraft = makeDraft({ title: 'Structured Draft', content: structuredContent });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, data: structuredDraft }),
+    });
+
+    renderPanel({ initialDrafts: [structuredDraft], initialResult: null, initialHistory: makeHistory({ drafts: [structuredDraft] }) });
+
+    // Edit ONLY the key responsibilities section.
+    fireEvent.change(screen.getByLabelText('Key Responsibilities'), {
+      target: { value: 'Original responsibility one\nOriginal responsibility two\nOriginal responsibility three\nNewly added responsibility' },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Draft/i }));
+      await Promise.resolve();
+    });
+
+    const patchCall = global.fetch.mock.calls.find(([url, options]) => String(url).includes('/job-description-drafts/') && options?.method === 'PATCH');
+    expect(patchCall).toBeTruthy();
+    const savedContent = JSON.parse(patchCall[1].body).content;
+
+    // The edited section changed...
+    expect(savedContent.keyResponsibilities).toContain('Newly added responsibility');
+    expect(savedContent.keyResponsibilities).toHaveLength(4);
+    // ...and every other structured section is preserved unchanged.
+    expect(savedContent.openingSummary).toBe('Opening summary that must survive the edit.');
+    expect(savedContent.roleOverview).toBe('Role overview that must survive the edit across a save.');
+    expect(savedContent.requiredQualifications).toEqual(['Java', 'AWS']);
+    expect(savedContent.preferredQualifications).toEqual(['Kafka']);
+    expect(savedContent.additionalSections).toEqual([{ heading: 'Team & tooling', body: 'You will work with the platform team using confirmed tools.' }]);
+    expect(savedContent.screeningQuestions).toEqual(['Describe your AWS experience.']);
+    expect(savedContent.interviewFocus).toEqual(['Platform ownership']);
+  });
+
   it('prevents save when validation fails', async () => {
     renderPanel();
 
-    fireEvent.change(screen.getByLabelText('Job Description'), {
+    fireEvent.change(screen.getByLabelText('Role overview'), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText('Opening summary'), {
       target: { value: '' },
     });
 
@@ -393,7 +450,7 @@ describe('RecruiterAiJobDescriptionPanel', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText(/Job description is required before saving/i)).toBeInTheDocument();
+    expect(screen.getByText(/Add an opening summary or role overview before saving/i)).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -456,8 +513,11 @@ describe('RecruiterAiJobDescriptionPanel', () => {
   });
 
   it('queues regeneration and polls until completion', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const refreshedResult = makeResult({
-      summary: 'Updated AI job description after regeneration.',
+      openingSummary: 'Updated AI job description after regeneration.',
+      aboutTheRole: 'This Senior Backend Engineer role builds updated backend services for product workflows. The engineer will improve reliability with the confirmed stack.',
+      closingInvitation: 'Apply if this updated role matches your experience.',
       execution: {
         ...makeResult().execution,
         cacheHit: false,
@@ -491,6 +551,7 @@ describe('RecruiterAiJobDescriptionPanel', () => {
       await Promise.resolve();
     });
 
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/consume another AI request/i));
     expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/jobs/cmjob12345678901234567890/regenerate', expect.any(Object));
 
     await act(async () => {

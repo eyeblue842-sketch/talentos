@@ -73,6 +73,8 @@ function asNullableJson(value) {
 
 function buildJobPayload(formData) {
   const workplaceType = asNullableString(formData.get('workplaceType'));
+  const requestedStatus = String(formData.get('status') || 'DRAFT');
+  const rawDescription = String(formData.get('description') || '').trim();
   // A fully remote job may legitimately have zero selected locations (see
   // JobLocationSelector/locationRequired in the job-post wizard), but
   // Job.location has always been a required, non-empty string - both for
@@ -85,12 +87,18 @@ function buildJobPayload(formData) {
 
   return {
     title: String(formData.get('title') || '').trim(),
-    description: String(formData.get('description') || '').trim(),
+    description: rawDescription || (requestedStatus === 'DRAFT'
+      ? 'Draft job post saved before a complete job description was generated.'
+      : ''),
     skillsRequired: splitCommaList(formData.get('skillsRequired')),
     responsibilities: splitLineList(formData.get('responsibilities')),
     requirements: splitLineList(formData.get('requirements')),
     benefits: splitLineList(formData.get('benefits')),
     applicationNotificationEmail: asNullableString(formData.get('applicationNotificationEmail')),
+    // Additional authorised recipients (org-member emails). Carried as a JSON
+    // array in a hidden field; the backend re-validates every address against
+    // active organisation membership and rejects arbitrary addresses.
+    applicationNotificationEmails: asNullableJson(formData.get('applicationNotificationEmailsJson')) || [],
     experienceMin: Number(formData.get('experienceMin')),
     experienceMax: Number(formData.get('experienceMax')),
     salaryMin: formData.get('salaryMin') ? Number(formData.get('salaryMin')) : null,
@@ -111,7 +119,9 @@ function buildJobPayload(formData) {
     applicationDeadline: asNullableDateTime(formData.get('applicationDeadline')),
     applicationOpensAt: asNullableString(formData.get('applicationOpensAt')),
     applicationClosesAt: asNullableString(formData.get('applicationClosesAt')),
-    maxApplications: formData.get('maxApplications') ? Number(formData.get('maxApplications')) : null,
+    // maxApplications intentionally omitted (UX-2 Part 8): Careeriz does not cap
+    // applications on an arbitrary count. The legacy DB column is retained but is
+    // never written from the job form.
     targetHires: formData.get('targetHires') ? Number(formData.get('targetHires')) : null,
     autoCloseOnTargetHire: formData.get('autoCloseOnTargetHire') === 'on',
     isPublic: formData.get('isPublic') === 'on',
@@ -121,7 +131,7 @@ function buildJobPayload(formData) {
     publicSalaryEnabled: formData.get('hideSalaryFromCandidates') !== 'on',
     featuredInPortal: formData.get('featuredInPortal') === 'on',
     visibility: String(formData.get('visibility') || 'EXTERNAL'),
-    status: String(formData.get('status') || 'DRAFT'),
+    status: requestedStatus,
   };
 }
 
@@ -176,6 +186,7 @@ function buildQuestionPayloadFromDraft(draft = {}) {
     : [];
 
   return {
+    clientRequestId: asNullableString(draft.localId),
     questionText: String(draft.questionText || '').trim(),
     internalLabel: null,
     helpText: null,
@@ -203,10 +214,12 @@ function buildScreeningQuestionDrafts(formData) {
   const requiredValues = formData.getAll('screeningQuestionRequired');
   const placeholders = formData.getAll('screeningQuestionPlaceholder');
   const options = formData.getAll('screeningQuestionOptions');
+  const requestIds = formData.getAll('screeningQuestionRequestId');
 
   return questions
     .map((questionText, index) => ({
       questionText: String(questionText || '').trim(),
+      localId: String(requestIds[index] || '').trim(),
       questionType: String(types[index] || 'SHORT_TEXT'),
       required: String(requiredValues[index] || '') === 'true',
       placeholder: String(placeholders[index] || '').trim(),
@@ -281,9 +294,15 @@ function buildOfferPayload(formData, options = {}) {
 }
 
 export async function createJobAction(formData) {
+  const requestedStatus = String(formData.get('status') || 'DRAFT');
+  const draftPayload = {
+    ...buildJobPayload(formData),
+    status: 'DRAFT',
+  };
+
   const created = await recruiterRequest('/jobs', {
     method: 'POST',
-    body: JSON.stringify(buildJobPayload(formData)),
+    body: JSON.stringify(draftPayload),
   });
 
   const questionDrafts = buildScreeningQuestionDrafts(formData);
@@ -294,9 +313,16 @@ export async function createJobAction(formData) {
     });
   }
 
+  if (requestedStatus === 'OPEN') {
+    await recruiterRequest(`/jobs/${created.data.id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status: 'OPEN' }),
+    });
+  }
+
   revalidatePath('/recruiter');
   revalidatePath('/recruiter/jobs');
-  redirect(`/recruiter/jobs/${created.data.id}?notice=job-created`);
+  redirect(`/recruiter/jobs/${created.data.id}?notice=${requestedStatus === 'OPEN' ? 'job-published' : 'job-created'}`);
 }
 
 const onboardingInitialState = {
@@ -403,6 +429,7 @@ export async function createOrganisationPostAction(formData) {
     method: 'POST',
     body: JSON.stringify({
       content: String(formData.get('content') || '').trim(),
+      imageUrl: asNullableString(formData.get('imageUrl')),
       status: 'PUBLISHED',
     }),
   });
@@ -411,6 +438,27 @@ export async function createOrganisationPostAction(formData) {
   if (organisationSlug) {
     revalidatePath(`/companies/${organisationSlug}`);
   }
+}
+
+export async function updateOrganisationPostAction(formData) {
+  const postId = String(formData.get('postId') || '').trim();
+  if (!postId) throw new Error('Company update not found.');
+  await recruiterRequest(`/organisations/current/posts/${postId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      content: String(formData.get('content') || '').trim(),
+      imageUrl: asNullableString(formData.get('imageUrl')),
+      status: 'PUBLISHED',
+    }),
+  });
+  revalidatePath('/recruiter/home');
+}
+
+export async function deleteOrganisationPostAction(formData) {
+  const postId = String(formData.get('postId') || '').trim();
+  if (!postId) throw new Error('Company update not found.');
+  await recruiterRequest(`/organisations/current/posts/${postId}`, { method: 'DELETE' });
+  revalidatePath('/recruiter/home');
 }
 
 export async function inviteOrganisationMemberAction(formData) {

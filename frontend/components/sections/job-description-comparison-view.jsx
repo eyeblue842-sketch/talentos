@@ -132,8 +132,8 @@ export function JobDescriptionComparisonView({
   }
 
   const summaryState = compareSummary(current.summary, selected.summary).state;
-  const responsibilities = compareList(current.responsibilities, selected.responsibilities);
-  const requiredSkills = compareList(current.requiredSkills, selected.requiredSkills);
+  const responsibilities = compareList(current.keyResponsibilities || current.responsibilities, selected.keyResponsibilities || selected.responsibilities);
+  const requiredSkills = compareList(current.requiredQualifications || current.requiredSkills, selected.requiredQualifications || selected.requiredSkills);
   const screeningQuestions = compareList(current.screeningQuestions, selected.screeningQuestions);
 
   const leftSections = [

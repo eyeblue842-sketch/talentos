@@ -53,15 +53,11 @@ describe('RecruiterJobsPage', () => {
     render(await RecruiterJobsPage({ searchParams: Promise.resolve({}) }));
 
     expect(screen.getByRole('heading', { name: 'Job Posts' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Job Details' })).toBeInTheDocument();
-    // Candidate Preferences was removed as a standalone step - its fields
-    // now live inside Job Description (Add Skills, Candidate
-    // Qualifications, Preferred Candidate Profile).
+    expect(screen.getByRole('heading', { name: /Start with only the essentials/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Candidate Preferences$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Screening Questions/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Job Description/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Communication Preferences/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review & Publish/i })).toBeInTheDocument();
+    ['Essentials', 'AI Draft & Preview', 'Questions', 'Publish'].forEach((label, index) => {
+      expect(screen.getAllByRole('button').some((button) => button.textContent?.includes(label) && button.textContent?.includes(`Stage ${index + 1}`))).toBe(true);
+    });
     expect(screen.getByRole('heading', { name: 'Manage Jobs' })).toBeInTheDocument();
     expect(screen.getByTestId('jobs-table')).toHaveTextContent('Senior Java Developer');
   });

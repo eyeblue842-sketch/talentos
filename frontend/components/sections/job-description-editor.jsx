@@ -42,39 +42,61 @@ export function JobDescriptionEditor({
       />
 
       <Textarea
-        label="Job Description"
-        value={value.summary}
-        onChange={(event) => onFieldChange('summary', event.target.value)}
-        helpText="Primary description that will be applied to the live job."
-        error={errors.summary}
+        label="Opening summary"
+        value={value.openingSummary}
+        onChange={(event) => onFieldChange('openingSummary', event.target.value)}
+        helpText="Concise candidate-facing introduction."
+        error={errors.openingSummary}
         disabled={disabled}
-        textareaClassName="min-h-40"
+        textareaClassName="min-h-24"
       />
 
+      <Textarea
+        label="Role overview"
+        value={value.roleOverview}
+        onChange={(event) => onFieldChange('roleOverview', event.target.value)}
+        helpText="2-3 role-specific sentences describing the role."
+        error={errors.roleOverview}
+        disabled={disabled}
+        textareaClassName="min-h-32"
+      />
+
+      {Array.isArray(value.additionalSections) && value.additionalSections.length ? (
+        <div className="grid gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Additional sections (preserved)</p>
+          {value.additionalSections.map((section) => (
+            <div key={section.heading}>
+              <p className="text-sm font-semibold text-[var(--color-text)]">{section.heading}</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{section.body}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <ArrayField
-        label="Responsibilities"
-        value={value.responsibilities}
-        onChange={(nextValue) => onFieldChange('responsibilities', nextValue)}
+        label="Key Responsibilities"
+        value={value.keyResponsibilities}
+        onChange={(nextValue) => onFieldChange('keyResponsibilities', nextValue)}
         helpText="Enter one responsibility per line."
-        error={errors.responsibilities}
+        error={errors.keyResponsibilities}
         disabled={disabled}
       />
 
       <ArrayField
-        label="Required Skills"
-        value={value.requiredSkills}
-        onChange={(nextValue) => onFieldChange('requiredSkills', nextValue)}
-        helpText="Enter one required skill per line."
-        error={errors.requiredSkills}
+        label="Required Qualifications"
+        value={value.requiredQualifications}
+        onChange={(nextValue) => onFieldChange('requiredQualifications', nextValue)}
+        helpText="Enter one required skill or qualification per line."
+        error={errors.requiredQualifications}
         disabled={disabled}
       />
 
       <ArrayField
-        label="Preferred Skills"
-        value={value.preferredSkills}
-        onChange={(nextValue) => onFieldChange('preferredSkills', nextValue)}
-        helpText="Enter one preferred skill per line."
-        error={errors.preferredSkills}
+        label="Preferred Qualifications"
+        value={value.preferredQualifications}
+        onChange={(nextValue) => onFieldChange('preferredQualifications', nextValue)}
+        helpText="Enter one preferred qualification per line. Leave empty if none."
+        error={errors.preferredQualifications}
         disabled={disabled}
       />
 

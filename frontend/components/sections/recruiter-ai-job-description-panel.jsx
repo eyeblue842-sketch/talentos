@@ -116,13 +116,38 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
+// UX-1 clean JD contract, edited with the SAME structured sections as the
+// create wizard (openingSummary, roleOverview, keyResponsibilities,
+// requiredQualifications, preferredQualifications) plus additionalSections,
+// which are preserved verbatim through load/edit/save so editing one section
+// never drops the others. Old field names (aboutTheRole, responsibilities,
+// requiredSkills, preferredSkills) are read as a fallback so pre-migration
+// local records still load; nothing writes them.
+function normaliseAdditionalSections(value) {
+  return Array.isArray(value)
+    ? value
+        .filter((section) => section && section.heading && section.body)
+        .map((section) => ({ heading: String(section.heading), body: String(section.body) }))
+    : [];
+}
+
+function combinedDescription(source = {}) {
+  if (source.summary) return source.summary;
+  const additional = normaliseAdditionalSections(source.additionalSections).map((section) => section.body);
+  return [source.openingSummary, source.roleOverview || source.aboutTheRole, ...additional].filter(Boolean).join('\n\n');
+}
+
 function buildEditorState(source = {}) {
   return {
     title: source.title || '',
-    summary: source.summary || '',
-    responsibilities: joinLines(source.responsibilities),
-    requiredSkills: joinLines(source.requiredSkills),
-    preferredSkills: joinLines(source.preferredSkills),
+    openingSummary: source.openingSummary || '',
+    roleOverview: source.roleOverview || source.aboutTheRole || '',
+    keyResponsibilities: joinLines(source.keyResponsibilities || source.responsibilities),
+    requiredQualifications: joinLines(source.requiredQualifications || source.requiredSkills),
+    preferredQualifications: joinLines(source.preferredQualifications || source.preferredSkills),
+    // Preserved verbatim (no dedicated editor field yet, same as the create
+    // wizard) so structured AI sections survive an edit-and-save round trip.
+    additionalSections: normaliseAdditionalSections(source.additionalSections),
     screeningQuestions: joinLines(source.screeningQuestions),
     interviewFocus: joinLines(source.interviewFocus),
   };
@@ -130,41 +155,21 @@ function buildEditorState(source = {}) {
 
 function buildEditorStateFromDraft(draft) {
   if (!draft) return null;
-  return buildEditorState({
-    title: draft.title || draft.content?.title || '',
-    summary: draft.content?.summary || '',
-    responsibilities: draft.content?.responsibilities || [],
-    requiredSkills: draft.content?.requiredSkills || [],
-    preferredSkills: draft.content?.preferredSkills || [],
-    screeningQuestions: draft.content?.screeningQuestions || [],
-    interviewFocus: draft.content?.interviewFocus || [],
-  });
+  return buildEditorState({ ...(draft.content || {}), title: draft.title || draft.content?.title || '' });
 }
 
 function buildEditorStateFromResult(result, liveJob = null) {
-  return buildEditorState({
-    title: liveJob?.title || '',
-    summary: result?.summary || liveJob?.description || '',
-    responsibilities: result?.responsibilities?.length ? result.responsibilities : (liveJob?.responsibilities || []),
-    requiredSkills: result?.requiredSkills?.length ? result.requiredSkills : (liveJob?.skillsRequired || []),
-    preferredSkills: result?.preferredSkills || [],
-    screeningQuestions: result?.screeningQuestions || [],
-    interviewFocus: result?.interviewFocus || [],
-  });
+  const source = { ...(result || {}), title: liveJob?.title || '' };
+  if (!source.openingSummary && !source.roleOverview && !source.aboutTheRole) source.roleOverview = liveJob?.description || '';
+  if (!(result?.keyResponsibilities?.length || result?.responsibilities?.length)) source.keyResponsibilities = liveJob?.responsibilities || [];
+  if (!(result?.requiredQualifications?.length || result?.requiredSkills?.length)) source.requiredQualifications = liveJob?.skillsRequired || [];
+  return buildEditorState(source);
 }
 
 function buildEditorStateFromTemplate(template) {
   const version = template?.versions?.[0];
   if (!version) return null;
-  return buildEditorState({
-    title: version.title || version.content?.title || '',
-    summary: version.content?.summary || '',
-    responsibilities: version.content?.responsibilities || [],
-    requiredSkills: version.content?.requiredSkills || [],
-    preferredSkills: version.content?.preferredSkills || [],
-    screeningQuestions: version.content?.screeningQuestions || [],
-    interviewFocus: version.content?.interviewFocus || [],
-  });
+  return buildEditorState({ ...(version.content || {}), title: version.title || version.content?.title || '' });
 }
 
 function mapEditorStateToDraftPayload(editorState) {
@@ -172,10 +177,13 @@ function mapEditorStateToDraftPayload(editorState) {
     title: editorState.title.trim() || '',
     content: {
       title: editorState.title.trim() || null,
-      summary: editorState.summary.trim(),
-      responsibilities: splitLines(editorState.responsibilities),
-      requiredSkills: splitLines(editorState.requiredSkills),
-      preferredSkills: splitLines(editorState.preferredSkills),
+      openingSummary: editorState.openingSummary.trim() || null,
+      roleOverview: editorState.roleOverview.trim() || null,
+      keyResponsibilities: splitLines(editorState.keyResponsibilities),
+      requiredQualifications: splitLines(editorState.requiredQualifications),
+      preferredQualifications: splitLines(editorState.preferredQualifications),
+      // Round-tripped from load so editing another section never drops them.
+      additionalSections: normaliseAdditionalSections(editorState.additionalSections),
       screeningQuestions: splitLines(editorState.screeningQuestions),
       assumptions: [],
       exclusionaryWordingWarnings: [],
@@ -188,8 +196,8 @@ function mapEditorStateToDraftPayload(editorState) {
 function validateEditorState(editorState) {
   const errors = {};
 
-  if (!editorState.summary.trim()) {
-    errors.summary = 'Job description is required before saving.';
+  if (!editorState.openingSummary.trim() && !editorState.roleOverview.trim()) {
+    errors.roleOverview = 'Add an opening summary or role overview before saving.';
   }
 
   return errors;
@@ -205,9 +213,9 @@ function buildHistoryPreviewFromDraft(draft) {
     id: draft.id,
     label: buildDraftVersionLabel(draft),
     title: draft.title || draft.content?.title || '',
-    summary: draft.content?.summary || '',
-    responsibilities: draft.content?.responsibilities || [],
-    requiredSkills: draft.content?.requiredSkills || [],
+    summary: combinedDescription(draft.content || {}),
+    keyResponsibilities: draft.content?.keyResponsibilities || draft.content?.responsibilities || [],
+    requiredQualifications: draft.content?.requiredQualifications || draft.content?.requiredSkills || [],
     screeningQuestions: draft.content?.screeningQuestions || [],
     status: draft.status,
     timestamp: draft.updatedAt || draft.createdAt,
@@ -218,9 +226,9 @@ function buildHistoryPreviewFromDraft(draft) {
 function buildCurrentDraftCompareState(editorState) {
   return {
     title: editorState?.title || '',
-    summary: editorState?.summary || '',
-    responsibilities: splitLines(editorState?.responsibilities),
-    requiredSkills: splitLines(editorState?.requiredSkills),
+    summary: combinedDescription(editorState || {}),
+    keyResponsibilities: splitLines(editorState?.keyResponsibilities),
+    requiredQualifications: splitLines(editorState?.requiredQualifications),
     screeningQuestions: splitLines(editorState?.screeningQuestions),
   };
 }
@@ -412,9 +420,14 @@ export function RecruiterAiJobDescriptionPanel({
   const hasPreviousResult = hasPreviousJobDescriptionResult(result);
   const supportReference = buildJobDescriptionSupportReference(result);
   const hasRenderableContent = Boolean(
-    result?.summary
+    result?.openingSummary
+    || result?.roleOverview
+    || result?.aboutTheRole
+    || result?.keyResponsibilities?.length
     || result?.responsibilities?.length
+    || result?.requiredQualifications?.length
     || result?.requiredSkills?.length
+    || result?.preferredQualifications?.length
     || result?.preferredSkills?.length
     || result?.screeningQuestions?.length
   );
@@ -650,6 +663,11 @@ export function RecruiterAiJobDescriptionPanel({
   }, [isDirty]);
 
   async function handleRegenerate() {
+    if (hasPreviousResult && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Regenerating may consume another AI request and replace uncommitted AI content. Continue?');
+      if (!confirmed) return;
+    }
+
     setRequestPending(true);
     try {
       const payload = await requestJson(`/api/intelligence/jobs/${jobId}/regenerate`, {
@@ -1129,16 +1147,22 @@ export function RecruiterAiJobDescriptionPanel({
               <div className="space-y-5">
                 <div>
                   <h4 className="text-sm font-semibold text-[var(--color-text)]">Job Description</h4>
-                  {result?.summary ? (
-                    <p className="mt-3 text-sm leading-7 text-[var(--color-text-secondary)]">{result.summary}</p>
+                  {result?.openingSummary || result?.roleOverview || result?.aboutTheRole ? (
+                    <div className="mt-3 space-y-3 text-sm leading-7 text-[var(--color-text-secondary)]">
+                      {result.openingSummary ? <p>{result.openingSummary}</p> : null}
+                      {result.roleOverview || result.aboutTheRole ? <p>{result.roleOverview || result.aboutTheRole}</p> : null}
+                      {(result.additionalSections || []).map((section) => (
+                        <div key={section.heading}><p className="font-semibold text-[var(--color-text)]">{section.heading}</p><p>{section.body}</p></div>
+                      ))}
+                    </div>
                   ) : (
                     <TextSkeleton lines={4} />
                   )}
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-[var(--color-text)]">Responsibilities</h4>
+                  <h4 className="text-sm font-semibold text-[var(--color-text)]">Key responsibilities</h4>
                   <div className="mt-3">
-                    <BulletList items={result?.responsibilities || []} emptyLabel="No responsibilities were generated for this job." />
+                    <BulletList items={result?.keyResponsibilities || result?.responsibilities || []} emptyLabel="No responsibilities were generated for this job." />
                   </div>
                 </div>
                 <div>
@@ -1180,9 +1204,9 @@ export function RecruiterAiJobDescriptionPanel({
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[var(--color-text)]">Responsibilities</p>
+                  <p className="text-sm font-semibold text-[var(--color-text)]">Key responsibilities</p>
                   <div className="mt-2">
-                    <BulletList items={previewVersion.responsibilities} emptyLabel="No responsibilities saved in this version." />
+                    <BulletList items={previewVersion.keyResponsibilities || previewVersion.responsibilities || []} emptyLabel="No responsibilities saved in this version." />
                   </div>
                 </div>
               </div>
@@ -1229,30 +1253,30 @@ export function RecruiterAiJobDescriptionPanel({
           {hasRenderableContent ? (
             <>
               <SectionCard
-                title="Required skills"
-                description="Key skills extracted or inferred from the current AI result."
+                title="Required qualifications"
+                description="Required skills or qualifications from the current AI result."
               >
-                {result?.requiredSkills?.length ? (
+                {(result?.requiredQualifications || result?.requiredSkills)?.length ? (
                   <div className="flex flex-wrap gap-2">
-                    {result.requiredSkills.map((item) => <Badge key={item} tone="neutral">{item}</Badge>)}
+                    {(result.requiredQualifications || result.requiredSkills).map((item) => <Badge key={item} tone="neutral">{item}</Badge>)}
                   </div>
                 ) : (
-                  <p className="text-sm text-[var(--color-text-secondary)]">No required skills were generated.</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">No required qualifications were generated.</p>
                 )}
               </SectionCard>
 
+              {(result?.preferredQualifications || result?.preferredSkills)?.length ? (
               <SectionCard
-                title="Preferred skills"
-                description="Nice-to-have skills suggested by the current AI result."
+                title="Preferred qualifications"
+                description="Nice-to-have qualifications suggested by the current AI result."
               >
-                {result?.preferredSkills?.length ? (
+                {(result?.preferredQualifications || result?.preferredSkills)?.length ? (
                   <div className="flex flex-wrap gap-2">
-                    {result.preferredSkills.map((item) => <Badge key={item} tone="neutral">{item}</Badge>)}
+                    {(result.preferredQualifications || result.preferredSkills).map((item) => <Badge key={item} tone="neutral">{item}</Badge>)}
                   </div>
-                ) : (
-                  <p className="text-sm text-[var(--color-text-secondary)]">No preferred skills were generated.</p>
-                )}
+                ) : null}
               </SectionCard>
+              ) : null}
             </>
           ) : null}
 

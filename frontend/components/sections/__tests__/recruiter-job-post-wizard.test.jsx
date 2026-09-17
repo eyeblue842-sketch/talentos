@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecruiterJobPostWizard } from '../recruiter-job-post-wizard';
 
@@ -10,55 +10,15 @@ describe('RecruiterJobPostWizard', () => {
         success: true,
         data: {
           assisted: {
-            summary: 'Lead backend delivery for a cloud-native product team.',
-            responsibilities: ['Design APIs', 'Own AWS deployments'],
-            requiredSkills: ['Java', 'AWS'],
-            preferredSkills: ['Kafka'],
-            assumptions: ['Salary is recruiter confirmed.'],
+            openingSummary: 'Build reliable hiring workflows for enterprise recruiters.',
+            keyResponsibilities: ['Design application services', 'Collaborate with product teams'],
+            requiredQualifications: ['Java', 'AWS'],
+            preferredQualifications: ['Kafka'],
+            assumptions: [],
             missingFields: [],
           },
         },
       }),
-    });
-  });
-
-  it('shows an editable application notification email default', () => {
-    render(
-      <RecruiterJobPostWizard
-        organisationName="Northstar Talent Labs"
-        organisationAbout="Product engineering partner"
-        assignees={[]}
-        requisitions={[]}
-        recruiterEmail="owner@northstar.example"
-        createAction={() => {}}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /Communication Preferences/i }));
-    expect(screen.getByLabelText(/Application notification email/i)).toHaveValue('owner@northstar.example');
-  });
-
-  it('generates and applies AI job description content inline', async () => {
-    render(
-      <RecruiterJobPostWizard
-        organisationName="Northstar Talent Labs"
-        organisationAbout="Product engineering partner"
-        assignees={[]}
-        requisitions={[]}
-        recruiterEmail="owner@northstar.example"
-        createAction={() => {}}
-      />
-    );
-
-    fireEvent.change(screen.getByLabelText(/Job title/i), { target: { value: 'Senior Java Developer' } });
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Generate with AI/i }));
-
-    expect(await screen.findByText(/AI-generated draft/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Apply generated content/i }));
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Job summary/i)).toHaveValue('Lead backend delivery for a cloud-native product team.');
     });
   });
 
@@ -75,191 +35,236 @@ describe('RecruiterJobPostWizard', () => {
     );
   }
 
-  it('removes Candidate Preferences as a standalone step and renumbers the remaining steps 1-5', () => {
-    renderWizard();
-    expect(screen.queryByText(/Candidate Preferences/i)).not.toBeInTheDocument();
-
-    const stepButtons = [
-      'Job Details',
-      'Screening Questions',
-      'Job Description',
-      'Communication Preferences',
-      'Review & Publish',
-    ].map((label) => screen.getByRole('button', { name: new RegExp(label, 'i') }));
-
-    stepButtons.forEach((button, index) => {
-      expect(button).toHaveTextContent(String(index + 1));
-    });
-  });
-
-  it('Add Skills accepts a typed skill, prevents case-insensitive duplicates, and removes a chip', () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-
-    // All steps stay mounted (hidden via CSS, not unmounted - see the
-    // wizard's own comment), so Review & Publish's read-only skill-summary
-    // chip for "Java" also exists in the DOM at the same time as the
-    // interactive Add Skills chip once a skill is added. The interactive
-    // chip is the only one with a "Remove <skill>" button, so that's the
-    // unambiguous way to assert on it specifically.
-    const input = screen.getByPlaceholderText(/Java, Spring Boot, AWS/i);
-    fireEvent.change(input, { target: { value: 'Java' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(screen.getByRole('button', { name: 'Remove Java' })).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: 'JAVA' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(screen.getAllByRole('button', { name: /^Remove java$/i })).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Java' }));
-    expect(screen.queryByRole('button', { name: /^Remove java$/i })).not.toBeInTheDocument();
-  });
-
-  it('Candidate Qualifications box relocates minimum/maximum experience into the Job Description step', () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-
-    expect(screen.getByRole('heading', { name: 'Candidate Qualifications' })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Minimum experience \(years\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Maximum experience \(years\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Department \/ functional area/i)).toBeInTheDocument();
-  });
-
-  it('Preferred Candidate Profile is closed by default, is keyboard/ARIA accessible, and preserves values when collapsed', () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-
-    const toggle = screen.getByRole('button', { name: /Preferred Candidate Profile/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-    const notesField = screen.getByPlaceholderText(/Any other preference that helps recruiters/i);
-    fireEvent.change(notesField, { target: { value: 'Prefers hybrid-savvy candidates.' } });
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(toggle);
-    expect(screen.getByPlaceholderText(/Any other preference that helps recruiters/i)).toHaveValue('Prefers hybrid-savvy candidates.');
-  });
-
-  it('Recruiter owner (and Hiring manager, Approved requisition) render through the width-safe Select component, containing long option text instead of overflowing', () => {
-    render(
-      <RecruiterJobPostWizard
-        organisationName="Northstar Talent Labs"
-        organisationAbout="Product engineering partner"
-        assignees={[{ id: 'member-1', userId: 'user-1', role: 'RECRUITER', user: { email: 'a-very-long-recruiter-owner-email-address@northstar-talent-labs.example.com' } }]}
-        requisitions={[{ id: 'req-1', requisitionCode: 'REQ-1001', title: 'Senior Java Developer' }]}
-        recruiterEmail="owner@northstar.example"
-        createAction={() => {}}
-      />
-    );
-
-    [/Recruiter owner/i, /Hiring manager/i, /Approved requisition/i].forEach((label) => {
-      const select = screen.getByLabelText(label);
-      expect(select.tagName).toBe('SELECT');
-      expect(select.className).toMatch(/\bw-full\b/);
-      expect(select.className).toMatch(/\bmin-w-0\b/);
-      expect(select.className).toMatch(/\btruncate\b/);
-    });
-  });
-
-  it('Job Location required-ness follows Workplace, without clearing an existing selection', async () => {
-    renderWizard();
-
-    // Review & Publish's read-only location summary chip also renders the
-    // same text once selected (steps stay mounted), so assert on the
-    // interactive selection chip specifically via its "Remove <location>"
-    // accessible name rather than plain text.
-    fireEvent.click(screen.getByRole('button', { name: /Search and select one or more job locations/i }));
-    fireEvent.change(screen.getByPlaceholderText(/Search city, district or state/i), { target: { value: 'Bengaluru Urban' } });
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Bengaluru Urban' }));
-    expect(screen.getByRole('button', { name: 'Remove Bengaluru Urban' })).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/Workplace/i), { target: { value: 'REMOTE' } });
-    // Selection must survive a Workplace change even though it's no longer required.
-    expect(screen.getByRole('button', { name: 'Remove Bengaluru Urban' })).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/Workplace/i), { target: { value: 'ONSITE' } });
-    expect(screen.getByRole('button', { name: 'Remove Bengaluru Urban' })).toBeInTheDocument();
-  });
-
-  it('blocks submission with an inline error when an on-site job has no location selected', () => {
-    const { container } = renderWizard();
-    fireEvent.change(screen.getByLabelText(/Job title/i), { target: { value: 'Senior Java Developer' } });
-    fireEvent.change(screen.getByLabelText(/Workplace/i), { target: { value: 'ONSITE' } });
-
-    const form = container.querySelector('form');
-    fireEvent.submit(form);
-
-    expect(screen.getByText(/Add at least one job location for on-site or hybrid roles\./i)).toBeInTheDocument();
-    // Submission is redirected back to the step containing the error.
-    expect(screen.getByRole('heading', { name: 'Job Details' })).toBeInTheDocument();
-  });
-
-  it('preserves entered values when navigating Previous/Next between steps', () => {
-    renderWizard();
-    fireEvent.change(screen.getByLabelText(/Job title/i), { target: { value: 'Staff Engineer' } });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
-
-    expect(screen.getByLabelText(/Job title/i)).toHaveValue('Staff Engineer');
-  });
-
-  it('Candidate Qualifications values persist across step navigation (steps stay mounted, not unmounted)', () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-    fireEvent.change(screen.getByLabelText(/Minimum experience \(years\)/i), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText(/Minimum qualification/i), { target: { value: 'pg' } });
-
-    fireEvent.click(screen.getByRole('button', { name: /Job Details/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
-
-    expect(screen.getByLabelText(/Minimum experience \(years\)/i)).toHaveValue(3);
-    expect(screen.getByLabelText(/Minimum qualification/i)).toHaveValue('pg');
-  });
-
-  it('Review & Publish still offers Save Draft and Publish Job actions', () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole('button', { name: /Review & Publish/i }));
-    expect(screen.getByRole('button', { name: 'Save Draft' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publish Job' })).toBeInTheDocument();
-  });
-
-  it('serializes candidateQualifications/preferredCandidateProfile/locations as JSON hidden fields, and skillsRequired as a comma-joined list', () => {
-    // Inspects the hidden inputs' own values directly rather than relying
-    // on createAction actually being invoked: jsdom's SubmitEvent doesn't
-    // reliably set `.submitter` for a name/value submit button (Save
-    // Draft/Publish Job both carry name="status"), which React's <form
-    // action={fn}> dispatch needs to include that button's pair in
-    // FormData - a jsdom/React-19-forms interoperability gap, not
-    // something this component controls. The hidden fields' values are
-    // exactly what actually gets submitted either way.
-    const { container } = renderWizard();
-
-    fireEvent.change(screen.getByLabelText(/Job title/i), { target: { value: 'Senior Java Developer' } });
-    fireEvent.change(screen.getByLabelText(/Job summary/i), { target: { value: 'A role building resilient platform services for our growing product team.' } });
-    fireEvent.change(screen.getByLabelText(/Workplace/i), { target: { value: 'REMOTE' } });
-
-    fireEvent.click(screen.getByRole('button', { name: /Job Description/i }));
+  async function fillEssentials() {
+    fireEvent.change(screen.getByLabelText(/Designation \/ job title/i), { target: { value: 'Senior Java Developer' } });
+    fireEvent.change(screen.getByLabelText(/Minimum experience/i), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText(/Maximum experience/i), { target: { value: '8' } });
+    fireEvent.change(screen.getByPlaceholderText('10'), { target: { value: '18' } });
+    fireEvent.change(screen.getByPlaceholderText('25'), { target: { value: '28' } });
+    fireEvent.change(screen.getByLabelText(/Workplace/i), { target: { value: 'Remote' } });
     const skillsInput = screen.getByPlaceholderText(/Java, Spring Boot, AWS/i);
     fireEvent.change(skillsInput, { target: { value: 'Java' } });
     fireEvent.keyDown(skillsInput, { key: 'Enter' });
-    fireEvent.change(screen.getByLabelText(/^Industry$/i), { target: { value: 'Software Product' } });
+  }
 
-    fireEvent.click(screen.getByRole('button', { name: /Preferred Candidate Profile/i }));
-    fireEvent.change(screen.getByLabelText(/^Preferred industry$/i), { target: { value: 'Software Product' } });
+  it('renders a four-step AI-first posting flow with no standalone JD writing requirement first', () => {
+    renderWizard();
+
+    ['Essentials', 'AI Draft & Preview', 'Questions', 'Publish'].forEach((label, index) => {
+      const button = screen.getAllByRole('button').find((item) => item.textContent?.includes(label) && item.textContent?.includes(`Stage ${index + 1}`));
+      expect(button).toBeTruthy();
+    });
+    expect(screen.getByRole('heading', { name: /Start with only the essentials/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Job Description$/i })).not.toBeInTheDocument();
+  });
+
+  it('generates a complete editable job post from minimal recruiter inputs', async () => {
+    renderWizard();
+    await fillEssentials();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+
+    expect(await screen.findByRole('heading', { name: /Review the generated job post/i })).toBeInTheDocument();
+    expect(screen.getByText('Build reliable hiring workflows for enterprise recruiters.')).toBeInTheDocument();
+    expect(screen.getAllByText(/Careeriz preview/i)).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /^Apply$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Edit Opening summary/i }));
+    expect(screen.getByLabelText(/Edit Opening summary/i)).toHaveValue('Build reliable hiring workflows for enterprise recruiters.');
+    fireEvent.change(screen.getByLabelText(/Edit Opening summary/i), { target: { value: 'Edited summary.' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+    expect(screen.getByText('Edited summary.')).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith('/api/intelligence/job', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('falls back to an editable manual template when AI generation fails', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ success: false, message: 'AI unavailable' }),
+    });
+    renderWizard();
+    await fillEssentials();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+
+    expect(await screen.findByText(/AI generation is unavailable right now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manual draft/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Edit About the role/i }));
+    expect(screen.getByLabelText(/Edit About the role/i).value).toContain('Senior Java Developer');
+    expect(screen.getAllByRole('button', { name: /^Continue$/i })[0]).toBeEnabled();
+  });
+
+  it('hides salary in preview and serialized payload when recruiter chooses Hide salary', async () => {
+    const { container } = renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Hide salary/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+
+    expect(await screen.findAllByText(/Salary not disclosed/i)).not.toHaveLength(0);
+    expect(container.querySelector('input[name="hideSalaryFromCandidates"]').value).toBe('on');
+  });
+
+  it('adds no screening questions automatically and supports selected templates plus skip publish', async () => {
+    renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Continue$/i })[0]);
+    expect(screen.getByText(/No screening questions selected/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Skip questions & publish/i }));
+    expect(screen.getByText(/Questions:/i).parentElement).toHaveTextContent('Skipped');
+  });
+
+  it('does not invent required skills when the recruiter supplies fewer than three', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          assisted: {
+            openingSummary: 'Build reliable Java services.',
+            roleOverview: 'This Senior Java Developer role builds backend services for enterprise recruiters. The developer will work with confirmed Java skills to deliver reliable workflows.',
+            keyResponsibilities: ['Design application services'],
+            requiredQualifications: ['Java', 'Kubernetes', 'GraphQL'],
+            preferredQualifications: ['Kafka'],
+            assumptions: [],
+            missingFields: ['Recruiter provided fewer than three required skills.'],
+          },
+        },
+      }),
+    });
+    const { container } = renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+
+    expect(container.querySelector('input[name="skillsRequired"]').value).toBe('Java');
+  });
+
+  it('does not serialize internal assumptions, warnings, missing fields, or interview focus as public job content', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          assisted: {
+            openingSummary: 'Opening summary for candidates.',
+            roleOverview: 'This Senior Java Developer role builds services for recruiter workflows. The developer will deliver reliable backend features with the confirmed Java stack.',
+            keyResponsibilities: ['Design Java application services'],
+            requiredQualifications: ['Java'],
+            preferredQualifications: [],
+            assumptions: ['Internal assumption must stay private.'],
+            exclusionaryWordingWarnings: ['Internal warning must stay private.'],
+            missingFields: ['Internal missing field must stay private.'],
+            interviewFocus: ['Internal interview focus must stay private.'],
+          },
+        },
+      }),
+    });
+    const { container } = renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+
+    const publicPayload = [
+      container.querySelector('input[name="description"]').value,
+      container.querySelector('input[name="responsibilities"]').value,
+      container.querySelector('input[name="requirements"]').value,
+      container.querySelector('input[name="preferredCandidateProfileJson"]').value,
+    ].join('\n');
+
+    expect(container.querySelector('input[name="preferredCandidateProfileJson"]').value).toBe('{}');
+    expect(publicPayload).not.toContain('Internal assumption');
+    expect(publicPayload).not.toContain('Internal warning');
+    expect(publicPayload).not.toContain('Internal missing field');
+    expect(publicPayload).not.toContain('Internal interview focus');
+  });
+
+  it('keeps opening summary and About the role separately editable in preview', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          assisted: {
+            openingSummary: 'Opening summary for candidates.',
+            roleOverview: 'This Senior Java Developer role builds services for recruiter workflows. The developer will deliver reliable backend features with the confirmed stack.',
+            keyResponsibilities: ['Design application services'],
+            requiredQualifications: ['Java'],
+            preferredQualifications: [],
+            assumptions: [],
+            missingFields: [],
+          },
+        },
+      }),
+    });
+    renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+
+    expect(screen.getByText('Opening summary for candidates.')).toBeInTheDocument();
+    expect(screen.getByText(/This Senior Java Developer role builds services/i)).toBeInTheDocument();
+  });
+
+  it('serializes essentials, generated text, structured qualifications, and questions into hidden fields', async () => {
+    const { container } = renderWizard();
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Continue$/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /current annual CTC/i }));
 
     function hiddenValue(name) {
       return container.querySelector(`input[name="${name}"]`).value;
     }
 
+    expect(hiddenValue('title')).toBe('Senior Java Developer');
+    expect(hiddenValue('description')).toContain('Build reliable hiring workflows');
+    expect(hiddenValue('responsibilities')).toContain('Design application services');
     expect(hiddenValue('skillsRequired')).toBe('Java');
-    expect(JSON.parse(hiddenValue('candidateQualificationsJson'))).toMatchObject({ industry: 'Software Product' });
-    expect(JSON.parse(hiddenValue('preferredCandidateProfileJson'))).toMatchObject({ preferredIndustry: 'Software Product' });
-    expect(JSON.parse(hiddenValue('locationsJson'))).toEqual([]);
+    expect(JSON.parse(hiddenValue('candidateQualificationsJson'))).toMatchObject({
+      minimumQualification: 'any',
+      shiftTiming: 'GENERAL_DAY',
+    });
+    expect(hiddenValue('screeningQuestionText')).toBe('What is your current annual CTC?');
+  });
+
+  it('exposes every supported searchable dropdown option and serializes selections', async () => {
+    const { container } = renderWizard();
+
+    const choose = (label, option) => {
+      const input = screen.getByRole('combobox', { name: label });
+      fireEvent.focus(input);
+      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('option', { name: option }));
+    };
+
+    const workplace = screen.getByRole('combobox', { name: 'Workplace' });
+    fireEvent.focus(workplace);
+    expect(screen.getAllByRole('option').map((item) => item.textContent)).toEqual(expect.arrayContaining(['On-site', 'Hybrid', 'Remote']));
+    fireEvent.keyDown(workplace, { key: 'ArrowDown' });
+    fireEvent.keyDown(workplace, { key: 'Enter' });
+    choose('Employment type', 'Contract');
+    choose('Shift timing', 'Night');
+    choose('Education level', 'PG Qualification');
+    choose('Degree', 'MBA');
+
+    expect(container.querySelector('input[name="workplaceType"]').value).toBe('HYBRID');
+    expect(container.querySelector('input[name="employmentType"]').value).toBe('CONTRACT');
+    expect(container.querySelector('input[name="shiftTimingDisplay"]').value).toBe('NIGHT');
+    expect(container.querySelector('input[name="educationLevelDisplay"]').value).toBe('pg');
+    expect(container.querySelector('input[name="educationCourse"]').value).toBe('MBA');
+
+    await fillEssentials();
+    fireEvent.click(screen.getByRole('button', { name: /Generate job post/i }));
+    await screen.findByRole('heading', { name: /Review the generated job post/i });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Continue$/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Add custom question/i }));
+    const answerType = screen.getByRole('combobox', { name: 'Answer type' });
+    fireEvent.focus(answerType);
+    expect(screen.getAllByRole('option').map((item) => item.textContent)).toEqual(expect.arrayContaining(['Yes / No', 'Single select', 'Multi-select', 'Number', 'Short text', 'Long text']));
+    fireEvent.click(screen.getByRole('option', { name: 'Multi-select' }));
+    expect(answerType).toHaveValue('Multi-select');
   });
 });

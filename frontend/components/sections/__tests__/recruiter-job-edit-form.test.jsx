@@ -106,7 +106,9 @@ describe('RecruiterJobEditForm', () => {
 
     expect(screen.getByLabelText(/Key responsibilities/i)).toHaveValue('Design backend services\nMentor engineers');
     expect(screen.getByLabelText(/Perks & benefits/i)).toHaveValue('Health insurance\nFlexible working');
-    expect(screen.getByLabelText(/Application notification email/i)).toHaveValue('recruiter@northstar.example');
+    // The saved primary recipient is preserved through the ApplicationRecipients
+    // control even when the members list has not loaded, so saving never wipes it.
+    expect(container.querySelector('input[name="applicationNotificationEmail"]').value).toBe('recruiter@northstar.example');
     expect(container.querySelector('input[name="requirements"]').value).toBe('Graduate\nRelevant domain experience');
   });
 

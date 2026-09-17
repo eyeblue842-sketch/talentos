@@ -9,6 +9,7 @@ import { SkillsSelector } from '@/components/sections/job-post/skills-selector';
 import { CandidateQualificationsFields } from '@/components/sections/job-post/candidate-qualifications-fields';
 import { PreferredCandidateProfileAccordion } from '@/components/sections/job-post/preferred-candidate-profile-accordion';
 import { JobLocationSelector, fromCanonicalLocations, toCanonicalLocations } from '@/components/sections/job-post/job-location-selector';
+import { ApplicationRecipients } from '@/components/sections/job-post/application-recipients';
 
 function toDateTimeLocal(value) {
   return value ? new Date(value).toISOString().slice(0, 16) : '';
@@ -130,14 +131,11 @@ export function RecruiterJobEditForm({ job, assignees = [], requisitions = [], u
           <Input label="Application deadline" name="applicationDeadline" type="datetime-local" defaultValue={toDateTimeLocal(job.applicationDeadline)} />
           <Input label="Applications open from" name="applicationOpensAt" type="datetime-local" defaultValue={toDateTimeLocal(job.applicationOpensAt)} />
           <Input label="Applications close on" name="applicationClosesAt" type="datetime-local" defaultValue={toDateTimeLocal(job.applicationClosesAt)} />
-          <Input label="Max applications" name="maxApplications" type="number" min="1" defaultValue={job.maxApplications ?? ''} />
           <Input label="Target hires" name="targetHires" type="number" min="1" defaultValue={job.targetHires ?? ''} />
-          <Input
-            label="Application notification email"
-            name="applicationNotificationEmail"
-            type="email"
-            defaultValue={job.applicationNotificationEmail || ''}
-            helpText="New application notifications will be sent to this email."
+          <ApplicationRecipients
+            members={assignees}
+            defaultPrimary={job.applicationNotificationEmail || ''}
+            defaultAdditional={job.applicationNotificationEmails || []}
           />
         </div>
 
