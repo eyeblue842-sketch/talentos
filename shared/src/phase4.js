@@ -456,6 +456,9 @@ export const screeningRuleSchema = z.object({
 });
 
 const screeningQuestionInputBaseSchema = z.object({
+  // Client-generated identity makes question creation retry-safe without
+  // adding another persistence model or weakening intentional duplicates.
+  clientRequestId: z.string().trim().min(8).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
   templateId: z.string().min(1).optional().nullable(),
   questionText: z.string().trim().min(2).max(500),
   internalLabel: z.string().trim().max(160).optional().nullable(),

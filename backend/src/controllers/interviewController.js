@@ -5,6 +5,7 @@ import {
   duplicateInterviewRound,
   listInterviewFeedback,
   listInterviewPlans,
+  scheduleQuickInterview,
   submitInterviewFeedback,
   updateInterviewRound,
 } from '../services/interviewService.js';
@@ -24,6 +25,18 @@ import { sendSuccess } from '../utils/response.js';
 export async function createPlan(req, res, next) {
   try {
     const plan = await createInterviewPlan(req.user, req.body, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 201, plan);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postQuickSchedule(req, res, next) {
+  try {
+    const plan = await scheduleQuickInterview(req.user, req.params.applicationId, req.body, req.user.activeMembership?.organisationId, {
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     });

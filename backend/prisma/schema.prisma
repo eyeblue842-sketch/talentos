@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Bundle both Debian OpenSSL engines: the OCR apt packages pull in openssl 3.0,
+  // so the runtime needs the 3.0.x engine as well as the 1.1.x one.
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -272,6 +275,9 @@ enum PipelineStage {
   SHORTLISTED
   INTERVIEW_SCHEDULED
   SELECTED
+  OFFER
+  HIRED
+  OFFER_DECLINED
   REJECTED
   WITHDRAWN
 }
@@ -818,6 +824,7 @@ model User {
   billingProfilesUpdated                CompanyBillingProfile[]         @relation("BillingProfileUpdatedBy")
   jobCreditLedgerEntriesCreated         JobPostingCreditLedger[]        @relation("JobCreditLedgerCreatedBy")
   jobAutoCloseOverrides                 Job[]                           @relation("JobAutoCloseOverrideBy")
+  createdCandidateInvites               CandidateInvite[]               @relation("CandidateInviteCreatedBy")
 }
 
 model Organisation {
@@ -841,6 +848,11 @@ model Organisation {
   domainVerificationStatus    DomainVerificationStatus     @default(NOT_APPLICABLE)
   website                     String?
   logoUrl                     String?
+  // Uploaded-logo storage reference (image stored via the shared storage
+  // service); logoUrl points at the public streaming route when these are set.
+  logoStorageProvider         String?
+  logoStorageKey              String?
+  logoMimeType                String?
   publicDescription           String?
   industry                    String?
   organisationSize            String?
@@ -914,6 +926,10 @@ model Organisation {
   subscriptions               CompanySubscription[]
   jobCreditLedgerEntries      JobPostingCreditLedger[]
   invoices                    Invoice[]
+  candidateInvites            CandidateInvite[]
+  assessmentTemplates         AssessmentTemplate[]
+  offerTemplates              OfferTemplate[]
+  socialConnections           SocialConnection[]
 
   @@index([status])
   @@index([type, verifiedDomain])
@@ -1925,6 +1941,15 @@ model Job {
   salaryMin                        Int?
   salaryMax                        Int?
   currency                         String?
+  // Free-text hiring manager contact for ATS openings (may not be a system
+  // user); used for interview scheduling. Distinct from hiringManagerId which
+  // links to a User relation.
+  hiringManagerName                String?
+  hiringManagerEmail               String?
+  // Default interview round structure for this opening (Naukri/Zoho-style):
+  // [{ roundName, interviewType, assessmentTemplateId? }]. Instantiated per
+  // candidate when scheduling; recruiters can still add/reorder per candidate.
+  interviewPlanTemplate            Json?
   isPublic                         Boolean                    @default(false)
   publicSalaryEnabled              Boolean                    @default(false)
   featuredInPortal                 Boolean                    @default(false)
@@ -1953,6 +1978,15 @@ model Job {
   numberOfOpenings                 Int                        @default(1)
   department                       String?
   businessUnit                     String?
+  // Walk-in job posting (Naukri-style). isWalkIn gates the rest.
+  isWalkIn                         Boolean                    @default(false)
+  walkInStartDate                  DateTime?
+  walkInEndDate                    DateTime?
+  walkInTiming                     String?
+  walkInContactName                String?
+  walkInContactPhone               String?
+  walkInVenueAddress               String?
+  walkInGoogleMapsUrl              String?
   responsibilities                 String[]                   @default([])
   requirements                     String[]                   @default([])
   benefits                         String[]                   @default([])
@@ -2005,6 +2039,7 @@ model Job {
   screeningQuestions               JobScreeningQuestion[]
   submittedApplications            JobApplication[]
   offers                           Offer[]
+  candidateInvites                 CandidateInvite[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status])
@@ -2015,6 +2050,97 @@ model Job {
   @@index([applicationDeadline])
   @@index([status, visibility, applicationOpensAt, applicationClosesAt])
   @@index([status, activeUntil])
+}
+
+// A "candidate invite" (Naukri NVite equivalent): a structured outreach to a set
+// of sourced candidates, tied to an opening (Job). Selected candidates are
+// associated to the opening (APPLIED) and emailed the role, so their responses
+// collect under that opening in the ATS / Job Responses views. One row per send.
+model CandidateInvite {
+  id              String       @id @default(cuid())
+  organisationId  String
+  jobId           String
+  createdByUserId String
+  subject         String
+  message         String
+  channel         String       @default("EMAIL")
+  recipientEmails String[]
+  candidateCount  Int          @default(0)
+  sentCount       Int          @default(0)
+  skippedCount    Int          @default(0)
+  createdAt       DateTime     @default(now())
+  organisation    Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  job             Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy       User         @relation("CandidateInviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, createdAt])
+  @@index([jobId])
+}
+
+// A reusable interview assessment/scorecard template (Zoho "Interviewer Feedback
+// Form" equivalent). `sections` holds the scorecard structure; it is copied into
+// a round's `scorecardCriteria` when scheduling, so the interviewer's feedback
+// form renders from it.
+model AssessmentTemplate {
+  id             String       @id @default(cuid())
+  organisationId String
+  name           String
+  description    String?
+  isDefault      Boolean      @default(false)
+  sections       Json
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+}
+
+// A social/job-board connection (LinkedIn) per organisation. Access token is
+// AES-256-GCM encrypted (reuses the meeting-provider encryption). `metadata`
+// caches the connected member URN/name and the org Pages the user can post to,
+// so we never re-ask. Only recruiters/admins connect it.
+model SocialConnection {
+  id                   String       @id @default(cuid())
+  organisationId       String
+  provider             String       @default("LINKEDIN")
+  status               String       @default("CONNECTED")
+  connectedAccountId   String?
+  connectedName        String?
+  encryptedAccessToken String?
+  accessTokenExpiresAt DateTime?
+  scopes               Json?
+  metadata             Json?
+  connectedByUserId    String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  organisation         Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, provider])
+  @@index([organisationId])
+}
+
+// A reusable, editable offer template (Zoho offer-template equivalent): `defaults`
+// prefills the offer form, and `letterBody` holds the offer-letter text with merge
+// tokens ({{candidateName}}, {{ctcAnnual}}, {{joiningDate}}…) rendered into the
+// downloadable offer letter.
+model OfferTemplate {
+  id             String       @id @default(cuid())
+  organisationId String
+  name           String
+  description    String?
+  isDefault             Boolean      @default(false)
+  defaults              Json?
+  letterBody            String?
+  documentStorageKey    String?
+  documentStorageProvider String?
+  documentFilename      String?
+  createdById           String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  organisation          Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
 }
 
 model SavedJob {
@@ -2963,6 +3089,7 @@ model Offer {
   applicationId             String
   jobId                     String
   candidateId               String
+  offerTemplateId           String?
   previousOfferId           String?
   supersededByOfferId       String?
   referenceNumber           String             @unique
@@ -2977,6 +3104,9 @@ model Offer {
   allowancesAmount          Decimal?           @db.Decimal(14, 2)
   otherCompensation         Decimal?           @db.Decimal(14, 2)
   totalCompensation         Decimal?           @db.Decimal(14, 2)
+  // Extra Zoho-style offer fields (designation, joiningLocation, workingDays,
+  // contract dates, stipend, perHour, wordsInCtc, …) merged into the letter.
+  customFields              Json?
   benefitsSummary           String?
   compensationNotes         String?
   proposedJoiningDate       DateTime?

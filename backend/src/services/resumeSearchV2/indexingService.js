@@ -12,6 +12,11 @@ function buildIndexingIdempotencyKey(candidateId, sourceVersion) {
 export function isResumeIndexingAllowed({ organisationId, importBatchId = null } = {}) {
   if (!env.resumeIndexingEnabled) return false;
   if (importBatchId && env.resumeImportBlockedBatchIds.includes(importBatchId)) return false;
+  // With indexing globally enabled and no explicit allow-list configured, index
+  // every candidate. The allow-lists remain available to scope a staged rollout.
+  if (!env.resumeIndexingAllowedOrgIds.length && !env.resumeIndexingAllowedBatchIds.length) {
+    return true;
+  }
   const orgAllowed = env.resumeIndexingAllowedOrgIds.length && organisationId && env.resumeIndexingAllowedOrgIds.includes(organisationId);
   const batchAllowed = env.resumeIndexingAllowedBatchIds.length && importBatchId && env.resumeIndexingAllowedBatchIds.includes(importBatchId);
   return Boolean(orgAllowed || batchAllowed);

@@ -77,7 +77,10 @@ function createTransport() {
   return null;
 }
 
-const transporter = createTransport();
+// Exported so tests can spy on/mock sendMail() (e.g. via node:test's
+// t.mock.method) to simulate a real SMTP delivery failure, instead of
+// baking a test-only failure switch into production code.
+export const transporter = createTransport();
 
 function emailTemplate(stage, jobTitle, metadata = {}) {
   const templates = {
@@ -121,7 +124,7 @@ export async function sendPipelineEmail(to, stage, jobTitle, metadata = {}) {
   });
 }
 
-async function deliverEmail({ to, subject, text }) {
+async function deliverEmail({ to, subject, text, cc }) {
   if (!transporter) {
     if (env.isProduction) {
       const error = new Error('Email delivery is not configured.');
@@ -129,13 +132,14 @@ async function deliverEmail({ to, subject, text }) {
       throw error;
     }
 
-    console.log(`Email stub -> ${to}: ${subject}`);
+    console.log(`Email stub -> ${to}${cc ? ` (cc: ${cc})` : ''}: ${subject}`);
     return;
   }
 
   await transporter.sendMail({
     from: env.emailFrom,
     to,
+    ...(cc ? { cc } : {}),
     subject,
     text,
     // Forces base64 instead of nodemailer's default quoted-printable, which
@@ -163,9 +167,9 @@ async function queueEmailRetry({ to, subject, text }) {
   });
 }
 
-async function sendTransactionalEmail({ to, subject, text }, { queueOnFailure = true } = {}) {
+async function sendTransactionalEmail({ to, subject, text, cc }, { queueOnFailure = true } = {}) {
   try {
-    await deliverEmail({ to, subject, text });
+    await deliverEmail({ to, subject, text, cc });
   } catch (error) {
     if (queueOnFailure) {
       await queueEmailRetry({ to, subject, text }).catch(() => {});
@@ -175,7 +179,30 @@ async function sendTransactionalEmail({ to, subject, text }, { queueOnFailure = 
 }
 
 export async function sendRecruiterOutreachEmail(to, subject, text, options = {}) {
-  await sendTransactionalEmail({ to, subject, text }, options);
+  await sendTransactionalEmail({ to, subject, text, cc: options.cc }, options);
+}
+
+// Polite candidate rejection email (shared by the interview round REJECT decision
+// and the ATS pipeline "Reject" stage move). The recruiter is CC'd so they know
+// it went out. Best-effort: never throws to the caller.
+export async function sendCandidateRejectionEmail({ candidateName, candidateEmail, jobTitle, recruiterName, recruiterEmail }) {
+  if (!candidateEmail) return false;
+  const name = candidateName || 'Candidate';
+  const role = jobTitle || 'the role';
+  const signOff = recruiterName || 'The Hiring Team';
+  const subject = `Update on your application for ${role}`;
+  const text = `Dear ${name},\n\n`
+    + `Thank you for taking the time to apply and interview with us for ${role}, and for the effort you put into the process. It was a pleasure getting to know you.\n\n`
+    + `After careful consideration, we have decided not to move forward with your application for this particular opening at this time, as your profile does not fully align with what we are looking for for this specific role. Please know this is not a reflection of your abilities or potential.\n\n`
+    + `We were genuinely impressed by your background, and we would like to stay connected — should a future opening better suit your profile, we would be glad to reach out to you.\n\n`
+    + `We wish you continued success in your career and hope our paths cross again.\n\n`
+    + `Warm regards,\n${signOff}`;
+  try {
+    await sendRecruiterOutreachEmail(candidateEmail, subject, text, { cc: recruiterEmail || undefined });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function sendRecruiterApplicationNotificationEmail({

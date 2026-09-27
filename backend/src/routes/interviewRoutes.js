@@ -17,6 +17,7 @@ import {
   createFeedback,
   createInterviewerRescheduleRequest,
   createPlan,
+  postQuickSchedule,
   createRound,
   decideRound,
   downloadCandidateRoundCalendar,
@@ -36,6 +37,7 @@ import {
 export const interviewRouter = Router();
 
 interviewRouter.post('/plans', auth(['RECRUITER']), validateSchema(interviewPlanCreateSchema), createPlan);
+interviewRouter.post('/quick-schedule/:applicationId', auth(['RECRUITER']), postQuickSchedule);
 interviewRouter.get('/plans/application/:applicationId', auth(['RECRUITER']), listPlans);
 interviewRouter.post('/plans/:interviewProcessId/rounds', auth(['RECRUITER']), validateSchema(interviewRoundCreateSchema), createRound);
 interviewRouter.patch('/rounds/:roundId', auth(['RECRUITER']), validateSchema(interviewRoundUpdateSchema), updateRound);

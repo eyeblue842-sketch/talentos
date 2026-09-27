@@ -62,6 +62,27 @@ export const DEPARTMENT_ROLE_TAXONOMY = [
   },
 ];
 
+// CascadeSelect nodes: department (branch) -> role (leaf). Used by the
+// "Preferred department / role" picker, where the selected leaf value is the
+// role string (back-compatible with the previous free-text field).
+export const DEPARTMENT_ROLE_TREE = DEPARTMENT_ROLE_TAXONOMY.map((group) => ({
+  label: group.department,
+  children: group.roles.map((role) => ({ label: role, value: role })),
+}));
+
+// Flat department leaves for a single-select Department picker (value = the
+// department string stored in Job.department).
+export const DEPARTMENT_OPTIONS = DEPARTMENT_ROLE_TAXONOMY.map((group) => ({
+  label: group.department,
+  value: group.department,
+}));
+
+// Role leaves for a given department, for the dependent Role picker.
+export function rolesForDepartment(department) {
+  const group = DEPARTMENT_ROLE_TAXONOMY.find((entry) => entry.department === department);
+  return (group?.roles || []).map((role) => ({ label: role, value: role }));
+}
+
 export function filterDepartmentRoleTaxonomy(query) {
   const needle = String(query || '').trim().toLowerCase();
   if (!needle) return DEPARTMENT_ROLE_TAXONOMY;

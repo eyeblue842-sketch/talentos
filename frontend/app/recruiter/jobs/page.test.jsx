@@ -24,18 +24,15 @@ vi.mock('@/lib/api', () => ({
     slug: 'northstar-talent-labs',
     publicDescription: 'Hiring partner for growth-stage product teams.',
   })),
-  getRecruiterJobsPage: vi.fn(async () => ({
-    items: [
-      {
-        id: 'job-1',
-        title: 'Senior Java Developer',
-        status: 'OPEN',
-        location: 'Bengaluru',
-        skillsRequired: ['Java'],
-      },
-    ],
-    meta: { total: 1, page: 1, pageSize: 10, pageCount: 1 },
-  })),
+  getRecruiterJobs: vi.fn(async () => ([
+    {
+      id: 'job-1',
+      title: 'Senior Java Developer',
+      status: 'OPEN',
+      location: 'Bengaluru',
+      skillsRequired: ['Java'],
+    },
+  ])),
   getOrganisationMembers: vi.fn(async () => ([
     { id: 'member-1', role: 'RECRUITER', userId: 'user-1', user: { email: 'recruiter@northstar.example' } },
   ])),
@@ -44,21 +41,16 @@ vi.mock('@/lib/api', () => ({
   ])),
 }));
 
-vi.mock('@/components/sections/jobs-table', () => ({
-  JobsTable: ({ jobs }) => <div data-testid="jobs-table">{jobs.map((job) => job.title).join(', ')}</div>,
-}));
-
 describe('RecruiterJobsPage', () => {
-  test('renders the recruiter job posting wizard and existing jobs list', async () => {
-    render(await RecruiterJobsPage({ searchParams: Promise.resolve({}) }));
+  test('renders the staged job posting wizard with prefill-from-previous and no manage-jobs list', async () => {
+    render(await RecruiterJobsPage());
 
-    expect(screen.getByRole('heading', { name: 'Job Posts' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Start with only the essentials/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Candidate Preferences$/i })).not.toBeInTheDocument();
-    ['Essentials', 'AI Draft & Preview', 'Questions', 'Publish'].forEach((label, index) => {
+    expect(screen.getByRole('heading', { name: 'Post a job' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Job details$/i })).toBeInTheDocument();
+    ['Job details', 'Candidate requirements', 'Job description', 'Screening questions', 'Preview & publish'].forEach((label, index) => {
       expect(screen.getAllByRole('button').some((button) => button.textContent?.includes(label) && button.textContent?.includes(`Stage ${index + 1}`))).toBe(true);
     });
-    expect(screen.getByRole('heading', { name: 'Manage Jobs' })).toBeInTheDocument();
-    expect(screen.getByTestId('jobs-table')).toHaveTextContent('Senior Java Developer');
+    expect(screen.getByRole('button', { name: /Prefill from a previous job/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Manage Jobs' })).not.toBeInTheDocument();
   });
 });

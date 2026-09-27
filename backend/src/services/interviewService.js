@@ -8,6 +8,8 @@ import {
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
+import { sendRecruiterOutreachEmail, sendCandidateRejectionEmail } from './emailService.js';
+import { getAssessmentTemplateSections } from './assessmentTemplateService.js';
 
 const readableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER', 'VIEWER'];
 const writableRoles = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'];
@@ -356,6 +358,87 @@ export async function createInterviewPlan(actorUser, payload, organisationId = n
   });
 
   return serializeInterviewProcess(process);
+}
+
+// One-call scheduling used by the ATS "Schedule interview" popup: creates an
+// interview plan + one scheduled round (with the chosen assessment template copied
+// into scorecardCriteria and the Meet/Zoom provider + link), moves the application
+// to INTERVIEW_SCHEDULED, and notifies the panel to submit feedback afterwards.
+export async function scheduleQuickInterview(actorUser, applicationId, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, writableRoles, organisationId);
+  const application = await getApplicationOr404(context.organisationId, applicationId);
+  const panelUserIds = Array.isArray(payload.panelUserIds) ? [...new Set(payload.panelUserIds.filter(Boolean))] : [];
+  const sections = payload.assessmentTemplateId
+    ? await getAssessmentTemplateSections(context.organisationId, payload.assessmentTemplateId)
+    : null;
+  const scorecardCriteria = (sections || payload.meetingProvider)
+    ? { ...(sections ? { sections } : {}), ...(payload.meetingProvider ? { provider: payload.meetingProvider } : {}) }
+    : null;
+
+  const process = await createInterviewPlan(actorUser, {
+    applicationId,
+    title: payload.title || 'Interview',
+    status: 'SCHEDULED',
+    rounds: [{
+      roundName: payload.roundName || 'Interview round 1',
+      sequence: 1,
+      interviewType: payload.interviewType || 'TECHNICAL',
+      status: 'SCHEDULED',
+      durationMinutes: payload.durationMinutes || null,
+      timezone: payload.timezone || null,
+      meetingMode: payload.meetingMode || null,
+      scheduledStartAt: payload.scheduledStartAt || null,
+      scheduledEndAt: payload.scheduledEndAt || null,
+      meetingLocation: payload.meetingLocation || null,
+      meetingLink: payload.meetingLink || null,
+      officeAddress: payload.officeAddress || null,
+      candidateInstructions: payload.candidateInstructions || null,
+      instructions: payload.notes || null,
+      scorecardCriteria,
+      panelUserIds,
+    }],
+  }, context.organisationId, requestMeta);
+
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: { currentStage: 'INTERVIEW_SCHEDULED', statusLabel: 'Interview Scheduled' },
+  });
+  await prisma.applicationActivity.create({
+    data: {
+      organisationId: context.organisationId,
+      applicationId,
+      actorUserId: actorUser.id,
+      eventType: 'INTERVIEW_SCHEDULED',
+      message: `Interview scheduled${payload.scheduledStartAt ? ` for ${new Date(payload.scheduledStartAt).toLocaleString()}` : ''}.`,
+      metadata: { meetingMode: payload.meetingMode || null, meetingProvider: payload.meetingProvider || null },
+    },
+  });
+
+  // Notify each panel member to submit feedback after the interview.
+  const round = process.rounds?.[0];
+  for (const userId of panelUserIds) {
+    await createNotification({
+      organisationId: context.organisationId,
+      recipientUserId: userId,
+      type: 'INTERVIEW',
+      title: 'Interview assigned',
+      message: `You are on the panel for ${application.candidate?.fullName || 'a candidate'} (${application.job?.title || 'role'}). Please submit your assessment after the interview.`,
+      entityType: 'InterviewRound',
+      entityId: round?.id || process.id,
+    }).catch(() => {});
+    const panelUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (panelUser?.email) {
+      try {
+        await sendRecruiterOutreachEmail(
+          panelUser.email,
+          `Interview panel: ${application.job?.title || 'role'}`,
+          `You have been added to the interview panel for ${application.candidate?.fullName || 'a candidate'}.\n\nWhen: ${payload.scheduledStartAt ? new Date(payload.scheduledStartAt).toLocaleString() : 'TBD'}\n${payload.meetingLink ? `Link: ${payload.meetingLink}\n` : ''}\nPlease submit your assessment after the interview.`,
+        );
+      } catch { /* email is best-effort */ }
+    }
+  }
+
+  return process;
 }
 
 export async function addInterviewRound(actorUser, interviewProcessId, payload, organisationId = null, requestMeta = {}) {
@@ -826,6 +909,34 @@ export async function decideInterviewRound(actorUser, roundId, payload, organisa
   await createRoundNotifications(updatedRound, 'Interview decision updated', message, {
     decision: payload.decision,
   });
+
+  // Notify the owning recruiter of the outcome/status, and — on a rejection —
+  // send the candidate a polite rejection email with the recruiter CC'd so they
+  // know it went out.
+  const fullApp = await prisma.application.findUnique({
+    where: { id: application.id },
+    include: { candidate: { include: { user: true } }, job: { include: { recruiter: true } } },
+  });
+  if (fullApp?.job?.recruiterId) {
+    await createNotification({
+      organisationId: context.organisationId,
+      recipientUserId: fullApp.job.recruiterId,
+      type: 'INTERVIEW',
+      title: 'Interview decision recorded',
+      message,
+      entityType: 'Application',
+      entityId: application.id,
+    }).catch(() => {});
+  }
+  if (payload.decision === 'REJECT') {
+    await sendCandidateRejectionEmail({
+      candidateName: fullApp?.candidate?.fullName,
+      candidateEmail: fullApp?.candidate?.user?.email || fullApp?.candidate?.email || null,
+      jobTitle: fullApp?.job?.title,
+      recruiterName: fullApp?.job?.recruiter?.fullName,
+      recruiterEmail: fullApp?.job?.recruiter?.email || null,
+    });
+  }
 
   await recordAuditLog({
     organisationId: context.organisationId,

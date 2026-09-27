@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { canonicalJobDescriptionOutputSchema } from '@careeriz/shared';
 
 const safeShortString = z.string().trim().min(1).max(400);
 const safeLongString = z.string().trim().min(1).max(4000);
@@ -56,17 +57,7 @@ export const candidateJobMatchInsightOutputSchema = z.object({
   warnings: safeStringArray.default([]),
 }).strict();
 
-export const jobDescriptionOutputSchema = z.object({
-  summary: safeLongString,
-  responsibilities: safeStringArray.default([]),
-  requiredSkills: safeStringArray.default([]),
-  preferredSkills: safeStringArray.default([]),
-  screeningQuestions: safeStringArray.default([]),
-  assumptions: safeStringArray.default([]),
-  exclusionaryWordingWarnings: safeStringArray.default([]),
-  missingFields: safeStringArray.default([]),
-  interviewFocus: safeStringArray.default([]),
-}).strict();
+export const jobDescriptionOutputSchema = canonicalJobDescriptionOutputSchema;
 
 export const interviewQuestionSetOutputSchema = z.object({
   questions: z.array(z.object({

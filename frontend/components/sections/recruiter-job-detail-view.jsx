@@ -42,7 +42,6 @@ function Fact({ icon: Icon, label, value }) {
 export function RecruiterJobDetailView({
   job,
   assignees = [],
-  requisitions = [],
   updateJobAction,
   closeReopenAction,
   archiveAction,
@@ -76,7 +75,6 @@ export function RecruiterJobDetailView({
         <RecruiterJobEditForm
           job={job}
           assignees={assignees}
-          requisitions={requisitions}
           updateJobAction={updateJobAction}
         />
       </Card>

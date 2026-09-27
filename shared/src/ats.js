@@ -439,6 +439,63 @@ export const recruiterResumeTagActionSchema = z.object({
   tag: candidateTagSchema,
 });
 
+// Candidate invite (Naukri NVite equivalent): a structured outreach to selected
+// candidates, either creating a new opening or targeting an existing one.
+export const candidateInviteSchema = z
+  .object({
+    candidateIds: z.array(z.string().min(1)).min(1).max(100),
+    mode: z.enum(['new', 'existing']),
+    // Required when mode === 'existing'.
+    jobId: z.string().min(1).optional().nullable(),
+    // Role details, used only when mode === 'new'.
+    title: z.string().trim().min(2).max(160).optional(),
+    workplaceType: z.string().trim().max(40).optional().nullable(),
+    employmentType: z.string().trim().max(40).optional().nullable(),
+    department: z.string().trim().max(120).optional().nullable(),
+    location: z.string().trim().max(200).optional().nullable(),
+    skillsRequired: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
+    experienceMin: z.coerce.number().min(0).max(60).optional(),
+    experienceMax: z.coerce.number().min(0).max(60).optional(),
+    salaryMin: z.coerce.number().min(0).max(1000000000).optional().nullable(),
+    salaryMax: z.coerce.number().min(0).max(1000000000).optional().nullable(),
+    hideSalary: z.boolean().optional(),
+    numberOfOpenings: z.coerce.number().min(1).max(1000).optional(),
+    description: z.string().trim().max(8000).optional(),
+    // Canonical multi-location selection ({id,name,city,state}[]) from JobLocationSelector.
+    locations: z.array(z.record(z.any())).max(20).optional(),
+    // Walk-in details (mirrors the job posting form).
+    isWalkIn: z.boolean().optional(),
+    walkInStartDate: z.string().trim().optional().nullable(),
+    walkInEndDate: z.string().trim().optional().nullable(),
+    walkInTiming: z.string().trim().max(120).optional().nullable(),
+    walkInContactName: z.string().trim().max(120).optional().nullable(),
+    walkInContactPhone: z.string().trim().max(40).optional().nullable(),
+    walkInVenueAddress: z.string().trim().max(500).optional().nullable(),
+    walkInGoogleMapsUrl: z.string().trim().max(500).optional().nullable(),
+    // Screening questions asked at apply time (mirrors the job posting form).
+    screeningQuestions: z
+      .array(z.object({
+        questionText: z.string().trim().min(3).max(300),
+        questionType: z.enum(['SHORT_TEXT', 'LONG_TEXT', 'NUMBER', 'SINGLE_SELECT', 'MULTI_SELECT', 'BOOLEAN']).optional(),
+        required: z.boolean().optional(),
+        options: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+      }))
+      .max(20)
+      .optional(),
+    // Outreach message and response routing.
+    subject: z.string().trim().min(3).max(160),
+    message: z.string().trim().min(10).max(5000),
+    responseRecipients: z.array(z.string().trim().email()).max(5).optional(),
+  })
+  .refine((value) => value.mode !== 'existing' || Boolean(value.jobId), {
+    message: 'Select an existing opening to invite candidates to.',
+    path: ['jobId'],
+  })
+  .refine((value) => value.mode !== 'new' || Boolean(value.title && value.title.trim().length >= 2), {
+    message: 'Give the new opening a title.',
+    path: ['title'],
+  });
+
 const currencyCodeSchema = z.string().trim().min(3).max(10);
 const moneyValueSchema = z.coerce.number().min(0).max(1000000000);
 const nullableMoneyValueSchema = moneyValueSchema.nullish();
@@ -459,6 +516,8 @@ export const offerApprovalInputSchema = z.object({
 
 const offerDraftBaseSchema = z.object({
   applicationId: z.string().min(1),
+  offerTemplateId: z.string().min(1).optional().nullable(),
+  customFields: z.record(z.any()).optional().nullable(),
   currency: currencyCodeSchema,
   annualCompensation: nullableMoneyValueSchema,
   fixedCompensation: nullableMoneyValueSchema,

@@ -5,7 +5,15 @@ import { getPromptDefinition } from '../prompts/promptRegistry.js';
 export function normalizeStructuredOutput(text) {
   const trimmed = String(text || '').trim();
   const fenced = trimmed.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-  return JSON.parse(fenced);
+  try {
+    return JSON.parse(fenced);
+  } catch (error) {
+    const normalized = new Error('Intelligence provider returned malformed JSON.');
+    normalized.code = 'INTELLIGENCE_MALFORMED_JSON';
+    normalized.statusCode = 502;
+    normalized.cause = error;
+    throw normalized;
+  }
 }
 
 export async function executeStructuredPrompt({ promptKey, input, providerSettings }) {
@@ -13,20 +21,24 @@ export async function executeStructuredPrompt({ promptKey, input, providerSettin
   const prompt = getPromptDefinition(promptKey);
   const result = await provider.generate({
     prompt: prompt.buildPrompt(input),
-    schema: prompt.outputSchema.toJSON ? prompt.outputSchema.toJSON() : { type: 'object' },
+    schema: prompt.jsonSchema || (prompt.outputSchema.toJSON ? prompt.outputSchema.toJSON() : { type: 'object' }),
     settings: {
       ...prompt.defaultProviderSettings,
       ...(providerSettings || {}),
     },
   });
 
-  const parsed = prompt.outputSchema.parse(normalizeStructuredOutput(stripUnsafeMarkup(result.text)));
+  const rawOutput = normalizeStructuredOutput(stripUnsafeMarkup(result.text));
+  const normalized = prompt.normalizeOutput
+    ? prompt.normalizeOutput(rawOutput)
+    : { output: prompt.outputSchema.parse(rawOutput), diagnostics: [] };
 
   return {
     provider: provider.provider,
     prompt,
     model: result.model,
-    output: parsed,
+    output: normalized.output,
+    diagnostics: normalized.diagnostics || [],
     promptTokens: result.promptTokens,
     completionTokens: result.completionTokens,
     latencyMs: result.latencyMs,

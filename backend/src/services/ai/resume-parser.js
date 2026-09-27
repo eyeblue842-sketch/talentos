@@ -38,9 +38,10 @@ export function mergeResumeFieldValue(field, primary, fallback) {
     return fallback;
   }
 
-  if (Array.isArray(safePrimaryValue) && primaryConfidence < 0.55 && hasMeaningfulValue(fallback?.value)) {
-    return fallback;
-  }
+  // For array fields (skills, experience, education, ...) the AI (structured) output
+  // is authoritative whenever it is non-empty. The deterministic fallback tends to
+  // dump whole résumé lines / headings into arrays like skills, so we only use it
+  // when the AI returned nothing (handled by the empty check above).
 
   return {
     ...primary,

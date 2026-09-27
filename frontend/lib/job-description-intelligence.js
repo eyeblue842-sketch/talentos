@@ -33,7 +33,7 @@ const statusMeta = {
   FAILED: {
     label: 'Generation failed',
     tone: 'danger',
-    description: 'The last generation attempt did not complete successfully.',
+    description: 'The last AI generation attempt could not be used. Existing drafts and live job details were preserved.',
   },
   DISABLED: {
     label: 'AI generation unavailable',
@@ -107,7 +107,7 @@ export function mapJobDescriptionError(error) {
   if (status === 409) return 'The job description request could not be completed in the current state.';
   if (status === 413) return 'The request was too large for the server to process.';
   if (status === 429) return 'AI job description is temporarily rate limited. Try again shortly.';
-  if ([502, 503].includes(status)) return 'AI job description is temporarily unavailable. Try again shortly.';
+  if ([502, 503].includes(status)) return 'AI job description output could not be used safely. Edit the draft manually or deliberately regenerate after reviewing the job details.';
   return error?.message || 'AI job description could not be loaded.';
 }
 

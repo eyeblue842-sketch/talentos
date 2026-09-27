@@ -304,19 +304,15 @@ export function buildPublicJobWhere(filters = {}) {
 
   if (typeof filters.salaryMin === 'number') {
     and.push({
-      OR: [
-        { publicSalaryEnabled: false },
-        { salaryMax: { gte: filters.salaryMin } },
-      ],
+      publicSalaryEnabled: true,
+      salaryMax: { gte: filters.salaryMin },
     });
   }
 
   if (typeof filters.salaryMax === 'number') {
     and.push({
-      OR: [
-        { publicSalaryEnabled: false },
-        { salaryMin: { lte: filters.salaryMax } },
-      ],
+      publicSalaryEnabled: true,
+      salaryMin: { lte: filters.salaryMax },
     });
   }
 
@@ -336,7 +332,7 @@ export function buildPublicJobWhere(filters = {}) {
 function buildPublicJobOrder(sort = 'relevance') {
   if (sort === 'oldest') return [{ createdAt: 'asc' }, { id: 'asc' }];
   if (sort === 'closing_date') return [{ applicationClosesAt: 'asc' }, { applicationDeadline: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }];
-  if (sort === 'salary_high') return [{ salaryMax: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }];
+  if (sort === 'salary_high') return [{ createdAt: 'desc' }, { id: 'asc' }];
   if (sort === 'relevance') return [{ featuredInPortal: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }];
   return [{ createdAt: 'desc' }, { id: 'asc' }];
 }

@@ -4,6 +4,7 @@ import { serializeOrganisation, serializeOrganisationMembership, serializeOrgani
 import { assertOwnershipInvariant, canManageMembers, requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { createNotification } from './notificationService.js';
 import { recordAuditLog } from './auditLogService.js';
+import { storePrivateFile, deletePrivateFile, readPrivateFileNodeStream } from '../config/storage.js';
 
 async function buildUniqueSlug(baseValue) {
   const base = slugify(baseValue, { lower: true, strict: true }) || `organisation-${Date.now()}`;
@@ -288,6 +289,56 @@ export async function updateRecruiterOrganisationProfile(actorUser, payload, org
   };
 }
 
+export async function updateOrganisationLogo(actorUser, file, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN'], organisationId);
+  if (!file) {
+    const error = new Error('A logo image file is required.');
+    error.statusCode = 422;
+    throw error;
+  }
+  const existing = await prisma.organisation.findUnique({ where: { id: context.organisationId } });
+  const stored = await storePrivateFile(file, {
+    prefix: 'org-logos',
+    metadata: { organisationId: context.organisationId },
+  });
+
+  const updated = await prisma.organisation.update({
+    where: { id: context.organisationId },
+    data: {
+      // logoUrl points at the same-origin streaming route so browsers load it
+      // without any public-base/CORS configuration; the ?v cache-buster makes a
+      // freshly uploaded logo show immediately.
+      logoUrl: `/api/organisations/${context.organisationId}/logo?v=${stored.checksumSha256.slice(0, 8)}`,
+      logoStorageProvider: stored.storageProvider,
+      logoStorageKey: stored.storageKey,
+      logoMimeType: stored.mimeType,
+    },
+  });
+
+  // Best-effort cleanup of the previous uploaded logo (never blocks the update).
+  if (existing?.logoStorageKey && existing.logoStorageKey !== stored.storageKey) {
+    try { await deletePrivateFile(existing.logoStorageProvider, existing.logoStorageKey); } catch { /* ignore */ }
+  }
+
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'organisation.logo.update',
+    entityType: 'Organisation',
+    entityId: context.organisationId,
+    ...requestMeta,
+  });
+
+  return serializeOrganisation(updated);
+}
+
+export async function getOrganisationLogoStream(organisationId) {
+  const organisation = await prisma.organisation.findUnique({ where: { id: organisationId } });
+  if (!organisation?.logoStorageKey) return null;
+  const file = await readPrivateFileNodeStream(organisation.logoStorageProvider, organisation.logoStorageKey);
+  return { ...file, contentType: organisation.logoMimeType || file.contentType };
+}
+
 export async function listOrganisationMembers(actorUser, organisationId = null) {
   const { organisationId: activeOrganisationId } = await requireOrganisationContext(actorUser, organisationId);
   const memberships = await prisma.organisationMembership.findMany({
@@ -424,7 +475,7 @@ export async function updateOrganisationMember(actorUser, membershipId, payload,
 }
 
 export async function createOrganisationPost(actorUser, payload, organisationId = null, requestMeta = {}) {
-  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'], organisationId);
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN'], organisationId);
   const post = await prisma.organisationPost.create({
     data: {
       organisationId: context.organisationId,
@@ -452,4 +503,39 @@ export async function createOrganisationPost(actorUser, payload, organisationId 
   });
 
   return serializeOrganisationPost(post);
+}
+
+export async function updateOrganisationPost(actorUser, postId, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN'], organisationId);
+  const existing = await prisma.organisationPost.findFirst({ where: { id: postId, organisationId: context.organisationId } });
+  if (!existing) {
+    const error = new Error('Company update not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const updated = await prisma.organisationPost.update({
+    where: { id: existing.id },
+    data: {
+      content: payload.content.trim(),
+      imageUrl: normalizeOptionalString(payload.imageUrl),
+      status: payload.status || existing.status,
+      publishedAt: payload.status === 'DRAFT' ? null : (existing.publishedAt || new Date()),
+    },
+    include: { authorUser: { select: { id: true, name: true, email: true } } },
+  });
+  await recordAuditLog({ organisationId: context.organisationId, actorUserId: actorUser.id, action: 'organisation.post.update', entityType: 'OrganisationPost', entityId: updated.id, afterData: { status: updated.status }, ...requestMeta });
+  return serializeOrganisationPost(updated);
+}
+
+export async function deleteOrganisationPost(actorUser, postId, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, ['OWNER', 'ADMIN'], organisationId);
+  const existing = await prisma.organisationPost.findFirst({ where: { id: postId, organisationId: context.organisationId } });
+  if (!existing) {
+    const error = new Error('Company update not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  await prisma.organisationPost.delete({ where: { id: existing.id } });
+  await recordAuditLog({ organisationId: context.organisationId, actorUserId: actorUser.id, action: 'organisation.post.delete', entityType: 'OrganisationPost', entityId: existing.id, beforeData: { status: existing.status }, ...requestMeta });
+  return { deleted: true };
 }

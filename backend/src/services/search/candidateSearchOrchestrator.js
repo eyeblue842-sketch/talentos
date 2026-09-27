@@ -93,12 +93,14 @@ async function getCandidateSourceRows(filters = {}, adapters = {}) {
   const candidateProfileDelegate = adapters.candidateProfileDelegate;
 
   if (!isElasticsearchEnabled() || !elasticClient) {
+    // Elasticsearch is intentionally disabled: the database is the primary search
+    // source (live, no indexing lag), not a degraded fallback — so no warning.
     const rows = await findSearchCandidatesByFilters(filters, { candidateProfileDelegate });
 
     return {
       rows,
       searchMode: 'database',
-      warning: resumeSearchFallbackWarning,
+      warning: null,
     };
   }
 
@@ -258,7 +260,10 @@ export async function getRecruiterCandidatePreview(actorUser, candidateId, organ
   }
 
   const ownApplication = getOwnOrganisationApplication(candidate, context.organisationId);
-  const canRevealPrivateFields = Boolean(ownApplication || candidate.savedByRecruiters.length);
+  // Candidates the organisation imported into its own databank belong to the org, so
+  // its recruiters may view their resume/contact directly (no application/save needed).
+  const isOwnDatabankCandidate = Boolean(candidate.organisationId && candidate.organisationId === context.organisationId);
+  const canRevealPrivateFields = Boolean(ownApplication || candidate.savedByRecruiters.length || isOwnDatabankCandidate);
   const currentRole = extractExperienceEntries(candidate)[0];
   const safeProfile = normalizeCandidateProfileForPresentation(candidate);
 

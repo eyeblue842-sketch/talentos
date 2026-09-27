@@ -7,9 +7,10 @@ import { recruiterNav } from '@/lib/navigation';
 import {
   getCurrentOrganisation,
   getOrganisationMembers,
-  getRecruiterApplicationsV2,
   getRecruiterJobsPage,
+  getRecruiterPipelinePage,
 } from '@/lib/api';
+import { JobResponsesTriage } from '@/components/recruiter/job-responses-triage';
 import {
   formatApplicantCount,
   formatEmploymentLabel,
@@ -35,26 +36,11 @@ function CountPill({ label, value }) {
 export default async function RecruiterJobResponsesPage({ searchParams }) {
   const params = await searchParams;
   const jobsQuery = new URLSearchParams();
-  const responsesQuery = new URLSearchParams();
+  if (params?.search) jobsQuery.set('search', params.search);
+  if (params?.jobStatus) jobsQuery.set('status', params.jobStatus);
+  if (params?.recruiterId) jobsQuery.set('recruiterId', params.recruiterId);
 
-  if (params?.search) {
-    jobsQuery.set('search', params.search);
-    responsesQuery.set('search', params.search);
-  }
-  if (params?.jobStatus) {
-    jobsQuery.set('status', params.jobStatus);
-    responsesQuery.set('jobStatus', params.jobStatus);
-  }
-  if (params?.jobId) {
-    responsesQuery.set('jobId', params.jobId);
-  }
-  if (params?.stage) {
-    responsesQuery.set('stage', params.stage);
-  }
-  if (params?.recruiterId) {
-    responsesQuery.set('recruiterId', params.recruiterId);
-  }
-  responsesQuery.set('pageSize', '50');
+  const selectedJobId = params?.jobId || '';
 
   let organisation = null;
   let jobsResult = { items: [], meta: {} };
@@ -63,17 +49,23 @@ export default async function RecruiterJobResponsesPage({ searchParams }) {
   let error = '';
 
   try {
-    [organisation, jobsResult, members, applicationsResult] = await Promise.all([
+    [organisation, jobsResult, members] = await Promise.all([
       getCurrentOrganisation(),
       getRecruiterJobsPage(jobsQuery.toString()),
       getOrganisationMembers(),
-      getRecruiterApplicationsV2(responsesQuery.toString()),
     ]);
+    // Responses = applications on the selected job. Use the recruiter pipeline
+    // feed (legacy /ats/pipeline) - the V2 /ats/applications route is
+    // candidate-only, so a recruiter never had access to it here.
+    if (selectedJobId) {
+      const responsesQuery = new URLSearchParams();
+      responsesQuery.set('jobId', selectedJobId);
+      if (params?.stage) responsesQuery.set('stage', params.stage);
+      applicationsResult = await getRecruiterPipelinePage(responsesQuery.toString());
+    }
   } catch (caught) {
     error = caught.message;
   }
-
-  const selectedJobId = params?.jobId || '';
   const selectedJob = jobsResult.items.find((job) => job.id === selectedJobId) || null;
   const statusCounts = jobsResult.items.reduce((accumulator, job) => {
     accumulator[job.status] = (accumulator[job.status] || 0) + 1;
@@ -224,50 +216,18 @@ export default async function RecruiterJobResponsesPage({ searchParams }) {
             </h2>
             <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
               {selectedJob
-                ? 'Use the existing ATS stages as the single response workflow.'
+                ? 'Shortlist or reject applicants, and email selected candidates in bulk.'
                 : 'Choose View Responses on a job row to inspect candidate applications for that role.'}
             </p>
           </div>
-          {selectedJob ? <Badge tone="info">{applicationsResult.meta?.total || applicationsResult.items.length} responses</Badge> : null}
+          {selectedJob ? <Badge tone="info">{applicationsResult.items.length} responses</Badge> : null}
         </div>
         {selectedJob ? (
-          <div className="space-y-3">
-            {applicationsResult.items.map((application) => (
-              <div key={application.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-semibold text-[var(--color-text)]">{application.candidate.fullName}</h3>
-                    <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{application.job.title}</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge tone="neutral">{application.stage.replaceAll('_', ' ')}</Badge>
-                      <Badge tone="neutral">{application.status}</Badge>
-                      {application.flagCount ? <Badge tone="warning">{application.flagCount} flags</Badge> : null}
-                    </div>
-                    <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-                      Applied {formatRecruitmentDate(application.submittedAt)} · Source {application.source?.sourceName || application.source?.sourceType || 'Careeriz'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/recruiter/ats/${application.id}`}
-                      className="inline-flex min-h-10 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border-strong)] px-4 text-sm font-semibold text-[var(--color-text)]"
-                    >
-                      View Profile
-                    </Link>
-                    <Link
-                      href={`/recruiter/ats/${application.id}`}
-                      className="inline-flex min-h-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-soft)] px-4 text-sm font-semibold text-[var(--color-primary)]"
-                    >
-                      Move to Pipeline
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {!applicationsResult.items.length ? (
-              <p className="text-sm text-[var(--color-text-secondary)]">No responses match the current filters for this job yet.</p>
-            ) : null}
-          </div>
+          <JobResponsesTriage
+            jobId={selectedJob.id}
+            jobTitle={selectedJob.title}
+            responses={applicationsResult.items}
+          />
         ) : null}
       </Card>
     </WorkspaceShell>

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import slugify from 'slugify';
+import { INVITATION_ACCEPT_PATH, INVITATION_TOKEN_PARAM } from '@careeriz/shared';
 import { prisma } from '../config/db.js';
 import { signToken, getTokenExpiryIso } from '../utils/jwt.js';
 import { normalizeOfficeLocations } from '../utils/email.js';
@@ -18,6 +19,8 @@ import { resolveMembershipForRequest } from './organisationAccessService.js';
 import { assertInitialSetupCompleted } from './setupService.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
 import { assertEmailAllowedForEmployerType, buildRecruiterOrganisationCreateData, createRecruiterOrganisation } from './employerOnboardingService.js';
+import { getInvitationByToken } from './organisationInvitationService.js';
+import { normalizeEmailDomain } from './domainPolicyService.js';
 
 function buildCandidateProfileData(payload) {
   const fallbackName = payload.fullName?.trim() || payload.email.split('@')[0];
@@ -52,13 +55,26 @@ export async function registerUser(payload) {
   await assertInitialSetupCompleted();
 
   const role = payload.role === 'RECRUITER' ? 'RECRUITER' : 'CANDIDATE';
+  let signupInvitation = null;
+  if (role === 'RECRUITER' && payload.next?.startsWith(`${INVITATION_ACCEPT_PATH}?`)) {
+    const invitationUrl = new URL(payload.next, 'http://localhost');
+    signupInvitation = await getInvitationByToken(invitationUrl.searchParams.get(INVITATION_TOKEN_PARAM) || '');
+    if (signupInvitation.email !== payload.email.toLowerCase().trim()
+      || signupInvitation.organisation?.status !== 'ACTIVE') {
+      const error = new Error('This invitation cannot be used for this account.');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
 
   // The employer-type domain check happens BEFORE the duplicate-email check
   // so registration attempts are rejected on the same footing regardless of
   // whether the email already exists - avoids leaking "this email exists"
   // information through a different error path per employer type.
   const classification = role === 'RECRUITER'
-    ? await assertEmailAllowedForEmployerType(payload.email, payload.employerType)
+    ? signupInvitation
+      ? { domain: normalizeEmailDomain(payload.email) }
+      : await assertEmailAllowedForEmployerType(payload.email, payload.employerType)
     : null;
 
   const normalizedEmail = payload.email.toLowerCase().trim();
@@ -73,7 +89,7 @@ export async function registerUser(payload) {
   const hashedPassword = await bcrypt.hash(payload.password, 12);
 
   const user = await prisma.$transaction(async (tx) => {
-    const organisation = role === 'RECRUITER'
+    const organisation = role === 'RECRUITER' && !signupInvitation
       ? await createRecruiterOrganisation(tx, await buildRecruiterOrganisationCreateData(payload, classification, tx))
       : null;
 
@@ -85,7 +101,7 @@ export async function registerUser(payload) {
         recruiterProfile: role === 'RECRUITER'
           ? {
               create: {
-                organisationId: organisation.id,
+                organisationId: organisation?.id || null,
                 companyEmailDomain: classification.domain,
                 officeLocations: [],
                 profileCompleted: false,
@@ -127,7 +143,24 @@ export async function registerUser(payload) {
   const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION', {
     context: signupNext ? { next: signupNext } : undefined,
   });
-  await sendEmailVerificationEmail(user.email, token);
+
+  try {
+    await sendEmailVerificationEmail(user.email, token);
+  } catch (error) {
+    // The account row is already committed at this point, so a downstream
+    // email-delivery failure (e.g. an SMTP outage) must not turn a
+    // successful signup into a client-facing 500 - the user would exist but
+    // believe registration failed. sendEmailVerificationEmail already queues
+    // a retry via the background task service before rethrowing, so the
+    // token and a delivery attempt are not lost - this only prevents that
+    // rethrow from masking the otherwise-successful signup.
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'signup.verification-email.delivery-deferred',
+      code: error.code || null,
+      message: error.message,
+    }));
+  }
 
   return {
     user: serializeUser(user, { includePrivate: true }),
@@ -238,7 +271,25 @@ export async function requestPasswordReset(email, requestContext = {}) {
   };
 
   const { token } = await issueAuthToken(user.id, 'PASSWORD_RESET', { context });
-  await sendPasswordResetEmail(user.email, token);
+
+  try {
+    await sendPasswordResetEmail(user.email, token);
+  } catch (error) {
+    // Non-enumerating contract: a downstream email-delivery failure (e.g. an
+    // SMTP outage or credential problem) must never surface as a different
+    // status/response than the "account doesn't exist" case above, or the
+    // response itself becomes an enumeration side-channel. sendPasswordResetEmail
+    // already queues a retry via the background task service before
+    // rethrowing, so the token and a delivery attempt are not lost - this
+    // only prevents that rethrow from breaking the uniform response.
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'password-reset.request.email-delivery-deferred',
+      code: error.code || null,
+      message: error.message,
+    }));
+  }
+
   return { requested: true };
 }
 
@@ -352,7 +403,23 @@ export async function requestEmailVerification(email) {
   }
 
   const { token } = await issueAuthToken(user.id, 'EMAIL_VERIFICATION');
-  await sendEmailVerificationEmail(user.email, token);
+
+  try {
+    await sendEmailVerificationEmail(user.email, token);
+  } catch (error) {
+    // Non-enumerating contract: a downstream email-delivery failure must
+    // never surface as a different status/response than the "account
+    // doesn't exist or is already verified" case above, or the response
+    // itself becomes an enumeration side-channel - mirrors the same fix
+    // applied to requestPasswordReset() for the identical class of bug.
+    console.error(JSON.stringify({
+      level: 'error',
+      event: 'email-verification.request.email-delivery-deferred',
+      code: error.code || null,
+      message: error.message,
+    }));
+  }
+
   return { requested: true };
 }
 

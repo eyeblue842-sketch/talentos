@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
 import { createNotification } from './notificationService.js';
-import { generateOfferPdfBuffer } from './offerDocumentService.js';
+import { generateOfferPdfBuffer, generateOfferDocxBuffer } from './offerDocumentService.js';
 import { sendOfferReleasedEmail, sendOfferStatusEmail } from './emailService.js';
 import {
   actOnOfferApprovalRecord,
@@ -335,6 +335,8 @@ function buildOfferData(payload, application, actorUser) {
     organisationId: application.organisationId,
     jobId: application.jobId,
     candidateId: application.candidateId,
+    offerTemplateId: payload.offerTemplateId || null,
+    customFields: payload.customFields && typeof payload.customFields === 'object' ? payload.customFields : null,
     currency: payload.currency,
     annualCompensation: decimalOrNull(payload.annualCompensation),
     fixedCompensation: decimalOrNull(payload.fixedCompensation),
@@ -1035,6 +1037,20 @@ export async function getOfferPdfForRecruiter(actorUser, offerId, organisationId
   return {
     filename: `${offer.referenceNumber.toLowerCase()}-v${offer.version}.pdf`,
     buffer: await generateOfferPdfBuffer(offer),
+  };
+}
+
+// Returns the merged .docx when the offer's template has an uploaded document,
+// else null (caller falls back to the pdfkit PDF).
+export async function getOfferDocumentForRecruiter(actorUser, offerId, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, recruiterReadableRoles, organisationId);
+  const offer = await expireOfferIfNeeded(await getOfferOrThrow(context.organisationId, offerId), requestMeta);
+  const merged = await generateOfferDocxBuffer(offer);
+  if (!merged) return null;
+  return {
+    filename: `${offer.referenceNumber.toLowerCase()}-v${offer.version}.docx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: merged.buffer,
   };
 }
 

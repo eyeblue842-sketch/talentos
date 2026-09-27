@@ -6,6 +6,7 @@ import { PDFParse } from 'pdf-parse';
 import { fileTypeFromBuffer } from 'file-type';
 import { env } from '../config/env.js';
 import { sanitizeStorageFilename } from '../config/storage.js';
+import { ocrPdfBuffer, ocrDocxBuffer, isResumeOcrEnabled } from './ocr/tesseractOcr.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.zip']);
 const RESUME_EXTENSIONS = new Set(['.pdf', '.doc', '.docx']);
@@ -340,7 +341,14 @@ export async function validateUploadedResumeFile(file, { allowZip = true } = {})
   }
 
   const detectedExtension = await sniffFileType(file.buffer, extension);
-  if (detectedExtension !== extension && !(extension === '.docx' && detectedExtension === '.zip')) {
+  // Word documents are frequently mis-sniffed within the same family: .docx is an
+  // OOXML zip (detected .zip), legacy .doc is an OLE compound (detected .cfb/.doc),
+  // and file-type sometimes returns the sibling extension. Treat the whole document
+  // family as interchangeable so genuine .doc/.docx uploads are not wrongly rejected.
+  const documentFamily = new Set(['.doc', '.docx', '.zip', '.cfb']);
+  const signatureMatches = detectedExtension === extension
+    || (documentFamily.has(extension) && documentFamily.has(detectedExtension));
+  if (!signatureMatches) {
     throw buildError('FILE_SIGNATURE_MISMATCH', 'File contents do not match the file extension.');
   }
 
@@ -463,7 +471,7 @@ export async function expandResumeArchive(file) {
   });
 }
 
-export async function extractResumeText({ extension, fileBuffer }) {
+async function extractResumeTextNative({ extension, fileBuffer }) {
   if (extension === '.pdf') {
     const pdfData = fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength);
     const parser = new PDFParse({ data: pdfData });
@@ -507,6 +515,7 @@ export async function extractResumeText({ extension, fileBuffer }) {
             requiresManualReview: true,
             totalPages,
             strategy: 'quality_gate_rejected',
+            rawText: chosen.text,
             quality: {
               score: chosen.score,
               reasons: chosen.reasons,
@@ -541,6 +550,7 @@ export async function extractResumeText({ extension, fileBuffer }) {
             requiresManualReview: true,
             totalPages: 0,
             strategy: 'quality_gate_rejected',
+            rawText: fallbackQuality.text,
             quality: {
               score: fallbackQuality.score,
               reasons: fallbackQuality.reasons,
@@ -581,6 +591,7 @@ export async function extractResumeText({ extension, fileBuffer }) {
         text: '',
         errorCode: 'DOCX_TEXT_LOW_QUALITY',
         requiresManualReview: true,
+        rawText: text,
         quality: {
           score: quality.score,
           reasons: quality.reasons,
@@ -636,6 +647,64 @@ export async function extractResumeText({ extension, fileBuffer }) {
   return { text: '', errorCode: 'UNSUPPORTED_FILE_TYPE', requiresManualReview: true };
 }
 
+// Accepts text (native or OCR) when it clearly reads like a resume, even if the
+// strict quality gate flagged it. Real resumes — especially designed templates and
+// OCR output — carry glyphs/rating dots that trip GIBBERISH_TOKEN_SEQUENCES while
+// the substance (name, contact, experience) is perfectly intact. The downstream
+// identity gate still requires a name + email/phone before anything auto-imports.
+function acceptResumeLikeText(rawText, { strategy, totalPages = 0 }) {
+  const cleaned = sanitizeResumeString(rawText || '').trim();
+  if (!cleaned) return null;
+  const quality = assessResumeTextQuality(cleaned);
+  const letters = (cleaned.match(/[A-Za-z]/g) || []).length;
+  const hasContactSignal = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(cleaned) || /\d[\d\s().-]{6,}\d/.test(cleaned);
+  const looksLikeResume = cleaned.length >= 200 && letters >= 150 && hasContactSignal;
+  if (!quality.usable && !looksLikeResume) return null;
+  return {
+    text: (quality.usable ? quality.text : cleaned).slice(0, env.resumeImportMaxTextChars),
+    errorCode: null,
+    requiresManualReview: false,
+    totalPages: totalPages || 0,
+    strategy,
+    quality: { score: quality.score, reasons: quality.reasons },
+  };
+}
+
+// Text extraction with a rescue path for the two ways good resumes were being
+// wrongly sent to manual review:
+//  (1) native text layer is fine but the strict gate rejected it (designed
+//      templates with rating glyphs) -> accept it if it reads like a resume;
+//  (2) scanned / image-only PDF or DOCX with no text layer -> render to images and
+//      run Tesseract OCR (poppler + tesseract), then apply the same lenient accept.
+export async function extractResumeText({ extension, fileBuffer }) {
+  const native = await extractResumeTextNative({ extension, fileBuffer });
+  const lowQualityCodes = ['PDF_TEXT_LOW_QUALITY', 'DOCX_TEXT_LOW_QUALITY', 'DOC_TEXT_LOW_QUALITY'];
+  const imageOnlyCodes = ['PDF_IMAGE_ONLY', 'DOCX_EMPTY_TEXT'];
+
+  // (1) Rescue over-rejected native text.
+  if (lowQualityCodes.includes(native.errorCode) && native.rawText) {
+    const accepted = acceptResumeLikeText(native.rawText, { strategy: 'native_lenient', totalPages: native.totalPages });
+    if (accepted) return accepted;
+  }
+
+  // (2) OCR fallback for image-based documents (and any low-quality left over).
+  const ocrEligible = lowQualityCodes.includes(native.errorCode) || imageOnlyCodes.includes(native.errorCode);
+  if (!ocrEligible || !isResumeOcrEnabled()) {
+    return native;
+  }
+  try {
+    const ocrText = extension === '.docx'
+      ? await ocrDocxBuffer(fileBuffer)
+      : await ocrPdfBuffer(fileBuffer);
+    const accepted = acceptResumeLikeText(ocrText, { strategy: 'ocr_tesseract', totalPages: native.totalPages });
+    if (accepted) return accepted;
+  } catch {
+    // OCR unavailable (missing binary), timed out, or produced nothing usable —
+    // keep the native result so the item still lands in manual review.
+  }
+  return native;
+}
+
 function matchEmail(text) {
   const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match?.[0] || null;
@@ -666,10 +735,61 @@ function inferHeaderSegment(text) {
   return source.slice(0, headingMatch.index).trim();
 }
 
+// Words that are page/section headers, not a person's name.
+const NAME_HEADING_WORDS = new Set([
+  'resume', 'resumé', 'curriculum vitae', 'cv', 'profile', 'bio data', 'biodata',
+  'name', 'personal details', 'personal information', 'summary', 'objective',
+  'contact', 'contact details', 'contact information',
+]);
+
+// Tokens that signal a company / job title / heading rather than a person's name.
+const NON_NAME_TOKENS = new Set([
+  'pvt', 'ltd', 'limited', 'inc', 'llp', 'llc', 'corp', 'corporation', 'company', 'co',
+  'solutions', 'technologies', 'technology', 'systems', 'services', 'consulting',
+  'consultancy', 'software', 'infotech', 'india', 'global', 'group', 'enterprises',
+  'title', 'role', 'designation', 'developer', 'engineer', 'analyst', 'manager',
+  'consultant', 'resume', 'curriculum', 'vitae', 'objective', 'summary', 'profile',
+]);
+
+// Trim a candidate name string of trailing contact info / separators and validate
+// it reads like a person's name (letters, sane length, not a heading / company).
+function cleanCandidateName(raw, { minTokens = 1 } = {}) {
+  if (!raw) return null;
+  let name = String(raw).replace(/\s+/g, ' ').trim();
+  // Cut anything from a contact keyword or separator onward (name + "email:"/"|"/"(").
+  name = name.split(/\s*(?:e-?mail|ph\.?\s*no|phone|mobile|mob|contact|tel|linkedin|github)\b/i)[0];
+  name = name.split(/[|,(/]/)[0].trim();
+  if (name.length < 2 || name.length > 60) return null;
+  if (/@|https?:|\d{3,}/i.test(name)) return null;
+  const letters = (name.match(/[A-Za-z]/g) || []).length;
+  if (letters < 2) return null;
+  const normalized = name.toLowerCase().replace(/\s+/g, ' ');
+  if (NAME_HEADING_WORDS.has(normalized)) return null;
+  const tokens = name.split(/\s+/);
+  if (tokens.length < minTokens || tokens.length > 6) return null;
+  if (tokens.some((token) => NON_NAME_TOKENS.has(token.toLowerCase().replace(/[^a-z]/g, '')))) return null;
+  return name.slice(0, 160);
+}
+
 function inferFullName(text, originalFilename) {
+  const source = String(text || '');
+
+  // 1) Explicit "Name: X" / "Name - X" label (very common in Naukri exports).
+  const labelled = source.match(/\bName\s*[:\-]\s*([A-Za-z][A-Za-z.'’\s-]{1,60})/i);
+  if (labelled?.[1]) {
+    const cleaned = cleanCandidateName(labelled[1]);
+    if (cleaned) return cleaned;
+  }
+
+  // 2) First non-empty line, cut at the first tab / big gap (name often sits on the
+  //    same line as the email, separated by a tab). Require 2+ tokens so single-token
+  //    letterheads / logos (e.g. "SRT") are not mistaken for a name.
   const firstLine = firstNonEmptyLine(text);
-  if (firstLine && firstLine.length <= 80 && !/@/.test(firstLine) && !/^https?:\/\//i.test(firstLine)) {
-    return firstLine.slice(0, 160);
+  if (firstLine) {
+    const head = cleanCandidateName(firstLine.split(/\t|\s{2,}/)[0], { minTokens: 2 });
+    if (head) return head;
+    const whole = cleanCandidateName(firstLine, { minTokens: 2 });
+    if (whole) return whole;
   }
 
   const header = inferHeaderSegment(text);
@@ -692,9 +812,23 @@ function inferFullName(text, originalFilename) {
   }
 
   const match = header.match(/^\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})\b/);
-  if (match?.[1]) return match[1].slice(0, 160);
+  const headerName = match?.[1] ? cleanCandidateName(match[1], { minTokens: 2 }) : null;
+  if (headerName) return headerName;
 
-  return path.basename(originalFilename, path.extname(originalFilename));
+  // Last resort: the file name. Naukri exports embed the candidate name
+  // (e.g. "Naukri_Manoj[5y_2m].pdf" -> "Manoj"). Strip the vendor prefix, the
+  // "[...]" experience tag and digits, then validate it reads like a name.
+  const fromFile = cleanCandidateName(
+    path.basename(originalFilename || '', path.extname(originalFilename || ''))
+      .replace(/^naukri[_\s-]*/i, '')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\d+/g, ' ')
+      .trim(),
+  );
+  return fromFile || null;
 }
 
 function normalizeResumeLines(text) {

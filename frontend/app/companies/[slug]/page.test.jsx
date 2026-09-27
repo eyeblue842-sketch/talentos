@@ -95,7 +95,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 describe('PublicOrganisationPage', () => {
-  test('renders candidate-safe company home without recruiter edit actions or a posts tab', async () => {
+  test('renders candidate-safe company home with a public Blog tab', async () => {
     render(await PublicOrganisationPage({
       params: Promise.resolve({ slug: 'northstar-talent-labs' }),
       searchParams: Promise.resolve({}),
@@ -105,13 +105,23 @@ describe('PublicOrganisationPage', () => {
     expect(screen.getByText('Staffing & Recruiting')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/companies/northstar-talent-labs');
     expect(screen.getByRole('link', { name: 'About' })).toHaveAttribute('href', '/companies/northstar-talent-labs?tab=about');
+    expect(screen.getByRole('link', { name: 'Blog' })).toHaveAttribute('href', '/companies/northstar-talent-labs?tab=blog');
     expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/companies/northstar-talent-labs?tab=jobs');
-    expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('href', '/companies/northstar-talent-labs?tab=people');
-    expect(screen.getByRole('link', { name: 'Insights' })).toHaveAttribute('href', '/companies/northstar-talent-labs?tab=insights');
-    expect(screen.queryByText('Posts')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'People' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Insights' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Edit company profile' })).not.toBeInTheDocument();
     expect(screen.queryByText('Profile updated')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Latest from Northstar Talent Labs' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Company updates' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/We are expanding our product engineering hiring this quarter/i)).not.toBeInTheDocument();
+  });
+
+  test('renders published company updates on the public Blog tab', async () => {
+    render(await PublicOrganisationPage({
+      params: Promise.resolve({ slug: 'northstar-talent-labs' }),
+      searchParams: Promise.resolve({ tab: 'blog' }),
+    }));
+
+    expect(screen.getByRole('heading', { name: 'Company updates' })).toBeInTheDocument();
     expect(screen.getByText(/We are expanding our product engineering hiring this quarter/i)).toBeInTheDocument();
   });
 

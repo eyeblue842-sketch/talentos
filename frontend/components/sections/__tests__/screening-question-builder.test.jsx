@@ -55,7 +55,6 @@ describe('ScreeningQuestionBuilder', () => {
 
     expect(screen.getByRole('button', { name: 'Move Work authorisation down' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Move Notice period up' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add to job' })).toBeInTheDocument();
 
     await user.selectOptions(addQuestionScope.getByLabelText('Question type'), 'FILE_UPLOAD');
     expect(addQuestionScope.getByLabelText('Allowed file types')).toBeInTheDocument();
@@ -69,7 +68,7 @@ describe('ScreeningQuestionBuilder', () => {
     const addQuestionScope = within(addQuestionCard);
 
     await user.selectOptions(addQuestionScope.getByLabelText('Question type'), 'SINGLE_SELECT');
-    await user.type(addQuestionScope.getByLabelText('Question text'), 'Preferred shift');
+    await user.type(addQuestionScope.getByLabelText(/Question text/), 'Preferred shift');
     fireEvent.submit(addQuestionScope.getByRole('button', { name: 'Add custom question' }).closest('form'));
 
     expect(screen.getByText('Select questions require at least two options.')).toBeInTheDocument();

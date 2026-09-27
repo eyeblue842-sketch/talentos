@@ -211,11 +211,12 @@ export async function getCandidateResumeDownload(actorUser, candidateId, organis
       metadata: { candidateId, mode: 'private-asset' },
       ...requestMeta,
     });
+    const stored = await readPrivateFileNodeStream(asset.storageProvider, asset.storageKey);
     return {
       filename: asset.originalFilename,
       mimeType: asset.mimeType,
-      contentLength: asset.sizeBytes,
-      stream: readPrivateFileNodeStream(asset.storageProvider, asset.storageKey).stream,
+      contentLength: asset.sizeBytes || stored.contentLength,
+      stream: stored.stream,
     };
   }
 

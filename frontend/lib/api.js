@@ -811,6 +811,24 @@ export async function getRecruiterApplicationV2(applicationId) {
   return response.data;
 }
 
+export async function getRecruiterAssessmentTemplates() {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/assessment-templates', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterOfferTemplates() {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/offer-templates', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getRecruiterAtsOpenings() {
+  const token = await requireToken();
+  const response = await requestBackend('/ats/openings', { method: 'GET' }, token);
+  return response.data;
+}
+
 export async function createOfferDraft(payload) {
   const token = await requireToken();
   const response = await requestBackend('/offers', {

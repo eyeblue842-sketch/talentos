@@ -47,14 +47,14 @@ describe('RecruiterJobPostWizard', () => {
     fireEvent.keyDown(skillsInput, { key: 'Enter' });
   }
 
-  it('renders a four-step AI-first posting flow with no standalone JD writing requirement first', () => {
+  it('renders the staged AI-first posting flow with no standalone JD writing requirement first', () => {
     renderWizard();
 
-    ['Essentials', 'AI Draft & Preview', 'Questions', 'Publish'].forEach((label, index) => {
+    ['Job details', 'Candidate requirements', 'Job description', 'Screening questions', 'Preview & publish'].forEach((label, index) => {
       const button = screen.getAllByRole('button').find((item) => item.textContent?.includes(label) && item.textContent?.includes(`Stage ${index + 1}`));
       expect(button).toBeTruthy();
     });
-    expect(screen.getByRole('heading', { name: /Start with only the essentials/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Job details$/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /^Job Description$/i })).not.toBeInTheDocument();
   });
 

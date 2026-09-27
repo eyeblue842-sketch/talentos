@@ -1,6 +1,7 @@
 import {
   addOrganisationMember,
   createOrganisationPost,
+  deleteOrganisationPost as removeOrganisationPost,
   completeRecruiterWorkspaceOnboarding,
   createOrganisationForUser,
   getCurrentOrganisation,
@@ -8,6 +9,9 @@ import {
   listOrganisationMembers,
   updateOrganisationMember,
   updateRecruiterOrganisationProfile,
+  updateOrganisationPost as reviseOrganisationPost,
+  updateOrganisationLogo,
+  getOrganisationLogoStream,
 } from '../services/organisationService.js';
 import {
   acceptOrganisationInvitation,
@@ -130,6 +134,59 @@ export async function patchOrganisationProfile(req, res, next) {
       userAgent: req.get('user-agent'),
     });
     sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postOrganisationLogo(req, res, next) {
+  try {
+    const organisation = await updateOrganisationLogo(req.user, req.file, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, { organisation });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Public: streams an organisation's uploaded logo image (referenced by logoUrl).
+export async function getOrganisationLogo(req, res, next) {
+  try {
+    const file = await getOrganisationLogoStream(req.params.organisationId);
+    if (!file) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', file.contentType || 'application/octet-stream');
+    if (file.contentLength) res.setHeader('Content-Length', file.contentLength);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    file.stream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateOrganisationPost(req, res, next) {
+  try {
+    const post = await reviseOrganisationPost(req.user, req.params.postId, req.body, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, post);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteOrganisationPost(req, res, next) {
+  try {
+    await removeOrganisationPost(req.user, req.params.postId, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 200, { deleted: true });
   } catch (error) {
     next(error);
   }

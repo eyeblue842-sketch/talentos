@@ -13,6 +13,11 @@ RUN npx prisma generate --schema backend/prisma/schema.prisma
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# OCR toolchain for scanned / image-only resumes: poppler (pdftoppm) renders PDF
+# pages to images and tesseract performs the OCR. No model downloads required.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng poppler-utils \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/package.json /app/package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/shared ./shared

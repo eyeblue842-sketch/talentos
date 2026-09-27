@@ -1,7 +1,11 @@
 import crypto from 'crypto';
+import slugify from 'slugify';
 import { prisma } from '../config/db.js';
+import { env } from '../config/env.js';
+import { createJob } from './jobService.js';
+import { addJobScreeningQuestion } from './applicationWorkflowService.js';
 import { buildKeywordMatch } from './matchService.js';
-import { sendPipelineEmail, sendRecruiterOutreachEmail } from './emailService.js';
+import { sendPipelineEmail, sendRecruiterOutreachEmail, sendCandidateRejectionEmail } from './emailService.js';
 import { serializeApplication, serializeAtsNote } from '../serializers/index.js';
 import { requireOrganisationContext, requireOrganisationRole } from './organisationAccessService.js';
 import { recordAuditLog } from './auditLogService.js';
@@ -13,7 +17,10 @@ const allowedStages = {
   APPLIED: ['SHORTLISTED', 'REJECTED'],
   SHORTLISTED: ['INTERVIEW_SCHEDULED', 'REJECTED', 'APPLIED'],
   INTERVIEW_SCHEDULED: ['SELECTED', 'REJECTED', 'SHORTLISTED'],
-  SELECTED: [],
+  SELECTED: ['OFFER', 'REJECTED'],
+  OFFER: ['HIRED', 'OFFER_DECLINED', 'REJECTED', 'SELECTED'],
+  HIRED: [],
+  OFFER_DECLINED: [],
   REJECTED: [],
 };
 
@@ -25,6 +32,9 @@ const stageLabelMap = {
   SHORTLISTED: 'Shortlisted',
   INTERVIEW_SCHEDULED: 'Interview',
   SELECTED: 'Selected',
+  OFFER: 'Offer',
+  HIRED: 'Hired',
+  OFFER_DECLINED: 'Offer Declined',
   REJECTED: 'Rejected',
   WITHDRAWN: 'Withdrawn',
 };
@@ -36,6 +46,9 @@ const candidateVisibleStatusMap = {
   SHORTLISTED: 'Under Review',
   INTERVIEW_SCHEDULED: 'Interview Stage',
   SELECTED: 'Selected',
+  OFFER: 'Offer Extended',
+  HIRED: 'Hired',
+  OFFER_DECLINED: 'Offer Declined',
   REJECTED: 'Application Closed',
   WITHDRAWN: 'Application Withdrawn',
 };
@@ -412,6 +425,7 @@ export async function getRecruiterPipeline(actorUser, filters = {}, organisation
     },
     include: {
       candidate: true,
+      submittedApplication: { select: { id: true } },
       job: { include: { requisition: true, recruiter: true, hiringManager: true } },
       notes: {
         include: {
@@ -447,6 +461,348 @@ export async function getRecruiterPipeline(actorUser, filters = {}, organisation
   return {
     items: applications.map((application) => serializeApplication(application, { includeCoverLetter: true, includeCandidatePrivate: true })),
     stageGroups,
+  };
+}
+
+const ATS_OPENING_STAGES = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'OFFER', 'HIRED', 'OFFER_DECLINED', 'REJECTED'];
+
+// Lists the organisation's open positions ("openings") for the ATS board — both
+// publicly posted (EXTERNAL/BOTH) and ATS-only (INTERNAL) jobs — each with a count
+// of associated candidates per pipeline stage, so recruiters can see and manage the
+// pipeline per opening rather than one flat stage list.
+export async function getRecruiterAtsOpenings(actorUser, organisationId = null) {
+  const context = await requireOrganisationContext(actorUser, organisationId);
+  const jobs = await prisma.job.findMany({
+    where: { organisationId: context.organisationId, status: { in: ['OPEN', 'ON_HOLD'] } },
+    orderBy: { createdAt: 'desc' },
+    include: { requisition: true },
+  });
+
+  const jobIds = jobs.map((job) => job.id);
+  const grouped = jobIds.length
+    ? await prisma.application.groupBy({
+      by: ['jobId', 'currentStage'],
+      where: { jobId: { in: jobIds }, organisationId: context.organisationId },
+      _count: { _all: true },
+    })
+    : [];
+
+  const stageByJob = new Map();
+  for (const row of grouped) {
+    if (!stageByJob.has(row.jobId)) stageByJob.set(row.jobId, {});
+    stageByJob.get(row.jobId)[row.currentStage] = row._count._all;
+  }
+
+  return jobs.map((job) => {
+    const stageCounts = stageByJob.get(job.id) || {};
+    const totalCandidates = Object.values(stageCounts).reduce((sum, n) => sum + n, 0);
+    return {
+      id: job.id,
+      title: job.title,
+      location: job.location || null,
+      department: job.department || null,
+      employmentType: job.employmentType || null,
+      workplaceType: job.workplaceType || null,
+      visibility: job.visibility,
+      atsOnly: job.visibility === 'INTERNAL',
+      numberOfOpenings: job.numberOfOpenings || 1,
+      salaryMin: job.salaryMin ?? null,
+      salaryMax: job.salaryMax ?? null,
+      hiringManagerName: job.hiringManagerName || null,
+      hiringManagerEmail: job.hiringManagerEmail || null,
+      interviewRounds: Array.isArray(job.interviewPlanTemplate) ? job.interviewPlanTemplate : [],
+      status: job.status,
+      requisitionCode: job.requisition?.referenceNumber || null,
+      createdAt: job.createdAt,
+      totalCandidates,
+      stageCounts: Object.fromEntries(ATS_OPENING_STAGES.map((stage) => [stage, stageCounts[stage] || 0])),
+    };
+  });
+}
+
+// Creates an ATS-only opening: an INTERNAL, OPEN job that is not published to the
+// public board but can receive candidates from the resume databank. Only a title is
+// required; the rest are optional details so recruiters can spin one up quickly.
+export async function createAtsOpening(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const title = String(payload.title || '').trim();
+  if (title.length < 2) {
+    const error = new Error('An opening title is required.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const slugBase = slugify(title, { lower: true, strict: true }) || 'opening';
+  const slug = `${slugBase}-${crypto.randomBytes(4).toString('hex')}`;
+
+  const job = await prisma.job.create({
+    data: {
+      organisationId: context.organisationId,
+      recruiterId: actorUser.id,
+      slug,
+      title,
+      description: String(payload.description || title).slice(0, 5000),
+      skillsRequired: Array.isArray(payload.skillsRequired) ? payload.skillsRequired.slice(0, 50) : [],
+      experienceMin: Number.isFinite(Number(payload.experienceMin)) ? Number(payload.experienceMin) : 0,
+      experienceMax: Number.isFinite(Number(payload.experienceMax)) ? Number(payload.experienceMax) : 0,
+      location: String(payload.location || 'Not specified').slice(0, 200),
+      department: payload.department ? String(payload.department).slice(0, 120) : null,
+      employmentType: payload.employmentType || 'FULL_TIME',
+      workplaceType: payload.workplaceType || null,
+      numberOfOpenings: Number.isFinite(Number(payload.numberOfOpenings)) ? Math.max(1, Number(payload.numberOfOpenings)) : 1,
+      salaryMin: Number.isFinite(Number(payload.salaryMin)) && String(payload.salaryMin).trim() !== '' ? Math.max(0, Math.trunc(Number(payload.salaryMin))) : null,
+      salaryMax: Number.isFinite(Number(payload.salaryMax)) && String(payload.salaryMax).trim() !== '' ? Math.max(0, Math.trunc(Number(payload.salaryMax))) : null,
+      hiringManagerName: payload.hiringManagerName ? String(payload.hiringManagerName).trim().slice(0, 200) || null : null,
+      hiringManagerEmail: payload.hiringManagerEmail ? String(payload.hiringManagerEmail).trim().toLowerCase().slice(0, 200) || null : null,
+      interviewPlanTemplate: Array.isArray(payload.interviewRounds) && payload.interviewRounds.length
+        ? payload.interviewRounds.slice(0, 6).map((r, i) => ({
+          roundName: String(r?.roundName || `Round ${i + 1}`).slice(0, 120),
+          interviewType: String(r?.interviewType || 'TECHNICAL').slice(0, 40),
+          assessmentTemplateId: r?.assessmentTemplateId || null,
+        }))
+        : null,
+      visibility: 'INTERNAL',
+      isPublic: false,
+      publicSalaryEnabled: false,
+      status: 'OPEN',
+    },
+    include: { requisition: true },
+  });
+
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'ats.opening.create',
+    entityType: 'Job',
+    entityId: job.id,
+    metadata: { title: job.title, visibility: job.visibility },
+    ...requestMeta,
+  });
+
+  return {
+    id: job.id,
+    title: job.title,
+    location: job.location,
+    department: job.department,
+    employmentType: job.employmentType,
+    visibility: job.visibility,
+    atsOnly: true,
+    numberOfOpenings: job.numberOfOpenings,
+    salaryMin: job.salaryMin ?? null,
+    salaryMax: job.salaryMax ?? null,
+    hiringManagerName: job.hiringManagerName || null,
+    hiringManagerEmail: job.hiringManagerEmail || null,
+    interviewRounds: Array.isArray(job.interviewPlanTemplate) ? job.interviewPlanTemplate : [],
+    status: job.status,
+    totalCandidates: 0,
+    stageCounts: Object.fromEntries(ATS_OPENING_STAGES.map((stage) => [stage, 0])),
+  };
+}
+
+// Builds the email a candidate receives for an invite (Naukri NVite style): the
+// recruiter's note, the full job details, and an Apply link to the public job
+// page where they can formally apply.
+function buildInviteEmailBody(message, job, applyUrl) {
+  const lines = [
+    message.trim(),
+    '',
+    'You are receiving this because a recruiter considers your profile suitable for this role and would like you to apply.',
+    '',
+    applyUrl ? `Apply here: ${applyUrl}` : '',
+    '',
+    '=== Job details ===',
+    `Role: ${job.title}`,
+  ];
+  if (job.department) lines.push(`Department: ${job.department}`);
+  if (job.employmentType) lines.push(`Employment type: ${String(job.employmentType).replaceAll('_', ' ')}`);
+  if (job.workplaceType) lines.push(`Work mode: ${String(job.workplaceType).replaceAll('_', ' ')}`);
+  if (job.location && job.location !== 'Not specified') lines.push(`Location: ${job.location}`);
+  if (job.experienceMin != null || job.experienceMax != null) {
+    lines.push(`Experience: ${job.experienceMin ?? 0}-${job.experienceMax ?? 0} yrs`);
+  }
+  if (!job.publicSalaryEnabled) {
+    // hidden — do not show
+  } else if (job.salaryMin || job.salaryMax) {
+    const min = job.salaryMin ? `₹${Number(job.salaryMin).toLocaleString('en-IN')}` : '';
+    const max = job.salaryMax ? `₹${Number(job.salaryMax).toLocaleString('en-IN')}` : '';
+    lines.push(`Salary: ${[min, max].filter(Boolean).join(' - ')}`);
+  }
+  if (Array.isArray(job.skillsRequired) && job.skillsRequired.length) {
+    lines.push(`Key skills: ${job.skillsRequired.slice(0, 20).join(', ')}`);
+  }
+  if (job.isWalkIn) {
+    lines.push('', '=== Walk-in ===');
+    if (job.walkInStartDate) lines.push(`Date: ${new Date(job.walkInStartDate).toDateString()}${job.walkInEndDate ? ` - ${new Date(job.walkInEndDate).toDateString()}` : ''}`);
+    if (job.walkInTiming) lines.push(`Timing: ${job.walkInTiming}`);
+    if (job.walkInVenueAddress) lines.push(`Venue: ${job.walkInVenueAddress}`);
+    if (job.walkInContactName || job.walkInContactPhone) lines.push(`Contact: ${[job.walkInContactName, job.walkInContactPhone].filter(Boolean).join(' - ')}`);
+    if (job.walkInGoogleMapsUrl) lines.push(`Map: ${job.walkInGoogleMapsUrl}`);
+  }
+  if (job.description) {
+    lines.push('', '=== Description ===', String(job.description).slice(0, 4000));
+  }
+  if (applyUrl) lines.push('', `Apply now: ${applyUrl}`);
+  return lines.filter((line) => line !== undefined).join('\n');
+}
+
+// Creates a candidate invite (Naukri NVite equivalent): resolves or creates the
+// target opening, associates every selected candidate to it (APPLIED) so they
+// surface as responses under that opening, emails each candidate the role, and
+// records one CandidateInvite row tracking the send.
+export async function createCandidateInvite(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await getWritableOrganisationContext(actorUser, organisationId);
+  const responseRecipients = Array.isArray(payload.responseRecipients)
+    ? [...new Set(payload.responseRecipients.map((email) => String(email).trim().toLowerCase()).filter(Boolean))].slice(0, 5)
+    : [];
+
+  let job;
+  if (payload.mode === 'existing') {
+    job = await prisma.job.findFirst({ where: { id: payload.jobId, organisationId: context.organisationId } });
+    if (!job) {
+      const error = new Error('Opening not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+  } else {
+    const title = String(payload.title || '').trim();
+    if (title.length < 2) {
+      const error = new Error('Give the new opening a title.');
+      error.statusCode = 422;
+      throw error;
+    }
+    const toInt = (v) => (Number.isFinite(Number(v)) && String(v ?? '').trim() !== '' ? Math.max(0, Math.trunc(Number(v))) : null);
+    const canonicalLocations = Array.isArray(payload.locations) ? payload.locations : [];
+    const locationString = String(payload.location || '').trim()
+      || canonicalLocations.map((l) => l?.name || l?.id).filter(Boolean).join(', ')
+      || 'Not specified';
+    // Post a real, public opening (Naukri "posted job" equivalent) so the invite
+    // email can carry an Apply link to the public job page. createJob handles
+    // publish activation, receiving-email and (when enforced) credit checks.
+    const created = await createJob(actorUser, {
+      title,
+      description: String(payload.description || title).slice(0, 8000),
+      skillsRequired: Array.isArray(payload.skillsRequired) ? payload.skillsRequired.slice(0, 50) : [],
+      experienceMin: Number.isFinite(Number(payload.experienceMin)) ? Number(payload.experienceMin) : 0,
+      experienceMax: Number.isFinite(Number(payload.experienceMax)) ? Number(payload.experienceMax) : 0,
+      salaryMin: toInt(payload.salaryMin),
+      salaryMax: toInt(payload.salaryMax),
+      publicSalaryEnabled: !payload.hideSalary,
+      location: locationString.slice(0, 200),
+      locations: canonicalLocations,
+      department: payload.department ? String(payload.department).slice(0, 120) : null,
+      employmentType: payload.employmentType || 'FULL_TIME',
+      workplaceType: payload.workplaceType || null,
+      numberOfOpenings: Number.isFinite(Number(payload.numberOfOpenings)) ? Math.max(1, Number(payload.numberOfOpenings)) : 1,
+      isWalkIn: Boolean(payload.isWalkIn),
+      walkInStartDate: payload.walkInStartDate || null,
+      walkInEndDate: payload.walkInEndDate || null,
+      walkInTiming: payload.walkInTiming || null,
+      walkInContactName: payload.walkInContactName || null,
+      walkInContactPhone: payload.walkInContactPhone || null,
+      walkInVenueAddress: payload.walkInVenueAddress || null,
+      walkInGoogleMapsUrl: payload.walkInGoogleMapsUrl || null,
+      // Receiving email defaults to the recruiter, who gets the "new response"
+      // notifications. Arbitrary extra recipients must be org-linked members, so
+      // they are only recorded on the invite (not forced onto the job here).
+      status: 'OPEN',
+    }, context.organisationId, requestMeta);
+
+    // Attach screening questions (best-effort — a malformed one is skipped, not fatal).
+    for (const q of Array.isArray(payload.screeningQuestions) ? payload.screeningQuestions : []) {
+      try {
+        const type = q.questionType || 'SHORT_TEXT';
+        const opts = Array.isArray(q.options) ? q.options.filter(Boolean) : [];
+        await addJobScreeningQuestion(actorUser, created.id, {
+          questionText: q.questionText,
+          questionType: type,
+          required: Boolean(q.required),
+          ...(['SINGLE_SELECT', 'MULTI_SELECT'].includes(type) && opts.length >= 2
+            ? { config: { options: opts.map((o) => ({ label: o, value: o })) } }
+            : {}),
+        }, context.organisationId, requestMeta);
+      } catch {
+        // Skip an invalid question rather than failing the whole invite.
+      }
+    }
+
+    // Reload the raw Job for association + email (needs skillsRequired, slug, etc.).
+    job = await prisma.job.findUnique({ where: { id: created.id } });
+  }
+
+  const applyUrl = job.slug ? `${env.frontendUrl.replace(/\/$/, '')}/jobs/${job.slug}` : null;
+
+  const items = [];
+  let sentCount = 0;
+  let skippedCount = 0;
+
+  for (const candidateId of payload.candidateIds) {
+    try {
+      const candidate = await ensureResumeCandidate(candidateId);
+      const result = await prisma.$transaction((tx) => buildResumeWorkflowApplication(tx, {
+        organisationId: context.organisationId,
+        actorUser,
+        candidate,
+        job,
+        stage: 'APPLIED',
+        requestMeta,
+      }));
+
+      const recipientEmail = candidate.user?.email || candidate.email;
+      let emailed = false;
+      if (recipientEmail) {
+        try {
+          await sendRecruiterOutreachEmail(recipientEmail, payload.subject, buildInviteEmailBody(payload.message, job, applyUrl));
+          emailed = true;
+          sentCount += 1;
+        } catch (emailError) {
+          skippedCount += 1;
+        }
+      } else {
+        skippedCount += 1;
+      }
+
+      items.push({
+        candidateId,
+        associated: !result.duplicate,
+        duplicate: result.duplicate,
+        emailed,
+        success: true,
+      });
+    } catch (error) {
+      skippedCount += 1;
+      items.push({ candidateId, success: false, emailed: false, error: error.message });
+    }
+  }
+
+  const invite = await prisma.candidateInvite.create({
+    data: {
+      organisationId: context.organisationId,
+      jobId: job.id,
+      createdByUserId: actorUser.id,
+      subject: payload.subject,
+      message: payload.message,
+      channel: 'EMAIL',
+      recipientEmails: responseRecipients,
+      candidateCount: payload.candidateIds.length,
+      sentCount,
+      skippedCount,
+    },
+  });
+
+  await recordAuditLog({
+    organisationId: context.organisationId,
+    actorUserId: actorUser.id,
+    action: 'ats.invite.create',
+    entityType: 'CandidateInvite',
+    entityId: invite.id,
+    metadata: { jobId: job.id, mode: payload.mode, candidateCount: payload.candidateIds.length, sentCount, skippedCount },
+    ...requestMeta,
+  });
+
+  return {
+    invite: { id: invite.id, candidateCount: invite.candidateCount, sentCount, skippedCount },
+    job: { id: job.id, title: job.title, slug: job.slug, applyUrl },
+    items,
   };
 }
 
@@ -522,7 +878,11 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
       entityId: applicationId,
     }),
     createCandidateNotification(updated, candidateVisibleStatusMap[stage], `${candidateVisibleStatusMap[stage]} for ${updated.job.title}.`),
-    sendPipelineEmail(application.candidate.user.email, stage, application.job.title),
+    // Candidates sourced from the resume databank have no linked user account, so
+    // only email when there is a real inbox to notify.
+    updated.candidate?.user?.email
+      ? sendPipelineEmail(updated.candidate.user.email, stage, updated.job.title)
+      : Promise.resolve(),
     recordAuditLog({
       organisationId: context.organisationId,
       actorUserId: actorUser.id,
@@ -534,6 +894,37 @@ export async function updatePipelineStage(applicationId, actorUser, stage, organ
       ...requestMeta,
     }),
   ]);
+
+  // Manual offer outcome: keep the newest Offer record in sync with the pipeline
+  // decision (recruiter marks it), so the offer status card reflects it. No
+  // candidate email is sent for either outcome.
+  if (stage === 'HIRED' || stage === 'OFFER_DECLINED') {
+    const latestOffer = await prisma.offer.findFirst({
+      where: { applicationId, status: { notIn: ['WITHDRAWN', 'SUPERSEDED'] } },
+      orderBy: { version: 'desc' },
+      select: { id: true },
+    });
+    if (latestOffer) {
+      await prisma.offer.update({
+        where: { id: latestOffer.id },
+        data: stage === 'HIRED'
+          ? { status: 'ACCEPTED', acceptedAt: new Date() }
+          : { status: 'REJECTED', rejectedAt: new Date() },
+      });
+    }
+  }
+
+  // Moving a candidate to Rejected sends them the same polite rejection email
+  // (recruiter CC'd) as an interview REJECT decision — only on the transition in.
+  if (stage === 'REJECTED' && application.currentStage !== 'REJECTED') {
+    await sendCandidateRejectionEmail({
+      candidateName: updated.candidate?.fullName,
+      candidateEmail: updated.candidate?.user?.email || updated.candidate?.email || null,
+      jobTitle: updated.job?.title,
+      recruiterName: updated.job?.recruiter?.fullName,
+      recruiterEmail: updated.job?.recruiter?.email || null,
+    });
+  }
 
   return serializeApplication(updated, { includeCoverLetter: true, includeCandidatePrivate: true });
 }
@@ -1078,7 +1469,10 @@ export async function emailCandidatesFromResumeSearch(actorUser, payload, organi
   for (const candidateId of payload.candidateIds) {
     try {
       const candidate = await ensureResumeCandidate(candidateId);
-      if (!candidate.user?.email) {
+      // Portal applicants carry email on their linked user; databank-imported
+      // candidates (no user account) carry it on the profile itself.
+      const recipientEmail = candidate.user?.email || candidate.email;
+      if (!recipientEmail) {
         items.push({ candidateId, success: false, error: 'Candidate email unavailable.' });
         continue;
       }
@@ -1086,7 +1480,7 @@ export async function emailCandidatesFromResumeSearch(actorUser, payload, organi
       const body = job
         ? `${payload.body}\n\nContext: ${job.title}`
         : payload.body;
-      await sendRecruiterOutreachEmail(candidate.user.email, payload.subject, body);
+      await sendRecruiterOutreachEmail(recipientEmail, payload.subject, body);
       await recordAuditLog({
         organisationId: context.organisationId,
         actorUserId: actorUser.id,

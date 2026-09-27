@@ -77,9 +77,9 @@ export function Dialog({ open, onClose, title, description, children, className 
         aria-modal="true"
         aria-labelledby="dialog-title"
         aria-describedby={description ? 'dialog-description' : undefined}
-        className={cn('w-full max-w-2xl rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]', className)}
+        className={cn('flex max-h-[90dvh] w-full max-w-2xl flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]', className)}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-shrink-0 items-start justify-between gap-4">
           <div className="grid gap-2">
             {title ? <h2 id="dialog-title" className="text-xl font-semibold text-[var(--color-text)]">{title}</h2> : null}
             {description ? <p id="dialog-description" className="text-sm text-[var(--color-text-muted)]">{description}</p> : null}
@@ -88,7 +88,7 @@ export function Dialog({ open, onClose, title, description, children, className 
             <X size={16} aria-hidden="true" />
           </Button>
         </div>
-        <div className="mt-5">{children}</div>
+        <div className="mt-5 flex-1 overflow-y-auto pr-1">{children}</div>
       </div>
     </div>,
     document.body,

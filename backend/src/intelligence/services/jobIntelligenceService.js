@@ -73,7 +73,11 @@ export async function getJobIntelligence(actorUser, payload) {
     }
   }
 
-  const promptKey = payload.mode === 'IMPROVE_DESCRIPTION' ? 'JOB_DESCRIPTION_IMPROVEMENT' : 'JOB_DESCRIPTION_DRAFT';
+  const promptKey = payload.mode === 'IMPROVE_DESCRIPTION'
+    ? 'JOB_DESCRIPTION_IMPROVEMENT'
+    : payload.mode === 'DRAFT_DESCRIPTION'
+      ? 'JOB_DESCRIPTION_FULL'
+      : 'JOB_DESCRIPTION_DRAFT';
   if (context.enabled) {
     await enforceIntelligenceUsageLimits({
       organisationId: context.organisationId,

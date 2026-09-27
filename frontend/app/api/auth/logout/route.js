@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { requestBackend, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
+import { ORGANISATION_COOKIE, requestBackend, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -20,6 +20,8 @@ export async function POST() {
   }
 
   cookieStore.set(SESSION_COOKIE, '', sessionCookieOptions(0));
+  // Clear org context so it can never leak into the next account's session.
+  cookieStore.delete(ORGANISATION_COOKIE);
 
   return NextResponse.json({ success: true, data: { loggedOut: true } });
 }

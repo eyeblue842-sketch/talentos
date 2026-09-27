@@ -1,0 +1,2 @@
+ALTER TYPE "IntelligenceExecutionStatus" RENAME VALUE 'COMPLETED' TO 'SUCCEEDED';
+ALTER TYPE "IntelligenceExecutionStatus" RENAME VALUE 'REJECTED' TO 'SKIPPED';

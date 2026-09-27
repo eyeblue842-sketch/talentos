@@ -3,6 +3,7 @@ import { Globe, MapPin, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { CompanyLogoUploader } from '@/components/sections/company-logo-uploader';
 
 function formatDate(value) {
   if (!value) return 'Not available';
@@ -29,22 +30,6 @@ function buildTabHref(basePath, tab) {
   return tab === 'home' ? basePath : `${basePath}?tab=${tab}`;
 }
 
-function CompanyLogo({ organisation }) {
-  if (organisation?.logoUrl) {
-    return (
-      <div className="h-20 w-20 overflow-hidden rounded-2xl border border-white/35 bg-white shadow-sm">
-        <img src={organisation.logoUrl} alt={`${organisation.name} logo`} className="h-full w-full object-cover object-center" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/35 bg-white text-2xl font-semibold text-[var(--color-primary)] shadow-sm">
-      {getInitials(organisation?.name)}
-    </div>
-  );
-}
-
 export function CompanyHeaderCard({
   organisation,
   basePath,
@@ -55,9 +40,11 @@ export function CompanyHeaderCard({
   const tabs = [
     { id: 'home', label: 'Home' },
     { id: 'about', label: 'About' },
+    { id: 'blog', label: 'Blog' },
     { id: 'jobs', label: 'Jobs' },
-    ...(mode === 'recruiter' ? [{ id: 'connections', label: 'Connections' }] : []),
-    { id: 'insights', label: 'Insights' },
+    ...(mode === 'recruiter'
+      ? [{ id: 'connections', label: 'Connections' }, { id: 'insights', label: 'Insights' }]
+      : []),
   ];
 
   return (
@@ -66,7 +53,7 @@ export function CompanyHeaderCard({
         <div className="bg-[linear-gradient(135deg,#f2ebff_0%,#ffffff_58%,#efe8ff_100%)] px-6 py-7">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-              <CompanyLogo organisation={organisation} />
+              <CompanyLogoUploader organisation={organisation} canEdit={canEdit && mode === 'recruiter'} />
               <div className="grid gap-3">
                 <div className="grid gap-1">
                   <div className="flex flex-wrap items-center gap-3">
@@ -105,22 +92,23 @@ export function CompanyHeaderCard({
         </div>
       </Card>
 
-      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] pb-2 text-sm">
+      <nav aria-label="Company navigation" className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] pb-2 text-sm">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           return (
             <Link
               key={tab.id}
               href={buildTabHref(basePath, tab.id)}
+              aria-current={active ? 'page' : undefined}
               className={active
-                ? 'rounded-lg bg-[var(--color-primary-soft)] px-3 py-2 font-medium text-[var(--color-primary)]'
-                : 'rounded-lg px-3 py-2 text-[var(--color-text-secondary)] transition hover:bg-white hover:text-[var(--color-text)]'}
+                ? 'rounded-lg bg-[var(--color-primary-soft)] px-3 py-2 font-medium text-[var(--color-primary)] outline-none ring-2 ring-[var(--color-primary)] ring-offset-2'
+                : 'rounded-lg px-3 py-2 text-[var(--color-text-secondary)] transition hover:bg-white hover:text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2'}
             >
               {tab.label}
             </Link>
           );
         })}
-      </div>
+      </nav>
     </div>
   );
 }
@@ -153,12 +141,12 @@ export function CompanyAboutSection({ organisation, canEdit = false, preview = f
   );
 }
 
-export function CompanyPostsSection({ organisation, posts = [], canManage = false, createPostAction = null }) {
+export function CompanyPostsSection({ organisation, posts = [], canManage = false, createPostAction = null, updatePostAction = null, deletePostAction = null }) {
   return (
     <Card className="rounded-2xl p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-[var(--color-text)]">Latest from {organisation?.name || 'this company'}</h2>
+          <h2 className="text-xl font-semibold text-[var(--color-text)]">Company updates</h2>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Published company updates and hiring highlights.</p>
         </div>
       </div>
@@ -172,7 +160,9 @@ export function CompanyPostsSection({ organisation, posts = [], canManage = fals
             placeholder="Share a company update"
             required
           />
-          <div className="flex justify-end">
+          <input name="imageUrl" type="url" placeholder="Optional image URL (https://...)" className="rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm" />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[var(--color-text-secondary)]">Up to 4,000 characters</span>
             <Button type="submit">Create post</Button>
           </div>
         </form>
@@ -182,8 +172,8 @@ export function CompanyPostsSection({ organisation, posts = [], canManage = fals
         {posts.length ? posts.map((post) => (
           <article key={post.id} className="rounded-xl border border-[var(--color-border)] p-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary-soft)] font-semibold text-[var(--color-primary)]">
-                {getInitials(organisation?.name)}
+              <div className="h-11 w-11 overflow-hidden rounded-full bg-[var(--color-primary-soft)] text-center font-semibold text-[var(--color-primary)]">
+                {organisation?.logoUrl ? <img src={organisation.logoUrl} alt={`${organisation?.name || 'Company'} logo`} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center">{getInitials(organisation?.name)}</span>}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-[var(--color-text)]">{organisation?.name}</p>
@@ -191,9 +181,23 @@ export function CompanyPostsSection({ organisation, posts = [], canManage = fals
               </div>
             </div>
             <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">{post.content}</p>
+            {post.imageUrl ? <img src={post.imageUrl} alt="" className="mt-4 max-h-80 w-full rounded-xl object-cover" /> : null}
+            {canManage && updatePostAction && deletePostAction ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <form action={updatePostAction} className="flex min-w-0 flex-1 gap-2">
+                  <input type="hidden" name="postId" value={post.id} />
+                  <input name="content" defaultValue={post.content} maxLength={4000} className="min-w-0 flex-1 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm" aria-label="Edit company update" />
+                  <Button type="submit" variant="outline" size="sm">Save</Button>
+                </form>
+                <form action={deletePostAction}>
+                  <input type="hidden" name="postId" value={post.id} />
+                  <Button type="submit" variant="outline" size="sm">Delete</Button>
+                </form>
+              </div>
+            ) : null}
           </article>
         )) : (
-          <p className="text-sm text-[var(--color-text-secondary)]">No published company updates yet.</p>
+          <p className="text-sm text-[var(--color-text-secondary)]">No company updates have been published yet.</p>
         )}
       </div>
     </Card>

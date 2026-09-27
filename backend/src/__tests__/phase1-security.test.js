@@ -1,6 +1,7 @@
 import test, { before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import request from 'supertest';
 
 let app;
@@ -13,6 +14,7 @@ let resolveEmailTransportInfo;
 let resolveElasticConfig;
 let searchCandidatesWithAdapters;
 let resetRateLimiterBuckets;
+let emailTransporter;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -309,6 +311,8 @@ function installPrismaMocks() {
     setupVersion: '1.0.0',
     setupCompletedAt: new Date('2026-01-01'),
   });
+  prisma.organisation.count = async () => state.organisations.length;
+  prisma.user.count = async () => 1;
 
   prisma.user.findUnique = async ({ where, include = {} }) => {
     const user = state.users.find((item) => (
@@ -446,6 +450,11 @@ function installPrismaMocks() {
     return withRelationsCandidate(candidate, include);
   };
 
+  prisma.candidateProfile.update = async ({ where, data }) => {
+    const profile = state.candidateProfiles.find(item => item.id === where.id);
+    Object.assign(profile, data);
+    return clone(profile);
+  };
   prisma.candidateProfile.findMany = async ({ where = {}, include = {} }) => {
     let candidates = [...state.candidateProfiles];
     if (where.id?.in) {
@@ -638,6 +647,7 @@ before(async () => {
     __resetSentEmails: resetSentEmails,
     __getEmailTransportInfo: getEmailTransportInfo,
     __resolveEmailTransportInfo: resolveEmailTransportInfo,
+    transporter: emailTransporter,
   } = await import('../services/emailService.js'));
   ({ __resolveElasticConfig: resolveElasticConfig } = await import('../config/elastic.js'));
   ({ __searchCandidatesWithAdapters: searchCandidatesWithAdapters } = await import('../services/searchService.js'));
@@ -880,6 +890,41 @@ function latestEmailOtpCode() {
   return match[1];
 }
 
+test('password reset request stays non-enumerating even when email delivery fails for a real account', async (t) => {
+  // Regression test: an SMTP/credential failure while sending the reset
+  // email for a KNOWN account must not surface as a different status/body
+  // than the "account doesn't exist" case, or the response itself becomes
+  // an enumeration side-channel (this exact bug reached production: a bad
+  // SMTP password caused known-account requests to 500 while unknown-account
+  // requests kept returning 200, letting an attacker distinguish the two).
+  const authFailure = new Error('Invalid login: 535 Authentication Failed for no-reply@careeriz.com');
+  authFailure.code = 'EAUTH';
+  // Spy on the real transport's sendMail() rather than using a production
+  // test-only hook; node:test restores this automatically once the test ends.
+  t.mock.method(emailTransporter, 'sendMail', async () => {
+    throw authFailure;
+  });
+
+  const knownAccountResponse = await request(app)
+    .post('/api/auth/password-reset/request')
+    .send({ email: 'candidate1@example.com' });
+
+  const unknownAccountResponse = await request(app)
+    .post('/api/auth/password-reset/request')
+    .send({ email: 'no-such-account@example.com' });
+
+  assert.equal(knownAccountResponse.statusCode, 200);
+  assert.deepEqual(knownAccountResponse.body.data, { requested: true });
+  assert.equal(unknownAccountResponse.statusCode, 200);
+  assert.deepEqual(unknownAccountResponse.body.data, { requested: true });
+  assert.deepEqual(knownAccountResponse.body, unknownAccountResponse.body);
+
+  // The reset token was still issued (and a retry queued by
+  // sendTransactionalEmail) despite the send failure - only the immediate
+  // delivery attempt failed, not the reset flow itself.
+  assert.ok(state.authTokens.some((item) => item.type === 'PASSWORD_RESET' && !item.consumedAt));
+});
+
 test('password reset requires an emailed OTP after the link is confirmed, invalidates prior JWTs, and does not expose tokens', async () => {
   const jwt = await loginAs('candidate1@example.com');
 
@@ -1042,6 +1087,40 @@ test('email verification resend uses the isolated test transport even when SMTP 
   assert.match(getSentEmails()[0].text, /email-verification\/confirm\?token=/);
 });
 
+test('email verification resend stays non-enumerating even when email delivery fails for a real account', async (t) => {
+  // Regression test: mirrors the identical bug/fix already covered for
+  // password-reset requests above - a downstream SMTP failure while sending
+  // the verification email for a KNOWN unverified account must not surface
+  // as a different status/body than the "account doesn't exist or is
+  // already verified" case, or the response itself becomes an enumeration
+  // side-channel.
+  state.users.find((item) => item.id === 'candidate-1-user').emailVerifiedAt = null;
+
+  const authFailure = new Error('Invalid login: 535 Authentication Failed for no-reply@careeriz.com');
+  authFailure.code = 'EAUTH';
+  t.mock.method(emailTransporter, 'sendMail', async () => {
+    throw authFailure;
+  });
+
+  const knownAccountResponse = await request(app)
+    .post('/api/auth/email-verification/request')
+    .send({ email: 'candidate1@example.com' });
+
+  const unknownAccountResponse = await request(app)
+    .post('/api/auth/email-verification/request')
+    .send({ email: 'no-such-account@example.com' });
+
+  assert.equal(knownAccountResponse.statusCode, 200);
+  assert.deepEqual(knownAccountResponse.body.data, { requested: true });
+  assert.equal(unknownAccountResponse.statusCode, 200);
+  assert.deepEqual(unknownAccountResponse.body.data, { requested: true });
+  assert.deepEqual(knownAccountResponse.body, unknownAccountResponse.body);
+
+  // The verification token was still issued despite the send failure - only
+  // the immediate delivery attempt failed, not the verification flow itself.
+  assert.ok(state.authTokens.some((item) => item.type === 'EMAIL_VERIFICATION' && !item.consumedAt));
+});
+
 test('SMTP transport remains the selected runtime mode outside test when SMTP is configured', () => {
   assert.deepEqual(resolveEmailTransportInfo({
     isTest: false,
@@ -1125,6 +1204,91 @@ test('a safe "next" supplied at signup is preserved through email verification (
   assert.equal(confirmResponse.statusCode, 200);
   assert.equal(confirmResponse.body.data.next, invitationNext);
 });
+
+function installSignupInvitation(overrides = {}) {
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const organisation = state.organisations[0];
+  Object.assign(organisation, { type: 'COMPANY', verifiedDomain: 'owner.com', domainVerificationStatus: 'VERIFIED' });
+  const invitation = {
+    id: 'signup-invitation', organisationId: organisation.id, organisation,
+    email: 'invited@owner.com', role: 'RECRUITER', status: 'PENDING',
+    tokenHash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+    expiresAt: new Date(Date.now() + 60_000), invitedByUserId: 'recruiter-1',
+    ...overrides,
+  };
+  prisma.organisation.findFirst = async () => clone(organisation);
+  prisma.organisationInvitation.findUnique = async ({ where }) => where.tokenHash === invitation.tokenHash ? invitation : null;
+  prisma.organisationInvitation.update = async ({ data }) => Object.assign(invitation, data);
+  return { invitation, next: `/auth/invitations/accept?token=${rawToken}`, rawToken };
+}
+
+test('invitation-bound recruiter signup verifies email and joins the existing organisation without creating an OWNER', async () => {
+  const { invitation, next, rawToken } = installSignupInvitation();
+  const organisationsBefore = clone(state.organisations);
+  const membershipsBefore = clone(state.organisationMemberships);
+  const { getInvitationByToken, acceptOrganisationInvitation } = await import('../services/organisationInvitationService.js');
+  assert.equal((await getInvitationByToken(rawToken)).organisationId, invitation.organisationId);
+  const signup = await request(app).post('/api/auth/signup').send({
+    email: invitation.email, password: 'Password123', role: 'RECRUITER', employerType: 'COMPANY', next,
+  });
+  assert.equal(signup.statusCode, 201);
+  assert.deepEqual(clone(state.organisations), organisationsBefore);
+  assert.deepEqual(clone(state.organisationMemberships), membershipsBefore);
+  const createdUser = state.users.find(user => user.email === invitation.email);
+  const profile = state.recruiterProfiles.find(item => item.userId === createdUser.id);
+  assert.equal(profile.organisationId, null);
+  const confirmation = await request(app).post('/api/auth/email-verification/confirm').send({ token: latestEmailLinkToken('token') });
+  assert.equal(confirmation.statusCode, 200);
+  assert.equal(confirmation.body.data.next, next);
+  assert.ok(createdUser.emailVerifiedAt);
+  prisma.organisationMembership.findFirst = async () => null;
+  prisma.recruiterProfile.findUnique = async () => profile;
+  prisma.recruiterProfile.update = async ({ data }) => Object.assign(profile, data);
+  prisma.notification.create = async ({ data }) => ({ id: 'invite-notification', ...data });
+  prisma.auditLog.create = async ({ data }) => ({ id: 'invite-audit', ...data });
+  await acceptOrganisationInvitation(createdUser, rawToken);
+  const membership = state.organisationMemberships.find(item => item.userId === createdUser.id);
+  assert.equal(membership.organisationId, invitation.organisationId);
+  assert.equal(membership.role, 'RECRUITER');
+  assert.equal(membership.status, 'ACTIVE');
+  assert.equal(invitation.status, 'ACCEPTED');
+  assert.equal(profile.organisationId, invitation.organisationId);
+  assert.deepEqual(clone(state.organisations), organisationsBefore);
+  assert.deepEqual(clone(state.organisationMemberships.filter(item => item.userId !== createdUser.id)), membershipsBefore);
+});
+
+test('ordinary recruiter signup for a claimed company domain remains blocked', async () => {
+  installSignupInvitation();
+  const userCount = state.users.length;
+  const organisationCount = state.organisations.length;
+  const response = await request(app).post('/api/auth/signup').send({
+    email: 'ordinary@owner.com', password: 'Password123', role: 'RECRUITER', employerType: 'COMPANY',
+  });
+  assert.equal(response.statusCode, 409);
+  assert.match(response.body.message, /organisation for this company domain already exists/i);
+  assert.equal(state.users.length, userCount);
+  assert.equal(state.organisations.length, organisationCount);
+});
+
+for (const scenario of ['unknown', 'missing', 'expired', 'revoked', 'accepted', 'email mismatch', 'inactive organisation']) {
+  test(`invitation-bound signup rejects ${scenario} without creating an account or organisation`, async () => {
+    const { invitation, next } = installSignupInvitation();
+    if (scenario === 'expired') invitation.expiresAt = new Date(0);
+    if (scenario === 'revoked') invitation.status = 'REVOKED';
+    if (scenario === 'accepted') invitation.status = 'ACCEPTED';
+    if (scenario === 'inactive organisation') invitation.organisation.status = 'INACTIVE';
+    const userCount = state.users.length;
+    const organisationCount = state.organisations.length;
+    const response = await request(app).post('/api/auth/signup').send({
+      email: scenario === 'email mismatch' ? 'different@owner.com' : invitation.email,
+      password: 'Password123', role: 'RECRUITER', employerType: 'COMPANY',
+      next: scenario === 'unknown' ? `${next}invalid` : scenario === 'missing' ? '/auth/invitations/accept?token=' : next,
+    });
+    assert.ok([403, 404, 410].includes(response.statusCode));
+    assert.equal(state.users.length, userCount);
+    assert.equal(state.organisations.length, organisationCount);
+  });
+}
 
 test('an unsafe "next" supplied at signup (open-redirect attempt) is never stored or echoed back', async () => {
   const signupResponse = await request(app).post('/api/auth/signup').send({

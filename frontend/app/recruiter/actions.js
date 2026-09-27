@@ -113,6 +113,14 @@ function buildJobPayload(formData) {
     numberOfOpenings: Number(formData.get('numberOfOpenings') || 1),
     department: asNullableString(formData.get('department')),
     businessUnit: asNullableString(formData.get('businessUnit')),
+    isWalkIn: formData.get('isWalkIn') === 'on',
+    walkInStartDate: asNullableString(formData.get('walkInStartDate')),
+    walkInEndDate: asNullableString(formData.get('walkInEndDate')),
+    walkInTiming: asNullableString(formData.get('walkInTiming')),
+    walkInContactName: asNullableString(formData.get('walkInContactName')),
+    walkInContactPhone: asNullableString(formData.get('walkInContactPhone')),
+    walkInVenueAddress: asNullableString(formData.get('walkInVenueAddress')),
+    walkInGoogleMapsUrl: asNullableString(formData.get('walkInGoogleMapsUrl')),
     requisitionId: asNullableString(formData.get('requisitionId')),
     hiringManagerId: asNullableString(formData.get('hiringManagerId')),
     recruiterId: asNullableString(formData.get('recruiterId')),
@@ -268,6 +276,9 @@ function buildOfferPayload(formData, options = {}) {
   return {
     ...(options.applicationId ? { applicationId: options.applicationId } : {}),
     ...(options.sourceOfferId ? { sourceOfferId: options.sourceOfferId } : {}),
+    ...(formData.get('offerTemplateId') ? { offerTemplateId: String(formData.get('offerTemplateId')) } : {}),
+    ...(formData.get('components') ? { components: JSON.parse(String(formData.get('components'))) } : {}),
+    ...(formData.get('customFields') ? { customFields: JSON.parse(String(formData.get('customFields'))) } : {}),
     currency: String(formData.get('currency') || 'INR').trim(),
     annualCompensation: numberOrNull(formData.get('annualCompensation')),
     fixedCompensation: numberOrNull(formData.get('fixedCompensation')),
@@ -506,6 +517,15 @@ export async function updateJobStatusAction(jobId, formData) {
   revalidatePath(`/recruiter/jobs/${jobId}`);
 }
 
+export async function closeAtsOpeningAction(jobId) {
+  await recruiterRequest(`/jobs/${jobId}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'CLOSED' }),
+  });
+  revalidatePath('/recruiter/ats');
+  revalidatePath('/recruiter/jobs');
+}
+
 export async function deleteJobAction(jobId) {
   await recruiterRequest(`/jobs/${jobId}`, { method: 'DELETE' });
   revalidatePath('/recruiter');
@@ -535,6 +555,7 @@ export async function moveApplicationStageAction(applicationId, formData) {
   });
   revalidatePath('/recruiter');
   revalidatePath('/recruiter/ats');
+  revalidatePath('/recruiter/job-responses');
   revalidatePath(`/recruiter/ats/${applicationId}`);
 }
 
@@ -694,13 +715,16 @@ export async function cancelInterviewAction(applicationId, formData) {
 }
 
 export async function createOfferDraftAction(applicationId, formData) {
-  await recruiterRequest('/offers', {
+  const created = await recruiterRequest('/offers', {
     method: 'POST',
     body: JSON.stringify(buildOfferPayload(formData, { applicationId })),
   });
   revalidatePath('/recruiter');
   revalidatePath('/recruiter/ats');
   revalidatePath(`/recruiter/ats/${applicationId}`);
+  // Returned so the Generate Offer Letter popup can offer an immediate download
+  // (ignored when used as a plain <form action>).
+  return { id: created?.data?.id || null };
 }
 
 export async function updateOfferDraftAction(applicationId, offerId, formData) {

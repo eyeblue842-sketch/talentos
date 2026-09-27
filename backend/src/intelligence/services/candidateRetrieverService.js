@@ -3,6 +3,42 @@ import { searchCandidates } from '../../services/searchService.js';
 
 const TRANSFERABLE_RELATIONSHIPS = new Set(['TRANSFERABLE']);
 
+// The semantic-search response schema caps free-text fields (e.g. summary <= 1000,
+// most strings <= 240). AI-parsed candidate data can exceed these, which would make
+// semanticSearchResponseSchema.parse() throw and surface as an empty result to the UI.
+// Clamp defensively so real candidates always render.
+function clampText(value, maxLength) {
+  if (value === null || value === undefined) return value ?? null;
+  const text = String(value).trim();
+  if (!text) return null;
+  return text.length > maxLength ? text.slice(0, maxLength).trim() : text;
+}
+
+function toYearOrNull(value) {
+  const year = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(year) ? year : null;
+}
+
+function sanitizeEducationDetail(detail) {
+  if (!detail || typeof detail !== 'object') return null;
+  const degree = clampText(detail.degree, 160);
+  const institution = clampText(detail.institution, 240);
+  const completionYear = toYearOrNull(detail.completionYear ?? detail.endYear);
+  if (!degree && !institution && completionYear === null) return null;
+  return { degree, institution, completionYear };
+}
+
+function clampStringArray(values, maxLength, maxItems) {
+  if (!Array.isArray(values)) return [];
+  const out = [];
+  for (const value of values) {
+    const text = clampText(value, maxLength);
+    if (text) out.push(text);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
 function uniqueStrings(values = []) {
   return [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))];
 }
@@ -13,7 +49,22 @@ function mapIntentToSearchFilters(intent, plan) {
     ...(intent.filters.requiredSkills || []),
     ...(intent.filters.optionalSkills || []),
   ]);
-  const useRawKeyword = ['KEYWORD', 'BOOLEAN'].includes(plan.searchMode);
+  // When the query resolves to no structured signal (no skills/role/employer/location),
+  // it is effectively a free-text/name lookup. Fall back to keyword matching so the DB
+  // path narrows to matching candidates instead of returning the whole org databank.
+  const hasStructuredIntent = Boolean(
+    skillFilters.length
+    || intent.filters.designation
+    || intent.role
+    || intent.filters.currentEmployer
+    || intent.filters.previousEmployer
+    || intent.filters.location
+    || (Array.isArray(intent.filters.locations) && intent.filters.locations.length)
+    || intent.filters.education
+    || intent.filters.minExperience != null
+    || intent.filters.maxExperience != null,
+  );
+  const useRawKeyword = ['KEYWORD', 'BOOLEAN'].includes(plan.searchMode) || !hasStructuredIntent;
   const filters = {
     keyword: useRawKeyword && !skillFilters.length ? intent.keyword || undefined : undefined,
     location: intent.filters.location || undefined,
@@ -264,31 +315,36 @@ export async function retrieveCandidatesForSemanticSearch({
     return {
       candidate: {
         id: candidate.id,
-        fullName: candidate.fullName || null,
-        headline: candidate.headline || null,
-        currentDesignation: candidate.currentDesignation || null,
-        location: candidate.location || null,
-        preferredLocations: candidate.preferredLocations || [],
-        preferredRoles: candidate.preferredRoles || [],
-        employmentPreferences: candidate.employmentPreferences || [],
-        workplacePreferences: candidate.workplacePreferences || [],
+        fullName: clampText(candidate.fullName, 240),
+        headline: clampText(candidate.headline, 240),
+        currentDesignation: clampText(candidate.currentDesignation, 240),
+        location: clampText(candidate.location, 200),
+        preferredLocations: clampStringArray(candidate.preferredLocations, 200, 30),
+        preferredRoles: clampStringArray(candidate.preferredRoles, 200, 30),
+        employmentPreferences: clampStringArray(candidate.employmentPreferences, 80, 20),
+        workplacePreferences: clampStringArray(candidate.workplacePreferences, 80, 20),
         willingToRelocate: candidate.willingToRelocate,
         workAuthorization: candidate.workAuthorization || null,
         totalExperience: candidate.totalExperience ?? null,
-        skills: candidate.skills || [],
-        currentCompany: candidate.currentCompany || null,
-        previousCompany: candidate.previousCompany || null,
-        previousDesignation: candidate.previousDesignation || null,
+        skills: clampStringArray(candidate.skills, 120, 80),
+        currentCompany: clampText(candidate.currentCompany, 240),
+        previousCompany: clampText(candidate.previousCompany, 240),
+        previousDesignation: clampText(candidate.previousDesignation, 240),
         currentSalary: candidate.currentSalary ?? null,
         expectedSalary: candidate.expectedSalary ?? null,
         salaryVisible: candidate.salaryVisible !== false,
         noticePeriodDays: candidate.noticePeriodDays ?? null,
-        availability: candidate.availability || null,
-        summary: candidate.summary || null,
-        educationSummary: candidate.educationSummary || null,
-        educationDetail: candidate.educationDetail || null,
+        availability: clampText(candidate.availability, 80),
+        summary: clampText(candidate.summary, 1000),
+        educationSummary: clampText(candidate.educationSummary, 300),
+        educationDetail: sanitizeEducationDetail(candidate.educationDetail),
         profileImageUrl: candidate.profileImageUrl || null,
-        resumeAvailable: Boolean(candidate.resumeAvailable),
+        resumeAvailable: Boolean(
+          candidate.resumeAvailable
+          || candidate.resumeUrl
+          || candidate.latestResumeAssetId
+          || candidate.latestResumeAsset,
+        ),
         updatedAt: candidate.updatedAt || null,
         lastActiveAt: candidate.lastActiveAt || null,
         matchScore: candidate.matchScore ?? 0,

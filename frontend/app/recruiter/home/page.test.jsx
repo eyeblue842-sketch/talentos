@@ -161,7 +161,8 @@ describe('RecruiterHomePage', () => {
     expect(screen.getAllByText('Power BI Developer').length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'People highlights' })).toBeInTheDocument();
     expect(screen.getByText(/Insights based on 12 Careeriz profiles/i)).toBeInTheDocument();
-    expect(screen.getByText(/We are expanding our product engineering hiring this quarter/i)).toBeInTheDocument();
+    expect(screen.queryByText(/We are expanding our product engineering hiring this quarter/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Blog' })).toHaveAttribute('href', '/recruiter/home?tab=blog');
     expect(screen.getByRole('link', { name: 'Notifications, 2 unread' })).toHaveAttribute('href', '/recruiter/notifications');
   });
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { BriefcaseBusiness, Download, Mail, Save, ShieldCheck, Tag, UserRoundCheck } from 'lucide-react';
+import { BriefcaseBusiness, Download, Mail, Save, ShieldCheck, Tag } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AssociateToJobButton } from '@/components/recruiter/associate-to-job-button';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { PaginationNav } from '@/components/sections/pagination-nav';
@@ -76,8 +77,7 @@ function ResultCard({ candidate, selected, previewSelected, onToggleSelect, onSe
         <Button as="a" href={`/recruiter/database/${candidate.id}${selectedJobId ? `?jobId=${selectedJobId}` : ''}`} variant="outline" size="sm">
           View Profile
         </Button>
-        <ToolbarAction icon={UserRoundCheck} label="Shortlist" onClick={() => onAction('shortlist', [candidate.id])} />
-        <ToolbarAction icon={BriefcaseBusiness} label="Add to ATS" onClick={() => onAction('addToAts', [candidate.id])} />
+        <AssociateToJobButton candidateId={candidate.id} candidateName={candidate.fullName} size="sm" variant="outline" />
         <ToolbarAction icon={Mail} label="Email" onClick={() => onAction('email', [candidate.id])} />
         <ToolbarAction icon={Tag} label="Tag" onClick={() => onAction('tag', [candidate.id])} />
       </div>

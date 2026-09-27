@@ -2,10 +2,7 @@ import { notFound } from 'next/navigation';
 import {
   CompanyAboutSection,
   CompanyHeaderCard,
-  CompanyInsightsSection,
   CompanyJobsSection,
-  CompanyPeopleInsightsSection,
-  CompanyPeoplePreview,
   CompanyPostsSection,
 } from '@/components/sections/company-profile-sections';
 import { CompanyFollowToggle } from '@/components/network/network-page-content';
@@ -14,7 +11,7 @@ import { sendConnectionRequestAction } from '@/app/network/actions';
 import { getCurrentUser } from '@/lib/auth';
 import { getPublicOrganisation } from '@/lib/api';
 
-const COMPANY_TABS = new Set(['home', 'about', 'jobs', 'people', 'insights']);
+const COMPANY_TABS = new Set(['home', 'about', 'blog', 'jobs']);
 
 function RecruitingTeamSection({ organisation, recruitingTeam = [], redirectTo }) {
   if (!recruitingTeam.length) {
@@ -117,8 +114,6 @@ export default async function PublicOrganisationPage({ params, searchParams }) {
     jobs,
     recentJobs,
     posts,
-    peopleInsights,
-    publicInsights,
     recruitingTeam = [],
   } = data;
   const basePath = `/companies/${organisation.slug}`;
@@ -146,7 +141,6 @@ export default async function PublicOrganisationPage({ params, searchParams }) {
         {activeTab === 'home' ? (
           <div className="grid gap-6">
             <CompanyAboutSection organisation={organisation} preview />
-            <CompanyPostsSection organisation={organisation} posts={posts} />
             <CompanyJobsSection
               jobs={recentJobs}
               title="Recent job openings"
@@ -157,13 +151,14 @@ export default async function PublicOrganisationPage({ params, searchParams }) {
               recruitingTeam={recruitingTeam}
               redirectTo={basePath}
             />
-            <CompanyPeoplePreview peopleInsights={peopleInsights} basePath={basePath} />
-            <CompanyInsightsSection publicInsights={publicInsights} />
           </div>
         ) : null}
 
         {activeTab === 'about' ? (
           <CompanyAboutSection organisation={organisation} />
+        ) : null}
+        {activeTab === 'blog' ? (
+          <CompanyPostsSection organisation={organisation} posts={posts} />
         ) : null}
         {activeTab === 'jobs' ? (
           <CompanyJobsSection
@@ -171,22 +166,6 @@ export default async function PublicOrganisationPage({ params, searchParams }) {
             title="Open jobs"
             companyName={organisation.name}
           />
-        ) : null}
-        {activeTab === 'people' ? (
-          <div className="grid gap-6">
-            <RecruitingTeamSection
-              organisation={organisation}
-              recruitingTeam={recruitingTeam}
-              redirectTo={basePath}
-            />
-            <CompanyPeopleInsightsSection
-              organisation={organisation}
-              peopleInsights={peopleInsights}
-            />
-          </div>
-        ) : null}
-        {activeTab === 'insights' ? (
-          <CompanyInsightsSection publicInsights={publicInsights} />
         ) : null}
       </div>
     </main>

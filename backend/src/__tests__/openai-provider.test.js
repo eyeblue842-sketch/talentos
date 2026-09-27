@@ -177,13 +177,53 @@ test('generate uses max_completion_tokens for native OpenAI GPT-5 models', async
   const provider = createOpenAiCompatibleProvider();
   await provider.generate({
     prompt: 'Return {"ok":true}',
-    schema: { type: 'object' },
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['ok'],
+      properties: { ok: { type: 'boolean' } },
+    },
     settings: { maxOutputTokens: 42 },
   });
 
   assert.equal(requestBody.max_completion_tokens, 42);
   assert.equal('max_tokens' in requestBody, false);
   assert.equal('temperature' in requestBody, false);
+  assert.equal(requestBody.response_format.type, 'json_schema');
+  assert.equal(requestBody.response_format.json_schema.strict, true);
+});
+
+test('generate sends strict JSON schema response_format for supported OpenAI models', async () => {
+  let requestBody = null;
+  global.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return mockJsonResponse(200, {
+      model: 'gpt-4o',
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: { prompt_tokens: 12, completion_tokens: 4 },
+    });
+  };
+
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-4o';
+
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['ok'],
+    properties: { ok: { type: 'boolean' } },
+  };
+
+  const provider = createOpenAiCompatibleProvider();
+  await provider.generate({
+    prompt: 'Return {"ok":true}',
+    schema,
+  });
+
+  assert.equal(requestBody.response_format.type, 'json_schema');
+  assert.equal(requestBody.response_format.json_schema.name, 'careeriz_job_description');
+  assert.equal(requestBody.response_format.json_schema.strict, true);
+  assert.deepEqual(requestBody.response_format.json_schema.schema, schema);
 });
 
 test('generate keeps max_tokens for custom openai-compatible providers', async () => {
@@ -211,6 +251,7 @@ test('generate keeps max_tokens for custom openai-compatible providers', async (
   assert.equal(requestBody.max_tokens, 21);
   assert.equal('max_completion_tokens' in requestBody, false);
   assert.equal(requestBody.temperature, 0.2);
+  assert.equal(requestBody.response_format.type, 'json_object');
 });
 
 test('generate sends reasoning_effort: "minimal" for native OpenAI GPT-5 models', async () => {

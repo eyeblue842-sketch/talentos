@@ -7,6 +7,7 @@ import {
   getResumeImportItemDownload,
   listResumeImportBatches,
   listResumeImportItems,
+  listOrganisationResumeImportItems,
   rejectResumeImportItem,
   resolveResumeImportDuplicate,
   retryFailedResumeImportBatchItems,
@@ -60,6 +61,15 @@ export async function getResumeImportWorkerStatus(req, res, next) {
 export async function getResumeImports(req, res, next) {
   try {
     const result = await listResumeImportBatches(req.user, req.query, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, result.items, result.meta);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getOrganisationResumes(req, res, next) {
+  try {
+    const result = await listOrganisationResumeImportItems(req.user, req.query, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, result.items, result.meta);
   } catch (error) {
     next(error);

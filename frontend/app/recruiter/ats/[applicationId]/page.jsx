@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { RecruiterApplicationDetailView } from '@/components/sections/recruiter-application-detail-view';
-import { RecruiterOfferWorkflowPanel } from '@/components/sections/recruiter-offer-workflow-panel';
+import { OfferStatusCard } from '@/components/recruiter/offer-status-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { recruiterNav } from '@/lib/navigation';
 import {
@@ -113,7 +113,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
             initialInterview={interviewIntelligence}
           />
         ) : null}
-        {application ? <RecruiterOfferWorkflowPanel application={application} members={members} offers={offers} actions={actions} /> : null}
+        {application ? <OfferStatusCard offers={offers} applicationId={application.applicationId || application.id} /> : null}
     </WorkspaceShell>
   );
 }

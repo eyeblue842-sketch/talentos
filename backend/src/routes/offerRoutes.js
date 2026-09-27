@@ -17,6 +17,7 @@ import {
 import {
   downloadCandidateOfferPdf,
   downloadRecruiterOfferPdf,
+  downloadRecruiterOfferDocument,
   downloadTokenOfferPdf,
   getCandidateOfferController,
   getCandidateOfferForApplicationController,
@@ -56,6 +57,7 @@ offerRouter.post('/revisions', auth(['RECRUITER']), validateSchema(offerRevision
 offerRouter.post('/:offerId/withdraw', auth(['RECRUITER']), validateSchema(offerWithdrawSchema), postOfferWithdraw);
 offerRouter.post('/:offerId/joining', auth(['RECRUITER']), validateSchema(offerJoiningUpdateSchema), postOfferJoining);
 offerRouter.get('/:offerId/pdf', auth(['RECRUITER']), downloadRecruiterOfferPdf);
+offerRouter.get('/:offerId/document', auth(['RECRUITER']), downloadRecruiterOfferDocument);
 
 offerRouter.get('/candidate/application/:applicationId', auth(['CANDIDATE']), getCandidateOfferForApplicationController);
 offerRouter.get('/candidate/:offerId', auth(['CANDIDATE']), getCandidateOfferController);

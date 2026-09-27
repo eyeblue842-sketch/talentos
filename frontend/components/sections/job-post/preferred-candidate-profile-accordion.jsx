@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { Accordion } from '@/components/ui/accordion';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { CascadeSelect } from '@/components/ui/cascade-select';
 import { ChipInput } from '@/components/ui/chip-input';
 import { EDUCATION_LEVELS } from '@/lib/education-taxonomy';
-import { INDUSTRY_TAXONOMY } from '@/lib/industry-taxonomy';
-import { DEPARTMENT_ROLE_TAXONOMY } from '@/lib/department-role-taxonomy';
+import { INDUSTRY_TREE } from '@/lib/industry-taxonomy';
+import { DEPARTMENT_ROLE_TREE } from '@/lib/department-role-taxonomy';
 import { INDIA_RECRUITER_LOCATIONS } from '@/lib/india-locations';
 import { NOTICE_PERIOD_OPTIONS } from '@/components/sections/job-post/candidate-qualifications-fields';
 
@@ -24,8 +25,6 @@ const RELOCATION_OPTIONS = [
   { value: 'FLEXIBLE', label: 'Open to relocation, not required' },
   { value: 'NO', label: 'Local candidates only' },
 ];
-
-const departmentRoleSuggestions = DEPARTMENT_ROLE_TAXONOMY.flatMap((group) => [group.department, ...group.roles]);
 
 function buildSummary(value) {
   const parts = [];
@@ -61,19 +60,19 @@ export function PreferredCandidateProfileAccordion({ value, onChange }) {
     >
       <div className="grid gap-4 md:grid-cols-2">
         <Input label="Preferred experience (years)" type="number" min="0" value={value.preferredExperience || ''} onChange={(event) => set('preferredExperience', event.target.value)} />
-        <Input
+        <CascadeSelect
           label="Preferred industry"
+          options={INDUSTRY_TREE}
           value={value.preferredIndustry || ''}
-          onChange={(event) => set('preferredIndustry', event.target.value)}
-          list="preferred-profile-industry"
-          placeholder="e.g. Software Product"
+          onChange={(next) => set('preferredIndustry', next || '')}
+          placeholder="No preference"
         />
-        <Input
+        <CascadeSelect
           label="Preferred department / role"
+          options={DEPARTMENT_ROLE_TREE}
           value={value.preferredDepartmentRole || ''}
-          onChange={(event) => set('preferredDepartmentRole', event.target.value)}
-          list="preferred-profile-department-role"
-          placeholder="e.g. Engineering Manager"
+          onChange={(next) => set('preferredDepartmentRole', next || '')}
+          placeholder="No preference"
         />
         <Select label="Preferred education" value={value.preferredEducation || ''} onChange={(event) => set('preferredEducation', event.target.value || null)}>
           <option value="">No preference</option>
@@ -110,12 +109,6 @@ export function PreferredCandidateProfileAccordion({ value, onChange }) {
           placeholder="Any other preference that helps recruiters shortlist faster."
         />
       </label>
-      <datalist id="preferred-profile-industry">
-        {INDUSTRY_TAXONOMY.map((industry) => <option key={industry} value={industry} />)}
-      </datalist>
-      <datalist id="preferred-profile-department-role">
-        {departmentRoleSuggestions.map((item) => <option key={item} value={item} />)}
-      </datalist>
       <datalist id="preferred-profile-location">
         {INDIA_RECRUITER_LOCATIONS.map((location) => <option key={location} value={location} />)}
       </datalist>

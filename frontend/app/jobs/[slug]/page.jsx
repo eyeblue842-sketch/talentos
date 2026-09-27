@@ -34,6 +34,28 @@ function DetailRow({ icon: Icon, label, value }) {
   );
 }
 
+function formatJobShift(job) {
+  const value = job.candidateQualifications?.shiftTiming;
+  if (value === 'OTHER') return job.candidateQualifications?.shiftTimingOther || 'Other';
+  return formatEmploymentLabel(value);
+}
+
+function formatJobEducation(job) {
+  const qualifications = job.candidateQualifications || {};
+  const level = qualifications.minimumQualification === 'any'
+    ? 'Any'
+    : formatEmploymentLabel(qualifications.minimumQualification);
+  const degree = qualifications.educationCourse === 'Other' || qualifications.educationCourse === 'OTHER'
+    ? qualifications.educationCourseOther
+    : qualifications.educationCourse;
+  const specialization = qualifications.specialization === 'Other' || qualifications.specialization === 'OTHER'
+    ? qualifications.specializationOther
+    : qualifications.specialization;
+  return [level, degree && degree !== 'Any' ? degree : null, specialization && specialization !== 'ANY' ? specialization : null]
+    .filter(Boolean)
+    .join(' - ') || 'Not specified';
+}
+
 function BulletSection({ title, items, emptyLabel }) {
   return (
     <Card className="grid gap-4">
@@ -260,6 +282,35 @@ export default async function PublicJobDetailPage({ params }) {
               </p>
             </Card>
 
+            {job.isWalkIn ? (
+              <Card className="grid gap-3 border-[var(--color-primary)]">
+                <div className="flex items-center gap-2">
+                  <Badge tone="brand">Walk-in drive</Badge>
+                </div>
+                <h2 className="text-xl font-semibold text-[var(--color-text)]">Walk-in details</h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {job.walkInStartDate || job.walkInEndDate ? (
+                    <DetailRow icon={Clock3} label="Walk-in dates" value={[job.walkInStartDate, job.walkInEndDate].filter(Boolean).map((date) => formatRecruitmentDate(date)).join(' - ') || 'Not specified'} />
+                  ) : null}
+                  {job.walkInTiming ? <DetailRow icon={Clock3} label="Timing" value={job.walkInTiming} /> : null}
+                  {job.walkInContactName ? <DetailRow icon={BriefcaseBusiness} label="Contact" value={job.walkInContactName} /> : null}
+                  {job.walkInContactPhone ? <DetailRow icon={BriefcaseBusiness} label="Contact number" value={job.walkInContactPhone} /> : null}
+                </div>
+                {job.walkInVenueAddress ? (
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text)]">Venue</p>
+                    <p className="mt-1 whitespace-pre-line text-sm leading-7 text-[var(--color-text-secondary)]">{job.walkInVenueAddress}</p>
+                  </div>
+                ) : null}
+                {job.walkInGoogleMapsUrl ? (
+                  <a href={job.walkInGoogleMapsUrl} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-[var(--color-primary)]">
+                    <MapPin size={16} aria-hidden="true" />
+                    View on Google Maps
+                  </a>
+                ) : null}
+              </Card>
+            ) : null}
+
             <BulletSection
               title="Responsibilities"
               items={job.responsibilities}
@@ -289,6 +340,11 @@ export default async function PublicJobDetailPage({ params }) {
                 />
                 <DetailRow
                   icon={BriefcaseBusiness}
+                  label="Shift"
+                  value={formatJobShift(job)}
+                />
+                <DetailRow
+                  icon={BriefcaseBusiness}
                   label="Workplace"
                   value={
                     job.workplaceType
@@ -300,6 +356,11 @@ export default async function PublicJobDetailPage({ params }) {
                   icon={BriefcaseBusiness}
                   label="Industry / Unit"
                   value={job.businessUnit || 'Not specified'}
+                />
+                <DetailRow
+                  icon={BriefcaseBusiness}
+                  label="Education"
+                  value={formatJobEducation(job)}
                 />
               </div>
             </Card>

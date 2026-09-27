@@ -190,14 +190,9 @@ function deriveAtsPipeline(candidate) {
     }));
   }
 
-  const seed = hashSeed(candidate.id || candidate.fullName);
-  const stages = ['Applied', 'Screening', 'Technical', 'HR', 'Offer', 'Joined', 'Rejected'];
-  const activeIndex = seed % stages.length;
-  return stages.map((label, index) => ({
-    label,
-    active: index <= activeIndex,
-    current: index === activeIndex,
-  }));
+  // No real application exists for this candidate in the recruiter's organisation.
+  // Show an honest "not in ATS" state instead of a fabricated pipeline stage.
+  return [{ label: 'Not associated with a requirement yet', active: false, current: false }];
 }
 
 function mapAtsStage(value = '') {

@@ -48,11 +48,11 @@ describe('RecruiterJobEditForm', () => {
 
     expect(screen.getByText('Java')).toBeInTheDocument();
     expect(screen.getByText('Spring Boot')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Industry$/i)).toHaveValue('IT Services & Consulting');
+    expect(screen.getByRole('button', { name: 'Industry' })).toHaveTextContent('IT Services & Consulting');
     expect(screen.getByText('AWS Certified Solutions Architect')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Preferred Candidate Profile/i }));
-    expect(screen.getByLabelText(/Preferred industry/i)).toHaveValue('Software Product');
+    expect(screen.getByRole('button', { name: 'Preferred industry' })).toHaveTextContent('Software Product');
     expect(screen.getByLabelText(/Willingness to relocate/i)).toHaveValue('FLEXIBLE');
   });
 
@@ -71,7 +71,7 @@ describe('RecruiterJobEditForm', () => {
 
     render(<RecruiterJobEditForm job={legacyJob} assignees={[]} requisitions={[]} updateJobAction={() => {}} />);
     expect(screen.getByText('Bengaluru Urban')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Industry$/i)).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Industry' })).toHaveTextContent('Any industry');
   });
 
   it('serializes the updated candidateQualifications/preferredCandidateProfile/locations as JSON hidden fields, without clobbering unedited data', () => {
@@ -112,7 +112,7 @@ describe('RecruiterJobEditForm', () => {
     expect(container.querySelector('input[name="requirements"]').value).toBe('Graduate\nRelevant domain experience');
   });
 
-  it('renders Recruiter owner, Hiring manager, and Approved requisition through the width-safe Select component (no overflow regression)', () => {
+  it('renders Recruiter owner and Hiring manager through the width-safe Select component (no overflow regression)', () => {
     const assignees = [
       { id: 'member-1', userId: 'user-1', role: 'RECRUITER', user: { email: 'a-very-long-recruiter-owner-email-address@northstar-talent-labs.example.com' } },
     ];

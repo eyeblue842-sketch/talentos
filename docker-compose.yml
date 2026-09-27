@@ -50,7 +50,6 @@ services:
       - elastic_data:/usr/share/elasticsearch/data
 
   opensearch:
-    profiles: ["opensearch-local"]
     image: opensearchproject/opensearch:3.5.0
     restart: unless-stopped
     environment:
@@ -88,6 +87,8 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      opensearch:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 5000
@@ -107,9 +108,17 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-careeriz}
       REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
-      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-true}
+      # Legacy Elasticsearch resume index is unused/empty; recruiter databank search
+      # reads Postgres directly (live, zero indexing lag) when this is false.
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-false}
       ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
       ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-resumes}
+      RESUME_SEARCH_V2_ENABLED: ${RESUME_SEARCH_V2_ENABLED:-true}
+      RESUME_INDEXING_ENABLED: ${RESUME_INDEXING_ENABLED:-true}
+      RESUME_SEARCH_ENGINE_PROVIDER: ${RESUME_SEARCH_ENGINE_PROVIDER:-opensearch}
+      OPENSEARCH_NODE: ${OPENSEARCH_NODE:-http://opensearch:9200}
+      OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX:-careeriz-resume-search}
+      OPENSEARCH_CURSOR_SECRET: ${OPENSEARCH_CURSOR_SECRET:-careeriz-dev-opensearch-cursor-secret-change-me}
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-./storage/resumes}
       EMAIL_FROM: ${EMAIL_FROM:-no-reply@careeriz.app}
@@ -120,6 +129,9 @@ services:
       RESUME_BUILDER_ENABLED: ${RESUME_BUILDER_ENABLED:-false}
       RESUME_BUILDER_BASE_URL: ${RESUME_BUILDER_BASE_URL:-}
       RESUME_BUILDER_CLIENT_ID: ${RESUME_BUILDER_CLIENT_ID:-}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      LINKEDIN_OAUTH_REDIRECT_URI: ${LINKEDIN_OAUTH_REDIRECT_URI:-http://localhost:5000/api/social/linkedin/callback}
       INTELLIGENCE_ENABLED: ${INTELLIGENCE_ENABLED:-false}
       INTELLIGENCE_PROVIDER: ${INTELLIGENCE_PROVIDER:-DISABLED}
       INTELLIGENCE_MODEL: ${INTELLIGENCE_MODEL:-}
@@ -162,6 +174,8 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      opensearch:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
@@ -180,9 +194,17 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-careeriz}
       REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
-      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-true}
+      # Legacy Elasticsearch resume index is unused/empty; recruiter databank search
+      # reads Postgres directly (live, zero indexing lag) when this is false.
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-false}
       ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
       ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-resumes}
+      RESUME_SEARCH_V2_ENABLED: ${RESUME_SEARCH_V2_ENABLED:-true}
+      RESUME_INDEXING_ENABLED: ${RESUME_INDEXING_ENABLED:-true}
+      RESUME_SEARCH_ENGINE_PROVIDER: ${RESUME_SEARCH_ENGINE_PROVIDER:-opensearch}
+      OPENSEARCH_NODE: ${OPENSEARCH_NODE:-http://opensearch:9200}
+      OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX:-careeriz-resume-search}
+      OPENSEARCH_CURSOR_SECRET: ${OPENSEARCH_CURSOR_SECRET:-careeriz-dev-opensearch-cursor-secret-change-me}
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-./storage/resumes}
       EMAIL_FROM: ${EMAIL_FROM:-no-reply@careeriz.app}
@@ -190,9 +212,13 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       RESUME_BUILDER_ENABLED: ${RESUME_BUILDER_ENABLED:-false}
       RESUME_BUILDER_BASE_URL: ${RESUME_BUILDER_BASE_URL:-}
       RESUME_BUILDER_CLIENT_ID: ${RESUME_BUILDER_CLIENT_ID:-}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      LINKEDIN_OAUTH_REDIRECT_URI: ${LINKEDIN_OAUTH_REDIRECT_URI:-http://localhost:5000/api/social/linkedin/callback}
       INTELLIGENCE_ENABLED: ${INTELLIGENCE_ENABLED:-false}
       INTELLIGENCE_PROVIDER: ${INTELLIGENCE_PROVIDER:-DISABLED}
       INTELLIGENCE_MODEL: ${INTELLIGENCE_MODEL:-}

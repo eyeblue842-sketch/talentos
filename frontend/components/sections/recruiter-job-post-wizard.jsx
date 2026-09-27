@@ -1,23 +1,30 @@
 "use client";
 
 import { useMemo, useState, useTransition } from 'react';
-import { AlertTriangle, BriefcaseBusiness, Check, Eye, EyeOff, FileText, LoaderCircle, MapPin, Pencil, Plus, RotateCcw, Sparkles, Trash2, Wallet } from 'lucide-react';
+import { AlertTriangle, BriefcaseBusiness, Check, ChevronDown, Eye, EyeOff, FileText, LoaderCircle, MapPin, Pencil, Plus, Sparkles, Trash2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { normalizeCtcToLpa } from '@/lib/ctc';
 import { formatJobSalaryRange } from '@/lib/recruitment-formatters';
 import { SkillsSelector } from '@/components/sections/job-post/skills-selector';
-import { JobLocationSelector, toCanonicalLocations } from '@/components/sections/job-post/job-location-selector';
+import { JobLocationSelector, toCanonicalLocations, fromCanonicalLocations } from '@/components/sections/job-post/job-location-selector';
 import { ApplicationRecipients } from '@/components/sections/job-post/application-recipients';
 import { Select } from '@/components/ui/select';
-import { EDUCATION_LEVELS, filterEducationCourses } from '@/lib/education-taxonomy';
+import { CascadeSelect } from '@/components/ui/cascade-select';
+import { EDUCATION_LEVELS, filterEducationCourses, specializationsForDegree } from '@/lib/education-taxonomy';
+import { INDUSTRY_TREE } from '@/lib/industry-taxonomy';
+import { DEPARTMENT_OPTIONS, rolesForDepartment } from '@/lib/department-role-taxonomy';
+
+const DEPT_ROLE_OTHER = '__OTHER__';
 
 const steps = [
-  { id: 'essentials', label: 'Essentials' },
-  { id: 'draft', label: 'AI Draft & Preview' },
-  { id: 'questions', label: 'Questions' },
-  { id: 'publish', label: 'Publish' },
+  { id: 'details', label: 'Job details' },
+  { id: 'requirements', label: 'Candidate requirements' },
+  { id: 'walkin', label: 'Walk-in & contact' },
+  { id: 'draft', label: 'Job description' },
+  { id: 'questions', label: 'Screening questions' },
+  { id: 'publish', label: 'Preview & publish' },
 ];
 
 const EMPLOYMENT_OPTIONS = [
@@ -46,16 +53,6 @@ const EDUCATION_OPTIONS = [
   { value: 'any', label: 'Any' },
   ...EDUCATION_LEVELS,
   { value: 'other', label: 'Other' },
-];
-
-const SPECIALIZATION_OPTIONS = [
-  { value: 'ANY', label: 'Any' },
-  { value: 'Computer Science', label: 'Computer Science' },
-  { value: 'Information Technology', label: 'Information Technology' },
-  { value: 'Human Resources', label: 'Human Resources' },
-  { value: 'Finance', label: 'Finance' },
-  { value: 'Marketing', label: 'Marketing' },
-  { value: 'Other', label: 'Other' },
 ];
 
 const QUESTION_TYPES = [
@@ -168,7 +165,9 @@ function buildSourceDescription({ organisationName, organisationAbout, essential
         ? { min: essentials.salaryMin, max: essentials.salaryMax, currency: 'INR', payPeriod: 'Annual CTC' }
         : { hiddenFromCandidates: true },
       skills,
-      optionalRecruiterNotes: essentials.businessUnit || null,
+      department: [essentials.department, essentials.role].filter(Boolean).join(' - ') || null,
+      industry: essentials.industry || null,
+      optionalRecruiterNotes: null,
     },
     requiredOutput: [
       'title',
@@ -288,6 +287,7 @@ function SearchableSelect({ label, name, value, onChange, options, required = fa
         onKeyDown={handleKeyDown}
         required={required}
         helpText={helpText}
+        trailingAction={<ChevronDown size={16} aria-hidden="true" className={`pointer-events-none text-[var(--color-text-muted)] transition-transform ${open ? 'rotate-180' : ''}`} />}
       />
       <input type="hidden" name={name} value={value || ''} />
       {open ? (
@@ -432,8 +432,8 @@ function CandidatePreview({ organisationName, essentials, skills, locations, sal
   );
 }
 
-export function RecruiterJobPostWizard({ organisationName, organisationAbout, assignees = [], requisitions = [], recruiterEmail, createAction }) {
-  const [activeStep, setActiveStep] = useState('essentials');
+export function RecruiterJobPostWizard({ organisationName, organisationAbout, assignees = [], recruiterEmail, previousJobs = [], createAction }) {
+  const [activeStep, setActiveStep] = useState('details');
   const [skills, setSkills] = useState([]);
   const [locations, setLocations] = useState([]);
   const [locationError, setLocationError] = useState('');
@@ -466,11 +466,20 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
     educationCourseOther: '',
     specialization: 'ANY',
     specializationOther: '',
-    businessUnit: '',
+    department: '',
+    role: '',
+    industry: '',
+    isWalkIn: false,
+    walkInStartDate: '',
+    walkInEndDate: '',
+    walkInTiming: '',
+    walkInContactName: '',
+    walkInContactPhone: '',
+    walkInVenueAddress: '',
+    walkInGoogleMapsUrl: '',
     numberOfOpenings: '1',
     recruiterId: '',
     hiringManagerId: '',
-    requisitionId: '',
     applicationDeadline: '',
     applicationOpensAt: '',
     applicationClosesAt: '',
@@ -486,6 +495,26 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
   const locationRequired = essentials.workplaceType !== 'REMOTE';
   const courseGroups = useMemo(() => (['ug', 'pg', 'ppg'].includes(essentials.minimumQualification) ? filterEducationCourses(essentials.minimumQualification, '') : []), [essentials.minimumQualification]);
   const degreeOptions = useMemo(() => [{ value: 'Any', label: 'Any' }, ...courseGroups.flatMap((group) => group.courses).map((course) => ({ value: course, label: course })), { value: 'Other', label: 'Other' }], [courseGroups]);
+  // Specialization options follow the chosen Degree (e.g. B.Tech -> CS/Mechanical/...,
+  // B.Com -> Accounting/Finance/...), instead of one fixed list for every degree.
+  const specializationOptions = useMemo(
+    () => [{ value: 'ANY', label: 'Any' }, ...specializationsForDegree(essentials.educationCourse).map((item) => ({ value: item, label: item })), { value: 'Other', label: 'Other' }],
+    [essentials.educationCourse],
+  );
+  const departmentOptions = useMemo(() => [...DEPARTMENT_OPTIONS, { label: 'Other', value: DEPT_ROLE_OTHER }], []);
+  const roleOptions = useMemo(() => [...rolesForDepartment(essentials.department), { label: 'Other', value: DEPT_ROLE_OTHER }], [essentials.department]);
+  const [departmentCustom, setDepartmentCustom] = useState(false);
+  const [roleCustom, setRoleCustom] = useState(false);
+  const [prefillOpen, setPrefillOpen] = useState(false);
+  const [prefillQuery, setPrefillQuery] = useState('');
+  // AI responsibility-suggestion pool: always offer ~10 points; picking one adds
+  // it to the draft and a fresh point takes its place (no manual regenerate).
+  const [respPool, setRespPool] = useState([]);
+  const [suggesting, setSuggesting] = useState(false);
+  // The Walk-in stage only appears in the pipeline when the recruiter turns
+  // walk-in on (in Job details).
+  const visibleSteps = useMemo(() => (essentials.isWalkIn ? steps : steps.filter((step) => step.id !== 'walkin')), [essentials.isWalkIn]);
+  const stagePosition = (id) => visibleSteps.findIndex((step) => step.id === id) + 1;
   const candidateQualifications = useMemo(() => ({
     minimumQualification: essentials.minimumQualification || null,
     educationCourse: essentials.educationCourse || null,
@@ -495,7 +524,8 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
     shiftTiming: essentials.shiftTiming || null,
     shiftTimingOther: essentials.shiftTiming === 'OTHER' ? essentials.shiftTimingOther : null,
     relevantExperience: null,
-    industry: essentials.businessUnit || null,
+    industry: essentials.industry || null,
+    role: essentials.role || null,
     noticePeriod: null,
     certifications: [],
   }), [essentials]);
@@ -518,7 +548,8 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
     setGeneratedDescription((current) => ({ ...current, [field]: value }));
   }
 
-  function validateEssentials() {
+  // Stage 1 (Job details) validation.
+  function validateDetails() {
     const errors = [];
     const minExperience = Number(essentials.experienceMin);
     const maxExperience = Number(essentials.experienceMax);
@@ -532,13 +563,27 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
     if (!WORKPLACE_OPTIONS.some((option) => option.value === essentials.workplaceType)) errors.push('Select a supported workplace.');
     if (!SHIFT_OPTIONS.some((option) => option.value === essentials.shiftTiming)) errors.push('Select a supported shift timing.');
     if (essentials.shiftTiming === 'OTHER' && !essentials.shiftTimingOther.trim()) errors.push('Add custom shift text for Other.');
+    setFormError(errors[0] || '');
+    setLocationError(errors.find((error) => error.includes('location')) || '');
+    return errors.length === 0;
+  }
+
+  // Stage 2 (Candidate requirements) validation.
+  function validateRequirements() {
+    const errors = [];
     if (!EDUCATION_OPTIONS.some((option) => option.value === essentials.minimumQualification)) errors.push('Select a supported education level.');
     if ((essentials.educationCourse === 'Other' || essentials.educationCourse === 'OTHER') && !essentials.educationCourseOther.trim()) errors.push('Add custom degree text for Other.');
     if ((essentials.specialization === 'Other' || essentials.specialization === 'OTHER') && !essentials.specializationOther.trim()) errors.push('Add custom specialization text for Other.');
     if (skills.length === 0) errors.push('Add at least one key skill.');
     setFormError(errors[0] || '');
-    setLocationError(errors.find((error) => error.includes('location')) || '');
     return errors.length === 0;
+  }
+
+  // Both stages, for the generate + publish gates.
+  function validateEssentials() {
+    if (!validateDetails()) { setActiveStep('details'); return false; }
+    if (!validateRequirements()) { setActiveStep('requirements'); return false; }
+    return true;
   }
 
   function hasCompleteDescription() {
@@ -567,16 +612,120 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
           sourceDescription: buildSourceDescription({ organisationName, organisationAbout, essentials: normalizedEssentials, skills, locations, salaryVisible: essentials.salaryVisible }),
           forceRegenerate: true,
         });
-        setGeneratedDescription(normalizeGeneratedJobDescription(payload, normalizedEssentials, skills, locations, essentials.salaryVisible));
+        const generated = normalizeGeneratedJobDescription(payload, normalizedEssentials, skills, locations, essentials.salaryVisible);
+        setGeneratedDescription(generated);
         setHasGenerated(true);
         setDraftOrigin('ai');
         setHasManualEdits(false);
+        setRespPool([]);
         setActiveStep('draft');
+        loadResponsibilitySuggestions(generated.keyResponsibilities || []);
       } catch (error) {
         generateManualTemplate('AI generation is unavailable right now. You can edit and complete this draft manually.');
       }
     });
   }
+
+  // Best-effort AI pool of extra "Key responsibility" points. Kept topped up so
+  // the recruiter always has ~10 to choose from; picking one refills it.
+  async function loadResponsibilitySuggestions(acceptedList) {
+    if (suggesting) return;
+    setSuggesting(true);
+    try {
+      const normalizedEssentials = { ...essentials, salaryMin: normalizedSalaryMin, salaryMax: normalizedSalaryMax };
+      const payload = await requestJobIntelligence({
+        mode: 'DRAFT_DESCRIPTION',
+        sourceDescription: buildSourceDescription({ organisationName, organisationAbout, essentials: normalizedEssentials, skills, locations, salaryVisible: essentials.salaryVisible }),
+        forceRegenerate: true,
+      });
+      const generated = normalizeGeneratedJobDescription(payload, normalizedEssentials, skills, locations, essentials.salaryVisible);
+      const candidates = [...(generated.keyResponsibilities || []), ...(generated.preferredQualifications || [])];
+      const accepted = new Set([...(acceptedList || generatedDescription.keyResponsibilities || [])].map((item) => String(item).toLowerCase().trim()));
+      setRespPool((current) => {
+        const seen = new Set(current.map((item) => item.toLowerCase().trim()));
+        const additions = candidates.filter((item) => {
+          const key = String(item || '').toLowerCase().trim();
+          return key && !accepted.has(key) && !seen.has(key);
+        });
+        return [...current, ...additions].slice(0, 20);
+      });
+    } catch {
+      /* suggestions are best-effort - the recruiter can still type their own */
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  function addResponsibilitySuggestion(text) {
+    setDraft('keyResponsibilities', [...(generatedDescription.keyResponsibilities || []), text]);
+    setRespPool((current) => {
+      const next = current.filter((item) => item !== text);
+      if (next.length < 10) loadResponsibilitySuggestions([...(generatedDescription.keyResponsibilities || []), text]);
+      return next;
+    });
+  }
+
+  // Prefill the whole wizard from a previously posted job (Naukri-style). Fields
+  // not present on the source job keep their current defaults.
+  function prefillFromJob(job) {
+    if (!job) return;
+    const cq = job.candidateQualifications || {};
+    setEssentials((current) => ({
+      ...current,
+      title: job.title || current.title,
+      experienceMin: job.experienceMin != null ? String(job.experienceMin) : current.experienceMin,
+      experienceMax: job.experienceMax != null ? String(job.experienceMax) : current.experienceMax,
+      salaryMinAmount: job.salaryMin != null ? String(job.salaryMin) : current.salaryMinAmount,
+      salaryMaxAmount: job.salaryMax != null ? String(job.salaryMax) : current.salaryMaxAmount,
+      salaryMinUnit: 'LAKH_PER_ANNUM',
+      salaryMaxUnit: 'LAKH_PER_ANNUM',
+      salaryVisible: job.publicSalaryEnabled !== false,
+      workplaceType: job.workplaceType || current.workplaceType,
+      employmentType: job.employmentType || current.employmentType,
+      shiftTiming: cq.shiftTiming || current.shiftTiming,
+      shiftTimingOther: cq.shiftTimingOther || '',
+      minimumQualification: cq.minimumQualification || current.minimumQualification,
+      educationCourse: cq.educationCourse || current.educationCourse,
+      educationCourseOther: cq.educationCourseOther || '',
+      specialization: cq.specialization || current.specialization,
+      specializationOther: cq.specializationOther || '',
+      department: job.department || '',
+      role: cq.role || '',
+      industry: cq.industry || '',
+      isWalkIn: Boolean(job.isWalkIn),
+      walkInStartDate: job.walkInStartDate ? String(job.walkInStartDate).slice(0, 10) : '',
+      walkInEndDate: job.walkInEndDate ? String(job.walkInEndDate).slice(0, 10) : '',
+      walkInTiming: job.walkInTiming || '',
+      walkInContactName: job.walkInContactName || '',
+      walkInContactPhone: job.walkInContactPhone || '',
+      walkInVenueAddress: job.walkInVenueAddress || '',
+      walkInGoogleMapsUrl: job.walkInGoogleMapsUrl || '',
+      numberOfOpenings: job.numberOfOpenings != null ? String(job.numberOfOpenings) : current.numberOfOpenings,
+    }));
+    setDepartmentCustom(Boolean(job.department) && !DEPARTMENT_OPTIONS.some((option) => option.value === job.department));
+    setRoleCustom(Boolean(cq.role) && !rolesForDepartment(job.department).some((option) => option.value === cq.role));
+    setSkills(Array.isArray(job.skillsRequired) ? job.skillsRequired : []);
+    setLocations(job.locations?.length ? fromCanonicalLocations(job.locations) : (job.location ? [job.location] : []));
+    setGeneratedDescription((current) => ({
+      ...current,
+      openingSummary: job.description || current.openingSummary,
+      keyResponsibilities: Array.isArray(job.responsibilities) && job.responsibilities.length ? job.responsibilities : current.keyResponsibilities,
+      requiredQualifications: Array.isArray(job.requirements) && job.requirements.length ? job.requirements : current.requiredQualifications,
+    }));
+    setHasGenerated(true);
+    setDraftOrigin('manual');
+    setHasManualEdits(true);
+    setPrefillOpen(false);
+    setPrefillQuery('');
+    setActiveStep('details');
+  }
+
+  const prefillMatches = useMemo(() => {
+    const needle = prefillQuery.trim().toLowerCase();
+    return (previousJobs || [])
+      .filter((job) => !needle || String(job.title || '').toLowerCase().includes(needle))
+      .slice(0, 25);
+  }, [previousJobs, prefillQuery]);
 
   function updateQuestion(localId, field, value) {
     setScreeningQuestions((current) => current.map((item) => (item.localId === localId ? { ...item, [field]: value } : item)));
@@ -610,7 +759,7 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
     if (!validateEssentials()) {
       event.preventDefault();
       setSubmitting(false);
-      setActiveStep('essentials');
+      // validateEssentials() already jumps to the failing stage (details/requirements).
       return;
     }
     if (submitterStatus === 'OPEN') {
@@ -653,11 +802,18 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
       <input type="hidden" name="locationsJson" value={JSON.stringify(canonicalLocations)} />
       <input type="hidden" name="candidateQualificationsJson" value={JSON.stringify(candidateQualifications)} />
       <input type="hidden" name="preferredCandidateProfileJson" value={JSON.stringify({})} />
-      <input type="hidden" name="businessUnit" value={essentials.businessUnit} />
+      <input type="hidden" name="department" value={essentials.department} />
+      <input type="hidden" name="isWalkIn" value={essentials.isWalkIn ? 'on' : ''} />
+      <input type="hidden" name="walkInStartDate" value={essentials.walkInStartDate} />
+      <input type="hidden" name="walkInEndDate" value={essentials.walkInEndDate} />
+      <input type="hidden" name="walkInTiming" value={essentials.walkInTiming} />
+      <input type="hidden" name="walkInContactName" value={essentials.walkInContactName} />
+      <input type="hidden" name="walkInContactPhone" value={essentials.walkInContactPhone} />
+      <input type="hidden" name="walkInVenueAddress" value={essentials.walkInVenueAddress} />
+      <input type="hidden" name="walkInGoogleMapsUrl" value={essentials.walkInGoogleMapsUrl} />
       <input type="hidden" name="numberOfOpenings" value={essentials.numberOfOpenings || '1'} />
       <input type="hidden" name="recruiterId" value={essentials.recruiterId} />
       <input type="hidden" name="hiringManagerId" value={essentials.hiringManagerId} />
-      <input type="hidden" name="requisitionId" value={essentials.requisitionId} />
       <input type="hidden" name="applicationDeadline" value={essentials.applicationDeadline} />
       <input type="hidden" name="applicationOpensAt" value={essentials.applicationOpensAt} />
       <input type="hidden" name="applicationClosesAt" value={essentials.applicationClosesAt} />
@@ -677,11 +833,37 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
         </div>
       ))}
 
+      {previousJobs.length ? (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-3">
+          <button type="button" onClick={() => setPrefillOpen((current) => !current)} className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-primary)]">
+            <FileText size={16} aria-hidden="true" />
+            Prefill from a previous job
+            <ChevronDown size={16} aria-hidden="true" className={prefillOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+          </button>
+          {prefillOpen ? (
+            <div className="mt-3 grid gap-2">
+              <Input aria-label="Search a previously posted job" value={prefillQuery} onChange={(event) => setPrefillQuery(event.target.value)} placeholder="Search a previously posted job" />
+              <ul className="max-h-56 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)]">
+                {prefillMatches.map((job) => (
+                  <li key={job.id}>
+                    <button type="button" onClick={() => prefillFromJob(job)} className="flex w-full flex-col items-start gap-0.5 border-b border-[var(--color-border)] px-3 py-2 text-left last:border-b-0 hover:bg-[var(--color-bg-muted)]">
+                      <span className="text-sm font-semibold text-[var(--color-text)]">{job.title}</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">{[job.department, job.status].filter(Boolean).join(' • ')}</span>
+                    </button>
+                  </li>
+                ))}
+                {!prefillMatches.length ? <li className="px-3 py-2 text-sm text-[var(--color-text-muted)]">No matching jobs found</li> : null}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Horizontal stage pipeline: each stage fills in as the recruiter
           advances (completed stages show a check + filled connector). */}
       <ol className="flex items-stretch gap-1 overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-2 sm:gap-2" aria-label="Job posting stages">
-        {steps.map((step, index) => {
-          const activeIndex = steps.findIndex((item) => item.id === activeStep);
+        {visibleSteps.map((step, index) => {
+          const activeIndex = visibleSteps.findIndex((item) => item.id === activeStep);
           const active = activeStep === step.id;
           const complete = index < activeIndex;
           return (
@@ -708,7 +890,7 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
                   <span className={`block truncate text-sm font-semibold ${active || complete ? 'text-[var(--color-text)]' : 'text-[var(--color-text-secondary)]'}`}>{step.label}</span>
                 </span>
               </button>
-              {index < steps.length - 1 ? (
+              {index < visibleSteps.length - 1 ? (
                 <span aria-hidden="true" className={`hidden h-0.5 w-6 shrink-0 rounded-full sm:block ${complete ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}`} />
               ) : null}
             </li>
@@ -724,20 +906,55 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
           </div>
         ) : null}
 
-        <div className={activeStep === 'essentials' ? 'grid gap-5' : 'hidden'}>
+        <div className={activeStep === 'details' ? 'grid gap-5' : 'hidden'}>
           <Card className="grid gap-5">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-primary)]">AI-first job posting</p>
-              <h2 className="mt-2 text-2xl font-semibold text-[var(--color-text)]">Start with only the essentials</h2>
-              <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Careeriz will turn these recruiter-confirmed facts into a complete editable job post.</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-primary)]">Stage {stagePosition('details')} of {visibleSteps.length}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--color-text)]">Job details</h2>
+              <p className="mt-2 text-sm text-[var(--color-text-secondary)]">The core facts about this role. Careeriz turns these into a complete, editable job post.</p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid items-start gap-4 md:grid-cols-2">
               <Input label="Posting as" value={organisationName} readOnly />
               <Input label="Designation / job title" value={essentials.title} onChange={(event) => setEssential('title', event.target.value)} placeholder="Senior Java Developer" required />
-              <Input label="Minimum experience" type="number" min="0" value={essentials.experienceMin} onChange={(event) => setEssential('experienceMin', event.target.value)} required />
-              <Input label="Maximum experience" type="number" min="0" value={essentials.experienceMax} onChange={(event) => setEssential('experienceMax', event.target.value)} required />
-              <div className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Minimum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
+              <div className="grid gap-2.5">
+                <CascadeSelect
+                  label="Department / functional area"
+                  options={departmentOptions}
+                  value={departmentCustom ? DEPT_ROLE_OTHER : (essentials.department || '')}
+                  onChange={(next) => {
+                    if (next === DEPT_ROLE_OTHER) { setDepartmentCustom(true); setEssential('department', ''); setEssential('role', ''); setRoleCustom(false); }
+                    else { setDepartmentCustom(false); setEssential('department', next || ''); setEssential('role', ''); setRoleCustom(false); }
+                  }}
+                  placeholder="Select department"
+                />
+                {departmentCustom ? <Input aria-label="Custom department" value={essentials.department} onChange={(event) => setEssential('department', event.target.value)} placeholder="Enter department" /> : null}
+              </div>
+              <div className="grid gap-2.5">
+                <CascadeSelect
+                  label="Role"
+                  options={roleOptions}
+                  value={roleCustom ? DEPT_ROLE_OTHER : (essentials.role || '')}
+                  onChange={(next) => {
+                    if (next === DEPT_ROLE_OTHER) { setRoleCustom(true); setEssential('role', ''); }
+                    else { setRoleCustom(false); setEssential('role', next || ''); }
+                  }}
+                  disabled={!essentials.department && !departmentCustom}
+                  placeholder={essentials.department || departmentCustom ? 'Select role' : 'Select a department first'}
+                />
+                {roleCustom ? <Input aria-label="Custom role" value={essentials.role} onChange={(event) => setEssential('role', event.target.value)} placeholder="Enter role" /> : null}
+              </div>
+              <SearchableSelect label="Employment type" name="employmentType" value={essentials.employmentType} onChange={(value) => setEssential('employmentType', value)} options={EMPLOYMENT_OPTIONS} required />
+              <SearchableSelect label="Workplace" name="workplaceType" value={essentials.workplaceType} onChange={(value) => setEssential('workplaceType', value)} options={WORKPLACE_OPTIONS} required helpText={essentials.workplaceType === 'REMOTE' ? 'Locations are optional for remote roles.' : 'Select at least one location for on-site and hybrid roles.'} />
+              <SearchableSelect label="Shift timing" name="shiftTimingDisplay" value={essentials.shiftTiming} onChange={(value) => setEssential('shiftTiming', value)} options={SHIFT_OPTIONS} required />
+              {essentials.shiftTiming === 'OTHER' ? <Input label="Custom shift timing" value={essentials.shiftTimingOther} onChange={(event) => setEssential('shiftTimingOther', event.target.value)} placeholder="Example: 2 PM to 11 PM IST" required /> : <div />}
+              <Input label="Minimum experience (years)" type="number" min="0" value={essentials.experienceMin} onChange={(event) => setEssential('experienceMin', event.target.value)} required />
+              <Input label="Maximum experience (years)" type="number" min="0" value={essentials.experienceMax} onChange={(event) => setEssential('experienceMax', event.target.value)} required />
+              <div className="md:col-span-2">
+                <JobLocationSelector values={locations} onChange={(next) => { setLocations(next); setLocationError(''); }} required={locationRequired} />
+                {locationError ? <p className="mt-1.5 text-sm text-[var(--color-danger)]">{locationError}</p> : null}
+              </div>
+              <div className="grid gap-2.5">
+                <span className="truncate text-sm font-semibold text-[var(--color-text)]">Minimum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
                   <Input value={essentials.salaryMinAmount} onChange={(event) => setEssential('salaryMinAmount', event.target.value)} placeholder="10" required />
                   <Select aria-label="Minimum salary unit" value={essentials.salaryMinUnit} onChange={(event) => setEssential('salaryMinUnit', event.target.value)}>
@@ -746,8 +963,8 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
                   </Select>
                 </div>
               </div>
-              <div className="grid gap-2">
-                <span className="text-sm font-semibold text-[var(--color-text)]">Maximum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
+              <div className="grid gap-2.5">
+                <span className="truncate text-sm font-semibold text-[var(--color-text)]">Maximum annual salary<span className="ml-1 text-[var(--color-danger)]">*</span></span>
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
                   <Input value={essentials.salaryMaxAmount} onChange={(event) => setEssential('salaryMaxAmount', event.target.value)} placeholder="25" required />
                   <Select aria-label="Maximum salary unit" value={essentials.salaryMaxUnit} onChange={(event) => setEssential('salaryMaxUnit', event.target.value)}>
@@ -768,21 +985,13 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
                   </button>
                 </div>
               </div>
-              <SearchableSelect label="Workplace" name="workplaceType" value={essentials.workplaceType} onChange={(value) => setEssential('workplaceType', value)} options={WORKPLACE_OPTIONS} required helpText={essentials.workplaceType === 'REMOTE' ? 'Locations are optional for remote roles.' : 'Select at least one location for on-site and hybrid roles.'} />
-              <SearchableSelect label="Employment type" name="employmentType" value={essentials.employmentType} onChange={(value) => setEssential('employmentType', value)} options={EMPLOYMENT_OPTIONS} required />
-              <div className="md:col-span-2">
-                <JobLocationSelector values={locations} onChange={(next) => { setLocations(next); setLocationError(''); }} required={locationRequired} />
-                {locationError ? <p className="mt-1.5 text-sm text-[var(--color-danger)]">{locationError}</p> : null}
-              </div>
-              <SearchableSelect label="Shift timing" name="shiftTimingDisplay" value={essentials.shiftTiming} onChange={(value) => setEssential('shiftTiming', value)} options={SHIFT_OPTIONS} required />
-              {essentials.shiftTiming === 'OTHER' ? <Input label="Custom shift timing" value={essentials.shiftTimingOther} onChange={(event) => setEssential('shiftTimingOther', event.target.value)} placeholder="Example: 2 PM to 11 PM IST" required /> : <div />}
-              <SearchableSelect label="Education level" name="educationLevelDisplay" value={essentials.minimumQualification} onChange={(value) => setEssential('minimumQualification', value)} options={EDUCATION_OPTIONS} required />
-              <SearchableSelect label="Degree" name="educationCourse" value={essentials.educationCourse} onChange={(value) => setEssential('educationCourse', value)} options={degreeOptions} required />
-              {essentials.educationCourse === 'Other' || essentials.educationCourse === 'OTHER' ? <Input label="Custom degree" value={essentials.educationCourseOther} onChange={(event) => setEssential('educationCourseOther', event.target.value)} required /> : null}
-              <SearchableSelect label="Specialization" name="specialization" value={essentials.specialization} onChange={(value) => setEssential('specialization', value)} options={SPECIALIZATION_OPTIONS} required />
-              {essentials.specialization === 'Other' || essentials.specialization === 'OTHER' ? <Input label="Custom specialization" value={essentials.specializationOther} onChange={(event) => setEssential('specializationOther', event.target.value)} required /> : null}
-              <div className="md:col-span-2">
-                <SkillsSelector label="Key skills" value={skills} onChange={setSkills} required />
+              <div className="md:col-span-2 grid gap-2.5">
+                <span className="text-sm font-semibold text-[var(--color-text)]">Is this a walk-in job?</span>
+                <div className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-1">
+                  <button type="button" onClick={() => setEssential('isWalkIn', true)} className={`rounded-[var(--radius-sm)] px-4 py-2 text-sm font-semibold ${essentials.isWalkIn ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-secondary)]'}`}>Yes</button>
+                  <button type="button" onClick={() => setEssential('isWalkIn', false)} className={`rounded-[var(--radius-sm)] px-4 py-2 text-sm font-semibold ${!essentials.isWalkIn ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-secondary)]'}`}>No</button>
+                </div>
+                {essentials.isWalkIn ? <p className="text-xs text-[var(--color-text-muted)]">A dedicated &ldquo;Walk-in &amp; contact&rdquo; stage will collect the drive details.</p> : null}
               </div>
             </div>
             <button type="button" onClick={() => setMoreDetailsOpen((current) => !current)} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-[var(--color-primary)]">
@@ -790,8 +999,7 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
               {moreDetailsOpen ? 'Hide more details' : 'More details'}
             </button>
             {moreDetailsOpen ? (
-              <div className="grid gap-4 border-t border-[var(--color-border)] pt-4 md:grid-cols-2">
-                <Input label="Business unit" value={essentials.businessUnit} onChange={(event) => setEssential('businessUnit', event.target.value)} placeholder="Product Engineering" />
+              <div className="grid items-start gap-4 border-t border-[var(--color-border)] pt-4 md:grid-cols-2">
                 <Input label="Openings" type="number" min="1" value={essentials.numberOfOpenings} onChange={(event) => setEssential('numberOfOpenings', event.target.value)} />
                 <Select label="Post as recruiter" value={essentials.recruiterId} onChange={(event) => setEssential('recruiterId', event.target.value)}>
                   <option value="">Use my recruiter account</option>
@@ -800,10 +1008,6 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
                 <Select label="Hiring manager" value={essentials.hiringManagerId} onChange={(event) => setEssential('hiringManagerId', event.target.value)}>
                   <option value="">Select hiring manager</option>
                   {assignees.map((member) => <option key={member.id} value={member.userId}>{member.user?.email || member.userId}</option>)}
-                </Select>
-                <Select className="md:col-span-2" label="Linked requisition" value={essentials.requisitionId} onChange={(event) => setEssential('requisitionId', event.target.value)}>
-                  <option value="">No linked requisition</option>
-                  {requisitions.map((requisition) => <option key={requisition.id} value={requisition.id}>{requisition.requisitionCode} - {requisition.title}</option>)}
                 </Select>
                 <ApplicationRecipients members={assignees} recruiterEmail={recruiterEmail} />
                 <Input label="Application deadline (optional)" type="datetime-local" value={essentials.applicationDeadline} onChange={(event) => setEssential('applicationDeadline', event.target.value)} helpText="Leave empty to use 31 days from first publication." />
@@ -814,6 +1018,73 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
             ) : null}
             <div className="flex flex-wrap gap-3">
               <Button type="submit" variant="outline" name="status" value="DRAFT" disabled={submitting}>Save draft</Button>
+              <Button type="button" onClick={() => { if (validateDetails()) setActiveStep('requirements'); }}>Continue</Button>
+            </div>
+          </Card>
+        </div>
+
+        <div className={activeStep === 'requirements' ? 'grid gap-5' : 'hidden'}>
+          <Card className="grid gap-5">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-primary)]">Stage {stagePosition('requirements')} of {visibleSteps.length}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--color-text)]">Candidate requirements</h2>
+              <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Who you are looking for. These sharpen matching and the generated job description.</p>
+            </div>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <SearchableSelect label="Education level" name="educationLevelDisplay" value={essentials.minimumQualification} onChange={(value) => setEssential('minimumQualification', value)} options={EDUCATION_OPTIONS} required />
+              <SearchableSelect label="Degree" name="educationCourse" value={essentials.educationCourse} onChange={(value) => setEssential('educationCourse', value)} options={degreeOptions} required />
+              {essentials.educationCourse === 'Other' || essentials.educationCourse === 'OTHER' ? <Input label="Custom degree" value={essentials.educationCourseOther} onChange={(event) => setEssential('educationCourseOther', event.target.value)} required /> : null}
+              <SearchableSelect label="Specialization" name="specialization" value={essentials.specialization} onChange={(value) => setEssential('specialization', value)} options={specializationOptions} required />
+              {essentials.specialization === 'Other' || essentials.specialization === 'OTHER' ? <Input label="Custom specialization" value={essentials.specializationOther} onChange={(event) => setEssential('specializationOther', event.target.value)} required /> : null}
+              <CascadeSelect
+                label="Industry"
+                options={INDUSTRY_TREE}
+                value={essentials.industry || ''}
+                onChange={(next) => setEssential('industry', next || '')}
+                placeholder="Select industry"
+              />
+              <div className="md:col-span-2">
+                <SkillsSelector label="Key skills" value={skills} onChange={setSkills} required />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" variant="outline" onClick={() => setActiveStep('details')}>Back</Button>
+              <Button type="submit" variant="outline" name="status" value="DRAFT" disabled={submitting}>Save draft</Button>
+              {essentials.isWalkIn ? (
+                <Button type="button" onClick={() => { if (validateRequirements()) setActiveStep('walkin'); }}>Continue</Button>
+              ) : (
+                <Button type="button" onClick={handleGenerateJobDescription} disabled={generatingDescription}>
+                  {generatingDescription ? <LoaderCircle className="animate-spin" size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                  Generate job post
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {essentials.isWalkIn ? (
+        <div className={activeStep === 'walkin' ? 'grid gap-5' : 'hidden'}>
+          <Card className="grid gap-5">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-primary)]">Stage {stagePosition('walkin')} of {visibleSteps.length}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--color-text)]">Walk-in &amp; contact</h2>
+              <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Tell candidates when and where to walk in, and who to contact. These show on the public job page.</p>
+            </div>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <Input label="Walk-in start date" type="date" value={essentials.walkInStartDate} onChange={(event) => setEssential('walkInStartDate', event.target.value)} />
+              <Input label="Walk-in end date" type="date" value={essentials.walkInEndDate} onChange={(event) => setEssential('walkInEndDate', event.target.value)} />
+              <Input label="Walk-in timing" value={essentials.walkInTiming} onChange={(event) => setEssential('walkInTiming', event.target.value)} placeholder="e.g. 9:30 AM - 5:30 PM" />
+              <Input label="Contact name" value={essentials.walkInContactName} onChange={(event) => setEssential('walkInContactName', event.target.value)} placeholder="Recruiter name (optional)" />
+              <Input label="Contact mobile number" value={essentials.walkInContactPhone} onChange={(event) => setEssential('walkInContactPhone', event.target.value)} placeholder="+91 ..." helpText="Visible to candidates." />
+              <Input label="Google Maps URL" value={essentials.walkInGoogleMapsUrl} onChange={(event) => setEssential('walkInGoogleMapsUrl', event.target.value)} placeholder="https://maps.google.com/..." />
+              <label className="md:col-span-2 grid gap-2">
+                <span className="text-sm font-semibold text-[var(--color-text)]">Venue address</span>
+                <textarea value={essentials.walkInVenueAddress} onChange={(event) => setEssential('walkInVenueAddress', event.target.value)} rows={3} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm text-[var(--color-text)]" placeholder="Type the venue address candidates should come to" />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" variant="outline" onClick={() => setActiveStep('requirements')}>Back</Button>
+              <Button type="submit" variant="outline" name="status" value="DRAFT" disabled={submitting}>Save draft</Button>
               <Button type="button" onClick={handleGenerateJobDescription} disabled={generatingDescription}>
                 {generatingDescription ? <LoaderCircle className="animate-spin" size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                 Generate job post
@@ -821,6 +1092,7 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
             </div>
           </Card>
         </div>
+        ) : null}
 
         <div className={activeStep === 'draft' ? 'grid gap-5' : 'hidden'}>
           <Card className="grid gap-5">
@@ -830,21 +1102,39 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Every section below is editable. The preview follows the public job page contract, including salary visibility.</p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button type="button" variant="outline" onClick={() => setActiveStep('essentials')}><Pencil size={16} aria-hidden="true" />Edit details</Button>
-                <Button type="button" variant="outline" onClick={handleGenerateJobDescription} disabled={generatingDescription}><RotateCcw size={16} aria-hidden="true" />Regenerate draft</Button>
+                <Button type="button" variant="outline" onClick={() => setActiveStep('details')}><Pencil size={16} aria-hidden="true" />Edit details</Button>
               </div>
             </div>
             {generationError ? <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{generationError}</p> : null}
           </Card>
 
           {hasGenerated || hasCompleteDescription() ? (
-            <CandidatePreview organisationName={organisationName} essentials={{ ...essentials, salaryMin: normalizedSalaryMin, salaryMax: normalizedSalaryMax }} skills={skills} locations={locations} salaryVisible={essentials.salaryVisible} draft={generatedDescription} draftOrigin={draftOrigin} onDraftChange={setDraft} onEditDetails={() => setActiveStep('essentials')} />
+            <CandidatePreview organisationName={organisationName} essentials={{ ...essentials, salaryMin: normalizedSalaryMin, salaryMax: normalizedSalaryMax }} skills={skills} locations={locations} salaryVisible={essentials.salaryVisible} draft={generatedDescription} draftOrigin={draftOrigin} onDraftChange={setDraft} onEditDetails={() => setActiveStep('details')} />
           ) : (
             <Card className="grid gap-3">
               <FileText size={22} aria-hidden="true" className="text-[var(--color-primary)]" />
               <p className="text-sm text-[var(--color-text-secondary)]">Generate a job post or use the manual fallback to preview the candidate-facing page.</p>
             </Card>
           )}
+          {hasGenerated ? (
+            <Card className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} aria-hidden="true" className="text-[var(--color-primary)]" />
+                <h3 className="text-base font-semibold text-[var(--color-text)]">Suggested responsibilities</h3>
+                {suggesting ? <LoaderCircle className="animate-spin" size={14} aria-hidden="true" /> : null}
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)]">Tap a point to add it to Key responsibilities &mdash; a fresh suggestion takes its place.</p>
+              <div className="flex flex-wrap gap-2">
+                {respPool.slice(0, 10).map((item) => (
+                  <button key={item} type="button" onClick={() => addResponsibilitySuggestion(item)} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-3 py-1.5 text-left text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">
+                    <Plus size={13} aria-hidden="true" className="shrink-0" />
+                    <span className="truncate">{item}</span>
+                  </button>
+                ))}
+                {!respPool.length && !suggesting ? <p className="text-xs text-[var(--color-text-muted)]">No more suggestions right now.</p> : null}
+              </div>
+            </Card>
+          ) : null}
           <div className="flex flex-wrap gap-3">
             <Button type="submit" variant="outline" name="status" value="DRAFT" disabled={submitting}>Save draft</Button>
             <Button type="button" onClick={() => setActiveStep('questions')} disabled={!hasCompleteDescription()}>Continue</Button>

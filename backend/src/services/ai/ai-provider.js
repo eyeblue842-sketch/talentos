@@ -86,21 +86,29 @@ const openAiCompatibleSchemaDescription = {
   },
 };
 
-const intelligencePrompt = `Extract candidate resume data into strict JSON.
-Rules:
-- Return valid JSON only.
-- Never invent missing values.
-- Use null when a field is unavailable.
-- Do not infer sensitive or protected attributes.
-- Do not invent salary, employer, dates, or contact details.
-- Respect resume section boundaries.
-- Experience must contain jobs only.
-- Education must contain academic records only.
-- Certifications must contain actual credentials only.
-- Projects must contain project work only.
-- Languages must contain only explicitly stated language data.
-- Ignore declaration text and unsupported personal details.
-- Keep confidence conservative.`;
+const intelligencePrompt = `You are an expert resume parser. Extract candidate data into strict JSON with high precision.
+Output rules:
+- Return valid JSON only (no prose, no markdown fences).
+- Never invent missing values; use null (or [] for lists) when a field is truly unavailable.
+- Do not infer sensitive/protected attributes; do not invent salary, employer, dates, or contact details.
+- Respect resume section boundaries. Ignore declaration text, page headers/footers, and unsupported personal details.
+
+Field rules (follow exactly):
+- fullName: the candidate's actual personal name (2-4 words). NEVER a section heading such as "EXPERIENCE", "SKILLS", "EDUCATION", "PROJECTS", "SUMMARY", "CONTACT", "RESUME", "CURRICULUM VITAE". If no real name is present, use null.
+- email / phoneNumber / linkedInUrl / githubUrl / portfolioUrl: only if explicitly present.
+- currentTitle / currentEmployer: from the most recent job in experience.
+- totalExperience: a single WHOLE NUMBER of total professional years (integer). Estimate from employment dates if not stated; else null. Never a range or text.
+- skills: a FOCUSED list of the candidate's genuine technical/professional COMPETENCIES as SHORT keywords (each 1-3 words, under ~30 characters, e.g. "Java", "AWS", "React", "Kubernetes", "Project Management"). Rules:
+  * Strip any category prefix and keep only the skill: "Programming Languages: C, C++" -> ["C","C++"]; "Databases: MSSQL" -> ["MSSQL"]; "Front-End Libraries: AngularJS" -> ["AngularJS"].
+  * Split combined / comma / semicolon / bullet ("|", dots) lists into individual items, and de-duplicate (case-insensitive).
+  * Return at most ~30 of the most relevant skills — quality over quantity, never pad.
+  * NEVER include: sentences, responsibilities, bullet points or paragraphs; section headings/labels (e.g. "KEY SKILLS", "PROFESSIONAL OVERVIEW", "CERTIFICATION & TRAININGS", "PROFILE", "OBJECTIVE", "DECLARATION"); the candidate's own name; any city/state/country or location; company/employer names; job titles/designations; degrees, universities or certifications; dates/years; awards/achievements.
+- functionalSkills / tools / frameworks / cloudPlatforms / databases / softSkills: same short-keyword rules as skills; use [] when not clearly present; do not repeat items already listed in skills.
+- summary: a concise professional summary (<= 3 sentences) if present.
+- experienceEntries: jobs only — each { title, company, startDate, endDate, isCurrent, location, summary }.
+- educationEntries: academic records only — each { degree, specialization, institution, startYear, endYear }.
+- certificationEntries: real credentials only. projectEntries: project work only. languageEntries: explicitly stated languages only.
+- Keep confidence conservative and calibrated (0..1); low confidence for anything uncertain.`;
 
 function safeJsonParse(value) {
   try {
@@ -131,6 +139,32 @@ function extractJsonPayload(value) {
   return null;
 }
 
+// A real skill/keyword is short (a few words). Sentences, responsibilities and
+// paragraphs that some parses dump into skills arrays are rejected here so they
+// never reach the databank or the confirm form.
+function isKeywordLike(item) {
+  const text = String(item || '').trim();
+  if (!text) return false;
+  if (text.length > 60) return false;
+  if (text.split(/\s+/).length > 6) return false;
+  if (/[.!?;]/.test(text)) return false; // sentence punctuation
+  return true;
+}
+
+function dedupeKeywords(items) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of items) {
+    const text = String(raw).trim();
+    const key = text.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(text);
+    }
+  }
+  return out.slice(0, 100);
+}
+
 function normalizeField(field, fallbackArray = false) {
   if (!field) {
     return { value: fallbackArray ? [] : null, confidence: 0 };
@@ -138,7 +172,7 @@ function normalizeField(field, fallbackArray = false) {
 
   const value = Array.isArray(field.value)
     ? field.value.every((item) => typeof item === 'string')
-      ? field.value.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+      ? dedupeKeywords(field.value.filter((item) => typeof item === 'string' && isKeywordLike(item)).map((item) => item.trim()))
       : field.value.filter((item) => item && typeof item === 'object')
     : typeof field.value === 'string'
       ? field.value.trim() || null
@@ -153,6 +187,32 @@ function normalizeField(field, fallbackArray = false) {
   };
 }
 
+// Resume section headings frequently get mis-detected as the candidate name.
+const NAME_STOPWORDS = new Set([
+  'experience', 'experiences', 'work experience', 'skills', 'technical skills', 'education',
+  'projects', 'project', 'summary', 'objective', 'contact', 'resume', 'curriculum vitae',
+  'cv', 'profile', 'about me', 'declaration', 'certifications', 'achievements', 'career objective',
+]);
+
+function sanitizeParsedName(nameField) {
+  const value = typeof nameField.value === 'string' ? nameField.value.trim() : null;
+  if (!value) return { value: null, confidence: 0, source: nameField.source };
+  const normalized = value.toLowerCase().replace(/\s+/g, ' ');
+  const isHeading = NAME_STOPWORDS.has(normalized)
+    || (value === value.toUpperCase() && value.split(/\s+/).length <= 2 && NAME_STOPWORDS.has(normalized));
+  if (isHeading) {
+    return { value: null, confidence: 0, source: nameField.source };
+  }
+  return nameField;
+}
+
+// Experience is a whole number of years for downstream storage/validation.
+function sanitizeExperienceYears(field) {
+  const num = Number(field.value);
+  if (!Number.isFinite(num)) return { ...field, value: null };
+  return { ...field, value: Math.max(0, Math.min(60, Math.round(num))) };
+}
+
 function normalizeAiParse(parsed) {
   const result = aiResumeParseSchema.safeParse(parsed);
   if (!result.success) {
@@ -164,7 +224,7 @@ function normalizeAiParse(parsed) {
 
   return {
     candidate: {
-      fullName: normalizeField(result.data.candidate.fullName),
+      fullName: sanitizeParsedName(normalizeField(result.data.candidate.fullName)),
       email: normalizeField(result.data.candidate.email),
       phoneNumber: normalizeField(result.data.candidate.phoneNumber),
       linkedInUrl: normalizeField(result.data.candidate.linkedInUrl),
@@ -178,7 +238,7 @@ function normalizeAiParse(parsed) {
       currentCity: normalizeField(result.data.candidate.currentCity),
       currentState: normalizeField(result.data.candidate.currentState),
       currentCountry: normalizeField(result.data.candidate.currentCountry),
-      totalExperience: normalizeField(result.data.candidate.totalExperience),
+      totalExperience: sanitizeExperienceYears(normalizeField(result.data.candidate.totalExperience)),
       summary: normalizeField(result.data.candidate.summary),
       skills: normalizeField(result.data.candidate.skills, true),
       functionalSkills: normalizeField(result.data.candidate.functionalSkills, true),

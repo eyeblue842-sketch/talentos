@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Download,
   Eye,
-  FileArchive,
   FileText,
   LoaderCircle,
   RefreshCcw,
@@ -81,10 +80,22 @@ function joinSkills(skills = []) {
 }
 
 function splitSkills(value = '') {
+  // Drop empties and over-long fragments (the parser sometimes spills whole
+  // sentences into "skills"); the confirm schema caps each skill at 80 chars
+  // and the list at 100, and rejects the entire submission otherwise.
   return String(value)
     .split(',')
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter((item) => item.length >= 1 && item.length <= 80)
+    .slice(0, 100);
+}
+
+// Experience is stored as a whole number; AI parsers emit fractional years
+// (e.g. 7.3), which the confirm schema rejects. Round to the nearest integer.
+function normalizeExperienceYears(value) {
+  if (value === '' || value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
 }
 
 function buildQueryString(params = {}) {
@@ -237,7 +248,8 @@ export function ResumeImportUploadExperience({
   const [errorSummary, setErrorSummary] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [createdBatch, setCreatedBatch] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [resultSummary, setResultSummary] = useState(null);
 
   const totals = useMemo(() => ({
     count: selectedFiles.length,
@@ -298,7 +310,7 @@ export function ResumeImportUploadExperience({
     const { files, errors } = validateFileSelection(fileList);
     setSelectedFiles(files);
     setErrorSummary(errors);
-    setCreatedBatch(null);
+    setResultSummary(null);
   }
 
   function handleFileChange(event) {
@@ -312,8 +324,33 @@ export function ResumeImportUploadExperience({
   function clearAll() {
     setSelectedFiles([]);
     setErrorSummary([]);
-    setCreatedBatch(null);
+    setResultSummary(null);
     if (inputRef.current) inputRef.current.value = '';
+  }
+
+  // Poll the background parse job until it finishes, so the recruiter only ever
+  // sees a single "uploaded / parsed" summary instead of the batch machinery.
+  async function waitForParsingToComplete(batchId) {
+    const terminalStatuses = new Set(['COMPLETED', 'PARTIAL', 'FAILED']);
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let latest = null;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`/api/resume-imports/${batchId}`, { cache: 'no-store' });
+        const body = await response.json().catch(() => ({}));
+        latest = body?.data || latest;
+        const processedAll = latest && latest.totalItemCount != null
+          && latest.processedCount != null
+          && latest.processedCount >= latest.totalItemCount;
+        if (latest && (terminalStatuses.has(latest.status) || processedAll)) {
+          return latest;
+        }
+      } catch {
+        // transient error — keep polling until the deadline
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    }
+    return latest;
   }
 
   function openPicker() {
@@ -370,16 +407,27 @@ export function ResumeImportUploadExperience({
     const formData = new FormData();
     selectedFiles.forEach((item) => formData.append('files', item.file));
 
+    const uploadedCount = selectedFiles.length;
     setUploading(true);
     setUploadProgress(0);
+    setResultSummary(null);
     try {
       const payload = await uploadWithProgress(formData);
-      setCreatedBatch(payload.data);
-      push({
-        tone: 'success',
-        title: 'Batch created',
-        description: `Batch ${payload.data.id} is now processing.`,
-      });
+      const batchId = payload?.data?.id;
+      setUploading(false);
+      setProcessing(true);
+      const finalBatch = batchId ? await waitForParsingToComplete(batchId) : null;
+
+      const parsed = finalBatch?.successCount ?? 0;
+      const review = finalBatch?.reviewCount ?? 0;
+      const duplicates = finalBatch?.duplicateCount ?? 0;
+      const failed = finalBatch?.failedCount ?? 0;
+      const total = finalBatch?.originalFileCount ?? finalBatch?.totalItemCount ?? uploadedCount;
+      setResultSummary({ total, parsed, review, duplicates, failed, settled: Boolean(finalBatch) });
+
+      // Clear the picker so the next upload starts clean.
+      setSelectedFiles([]);
+      if (inputRef.current) inputRef.current.value = '';
       router.refresh();
     } catch (error) {
       const message = getResumeImportErrorMessage(error.code, error.message);
@@ -391,6 +439,7 @@ export function ResumeImportUploadExperience({
       });
     } finally {
       setUploading(false);
+      setProcessing(false);
     }
   }
 
@@ -484,6 +533,13 @@ export function ResumeImportUploadExperience({
           </div>
         ) : null}
 
+        {processing ? (
+          <div className="mt-5 flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-3 text-sm text-[var(--color-text-secondary)]" aria-live="polite">
+            <LoaderCircle size={18} className="animate-spin text-[var(--color-primary)]" aria-hidden="true" />
+            <span>Parsing resumes in the background — this can take a moment. You can wait here for the summary.</span>
+          </div>
+        ) : null}
+
         <div className="mt-6 grid gap-3">
           {selectedFiles.length ? selectedFiles.map((file) => (
             <UploadRow key={file.id} file={file} onRemove={removeFile} />
@@ -497,87 +553,113 @@ export function ResumeImportUploadExperience({
         </div>
       </Card>
 
-      {createdBatch ? (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-emerald-900">
-                <CheckCircle2 size={18} aria-hidden="true" />
-                <h3 className="text-lg font-semibold">Batch created</h3>
-              </div>
-              <p className="text-sm text-emerald-900">
-                Batch reference <span className="font-semibold">{createdBatch.id}</span> was created on {formatDateTime(createdBatch.createdAt)}.
+      <Dialog
+        open={Boolean(resultSummary)}
+        onClose={() => setResultSummary(null)}
+        title="Resumes processed"
+        description={resultSummary?.settled
+          ? 'Here is the summary of your upload.'
+          : 'Still finishing in the background — here is the progress so far.'}
+      >
+        {resultSummary ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-900">
+              <CheckCircle2 size={22} aria-hidden="true" />
+              <p className="text-base font-semibold">
+                {resultSummary.parsed} of {resultSummary.total} resume{resultSummary.total === 1 ? '' : 's'} parsed successfully
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
-              <Button type="button" variant="outline" as="a" href={`${batchHrefPrefix}/${createdBatch.id}`}>Open batch</Button>
-              <Button type="button" variant="primary" as="a" href={historyHref}>View history</Button>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Uploaded</p>
+                <p className="mt-1 text-lg font-semibold text-[var(--color-text)]">{resultSummary.total}</p>
+              </div>
+              <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Parsed</p>
+                <p className="mt-1 text-lg font-semibold text-emerald-700">{resultSummary.parsed}</p>
+              </div>
+              {resultSummary.review ? (
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Needs review</p>
+                  <p className="mt-1 text-lg font-semibold text-amber-700">{resultSummary.review}</p>
+                </div>
+              ) : null}
+              {resultSummary.duplicates ? (
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Duplicates</p>
+                  <p className="mt-1 text-lg font-semibold text-[var(--color-text)]">{resultSummary.duplicates}</p>
+                </div>
+              ) : null}
+              {resultSummary.failed ? (
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Failed</p>
+                  <p className="mt-1 text-lg font-semibold text-rose-700">{resultSummary.failed}</p>
+                </div>
+              ) : null}
+            </div>
+            {resultSummary.review || resultSummary.failed ? (
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                Some resumes could not be parsed automatically (often scanned or image-only PDFs). Open the import list to review them.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setResultSummary(null)}>Upload more</Button>
+              <Button type="button" variant="primary" as="a" href={historyHref}>View imported resumes</Button>
             </div>
           </div>
-        </Card>
-      ) : null}
+        ) : null}
+      </Dialog>
     </div>
   );
 }
 
 export function ResumeImportHistoryExperience({
-  initialItems,
-  initialMeta,
   initialQuery,
-  basePath,
   roleBasePath,
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
   const { push } = useToast();
-  const [loadingBatchId, setLoadingBatchId] = useState(null);
+  const [resumes, setResumes] = useState([]);
+  const [meta, setMeta] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(Number(initialQuery.page) || 1);
   const [query, setQuery] = useState({
     search: initialQuery.search || '',
     status: initialQuery.status || '',
-    createdByUserId: initialQuery.createdByUserId || '',
   });
 
-  function updateRoute(next) {
-    router.push(`${pathname}${buildQueryString(next)}`);
-  }
-
-  async function retryFailed(batchId) {
-    setLoadingBatchId(batchId);
+  async function loadResumes(nextPage = 1, nextQuery = query) {
+    setLoading(true);
     try {
-      const payload = await jsonRequest(`/api/resume-imports/${batchId}/retry-failed`, {
-        method: 'POST',
-        body: JSON.stringify({ includeReviewRequired: false }),
-      });
-      push({
-        tone: 'success',
-        title: 'Retry started',
-        description: `${payload.data.retriedCount} failed item(s) were re-queued.`,
-      });
-      router.refresh();
+      const params = new URLSearchParams();
+      params.set('page', String(nextPage));
+      params.set('pageSize', '20');
+      if (nextQuery.search) params.set('search', nextQuery.search);
+      if (nextQuery.status) params.set('status', nextQuery.status);
+      const payload = await jsonRequest(`/api/resume-imports/resumes?${params.toString()}`);
+      setResumes(payload.data || []);
+      setMeta(payload.meta || null);
+      setPage(nextPage);
     } catch (error) {
       push({
         tone: 'error',
-        title: 'Retry failed',
+        title: 'Could not load resumes',
         description: getResumeImportErrorMessage(error.code, error.message),
       });
     } finally {
-      setLoadingBatchId(null);
+      setLoading(false);
     }
   }
 
-  async function downloadFailureReport(batchId) {
-    setLoadingBatchId(batchId);
-    try {
-      await downloadFromApi(`/api/resume-imports/${batchId}/failure-report`, `resume-import-${batchId}-failures.csv`);
-    } catch (error) {
-      push({
-        tone: 'error',
-        title: 'Download failed',
-        description: getResumeImportErrorMessage(error.code, error.message),
-      });
-    } finally {
-      setLoadingBatchId(null);
-    }
+  useEffect(() => {
+    loadResumes(1, query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Imported resumes become candidate records; unparsed ones are still viewable
+  // as their originally uploaded file.
+  function resumeViewHref(resume) {
+    if (resume.candidateId) return `/api/resumes/candidate/${resume.candidateId}/download`;
+    return `/api/resume-imports/${resume.batchId}/items/${resume.id}/download`;
   }
 
   return (
@@ -585,35 +667,32 @@ export function ResumeImportHistoryExperience({
       <Card>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="grid gap-2">
-            <h2 className="text-xl font-semibold text-[var(--color-text)]">Import history</h2>
-            <p className="text-sm text-[var(--color-text-secondary)]">Review previous bulk-import batches, retry failed records, and open detailed recruiter review screens.</p>
+            <h2 className="text-xl font-semibold text-[var(--color-text)]">Imported resumes</h2>
+            <p className="text-sm text-[var(--color-text-secondary)]">Every resume you have uploaded, with its parse status. Open one to view the original resume.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="outline" onClick={() => router.refresh()}>
+            <Button type="button" variant="outline" onClick={() => loadResumes(page, query)}>
               <RefreshCcw size={16} aria-hidden="true" />
               Refresh
             </Button>
             <Button type="button" as="a" href={roleBasePath}>
               <Upload size={16} aria-hidden="true" />
-              New import
+              Upload resumes
             </Button>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-4">
-          <Input label="Search" value={query.search} onChange={(event) => setQuery((current) => ({ ...current, search: event.target.value }))} placeholder="Batch ID or uploader" />
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <Input label="Search by name" value={query.search} onChange={(event) => setQuery((current) => ({ ...current, search: event.target.value }))} placeholder="Resume file name" />
           <Select label="Status" value={query.status} onChange={(event) => setQuery((current) => ({ ...current, status: event.target.value }))}>
             <option value="">All statuses</option>
-            <option value="QUEUED">Queued</option>
-            <option value="PROCESSING">Processing</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="PARTIAL">Partial</option>
+            <option value="IMPORTED">Parsed</option>
+            <option value="REVIEW_REQUIRED">Needs review</option>
+            <option value="DUPLICATE">Duplicate</option>
             <option value="FAILED">Failed</option>
-            <option value="CANCELLED">Cancelled</option>
           </Select>
-          <Input label="Uploaded by user ID" value={query.createdByUserId} onChange={(event) => setQuery((current) => ({ ...current, createdByUserId: event.target.value }))} placeholder="Optional user ID" />
           <div className="flex items-end gap-3">
-            <Button type="button" className="flex-1" onClick={() => updateRoute({ ...initialQuery, ...query, page: 1 })}>
+            <Button type="button" className="flex-1" onClick={() => loadResumes(1, query)}>
               <Search size={16} aria-hidden="true" />
               Apply filters
             </Button>
@@ -622,54 +701,52 @@ export function ResumeImportHistoryExperience({
       </Card>
 
       <Card>
-        {initialItems.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : resumes.length === 0 ? (
           <EmptyState
-            icon={FileArchive}
-            title="No import batches found"
-            description="Create the first bulk resume import to begin building the talent database."
-            primaryAction={{ href: roleBasePath, label: 'Start import' }}
+            icon={FileText}
+            title="No resumes yet"
+            description="Upload resumes to start building your organisation's databank."
+            primaryAction={{ href: roleBasePath, label: 'Upload resumes' }}
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-[var(--color-border)] bg-[var(--color-bg-muted)] text-[var(--color-text-secondary)]">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Batch reference</th>
-                  <th className="px-4 py-3 font-semibold">Uploaded by</th>
+                  <th className="px-4 py-3 font-semibold">Resume</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Total</th>
-                  <th className="px-4 py-3 font-semibold">Imported</th>
-                  <th className="px-4 py-3 font-semibold">Review</th>
-                  <th className="px-4 py-3 font-semibold">Duplicates</th>
-                  <th className="px-4 py-3 font-semibold">Failed</th>
-                  <th className="px-4 py-3 font-semibold">Completed</th>
-                  <th className="px-4 py-3 font-semibold">Duration</th>
+                  <th className="px-4 py-3 font-semibold">Uploaded</th>
                   <th className="px-4 py-3 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {initialItems.map((batch) => (
-                  <tr key={batch.id} className="border-b border-[var(--color-border)] align-top">
-                    <td className="px-4 py-3 font-semibold text-[var(--color-text)]">{batch.id}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{batch.createdByUserId || 'Unknown'}</td>
-                    <td className="px-4 py-3"><ResumeImportStatusBadge status={batch.status} kind="batch" /></td>
-                    <td className="px-4 py-3">{batch.totalItemCount}</td>
-                    <td className="px-4 py-3">{batch.successCount}</td>
-                    <td className="px-4 py-3">{batch.reviewCount}</td>
-                    <td className="px-4 py-3">{batch.duplicateCount}</td>
-                    <td className="px-4 py-3">{batch.failedCount}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDateTime(batch.completedAt)}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDuration(batch.durationMs)}</td>
+                {resumes.map((resume) => (
+                  <tr key={resume.id} className="border-b border-[var(--color-border)] align-middle">
+                    <td className="px-4 py-3 font-semibold text-[var(--color-text)]">
+                      <div className="flex items-center gap-2">
+                        <FileText size={16} aria-hidden="true" className="text-[var(--color-text-muted)]" />
+                        <span className="max-w-[22rem] truncate">{resume.originalFilename || 'Resume'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3"><ResumeImportStatusBadge status={resume.status} kind="item" /></td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDateTime(resume.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" variant="outline" as="a" href={`${basePath}/${batch.id}`}>View batch</Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => downloadFailureReport(batch.id)} disabled={loadingBatchId === batch.id}>
-                          <Download size={14} aria-hidden="true" />
-                          CSV
+                        <Button type="button" size="sm" variant="outline" as="a" href={resumeViewHref(resume)} target="_blank" rel="noopener noreferrer">
+                          <Eye size={14} aria-hidden="true" />
+                          View resume
                         </Button>
-                        <Button type="button" size="sm" onClick={() => retryFailed(batch.id)} disabled={loadingBatchId === batch.id || batch.failedCount === 0}>
-                          Retry failed
-                        </Button>
+                        {resume.candidateId ? (
+                          <Button type="button" size="sm" variant="ghost" as="a" href={`/recruiter/database/${resume.candidateId}`}>
+                            Open profile
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -679,12 +756,12 @@ export function ResumeImportHistoryExperience({
           </div>
         )}
 
-        {initialMeta ? (
+        {meta && meta.pageCount > 1 ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-secondary)]">
-            <p>Showing page {initialMeta.page} of {initialMeta.pageCount} | {initialMeta.total} batch(es)</p>
+            <p>Showing page {meta.page} of {meta.pageCount} | {meta.total} resume(s)</p>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" disabled={initialMeta.page <= 1} onClick={() => updateRoute({ ...initialQuery, page: initialMeta.page - 1 })}>Previous</Button>
-              <Button type="button" variant="outline" size="sm" disabled={initialMeta.page >= initialMeta.pageCount} onClick={() => updateRoute({ ...initialQuery, page: initialMeta.page + 1 })}>Next</Button>
+              <Button type="button" variant="outline" size="sm" disabled={meta.page <= 1} onClick={() => loadResumes(meta.page - 1, query)}>Previous</Button>
+              <Button type="button" variant="outline" size="sm" disabled={meta.page >= meta.pageCount} onClick={() => loadResumes(meta.page + 1, query)}>Next</Button>
             </div>
           </div>
         ) : null}
@@ -1067,7 +1144,7 @@ export function ResumeImportItemReviewExperience({
           currentTitle: form.currentTitle || null,
           currentEmployer: form.currentEmployer || null,
           location: form.location || null,
-          totalExperience: form.totalExperience === '' ? null : Number(form.totalExperience),
+          totalExperience: normalizeExperienceYears(form.totalExperience),
           summary: form.summary || null,
           skills: splitSkills(form.skills),
           reviewNotes: form.reviewNotes || null,
@@ -1115,7 +1192,7 @@ export function ResumeImportItemReviewExperience({
           currentTitle: form.currentTitle.trim() || null,
           currentEmployer: form.currentEmployer.trim() || null,
           location: form.location.trim() || null,
-          totalExperience: form.totalExperience === '' ? null : Number(form.totalExperience),
+          totalExperience: normalizeExperienceYears(form.totalExperience),
           summary: form.summary.trim() || null,
           skills: splitSkills(form.skills),
         }),

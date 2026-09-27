@@ -133,7 +133,6 @@ export function PublicJobSearchForm({
             { value: 'newest', label: 'Newest' },
             { value: 'oldest', label: 'Oldest' },
             { value: 'closing_date', label: 'Closing date' },
-            { value: 'salary_high', label: 'Salary high to low' },
           ]}
         />
         <div className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-3 shadow-[var(--shadow-sm)]">

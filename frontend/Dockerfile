@@ -12,11 +12,20 @@ WORKDIR /app/frontend
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
+
 WORKDIR /app
+
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+
 COPY --from=builder /app/frontend/.next/standalone ./
-COPY --from=builder /app/frontend/.next/static ./.next/static
-COPY --from=builder /app/frontend/public ./public
+COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
+COPY --from=builder /app/frontend/public ./frontend/public
+
+WORKDIR /app/frontend
+
 EXPOSE 3000
+
 CMD ["node", "server.js"]

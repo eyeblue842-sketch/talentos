@@ -7,8 +7,8 @@ import { Card } from '@/components/ui/card';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getNotifications, getPublicOrganisation, getRecruiterDashboard } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
-import { CompanyAboutSection, CompanyHeaderCard, CompanyInsightsSection, CompanyJobsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
-import { createOrganisationPostAction } from '@/app/recruiter/actions';
+import { CompanyAboutSection, CompanyHeaderCard, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
+import { createOrganisationPostAction, deleteOrganisationPostAction, updateOrganisationPostAction } from '@/app/recruiter/actions';
 import {
   getConversationMessages,
   getMessageConversation,
@@ -22,9 +22,10 @@ import {
   getOrganisationMembers,
   searchNetworkPeople,
 } from '@/lib/api';
+import { MessagesWorkspace } from '@/components/messaging/messages-workspace';
 import { ConnectionsSections } from '@/components/connections/connections-sections';
 
-const COMPANY_TABS = new Set(['home', 'about', 'jobs', 'connections', 'insights']);
+const COMPANY_TABS = new Set(['home', 'about', 'blog', 'jobs', 'connections', 'insights']);
 const CONNECTION_SECTIONS = new Set(['company-people', 'discover', 'my-connections', 'invitations', 'messages']);
 
 function NotificationBell({ unreadCount }) {
@@ -97,7 +98,7 @@ export default async function RecruiterHomePage({ searchParams }) {
 
   const unreadNotificationsCount = (notifications || []).filter((item) => !item.readAt).length;
   const canEditOrganisation = ['OWNER', 'ADMIN'].includes(currentUser?.activeMembership?.role || '');
-  const canCreatePost = ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(currentUser?.activeMembership?.role || '');
+  const canManagePosts = ['OWNER', 'ADMIN'].includes(currentUser?.activeMembership?.role || '');
   const basePath = '/recruiter/home';
 
   const hiringSnapshot = [
@@ -180,12 +181,6 @@ export default async function RecruiterHomePage({ searchParams }) {
                 ) : null}
 
                 <CompanyAboutSection organisation={companyData.organisation} canEdit={canEditOrganisation} preview />
-                <CompanyPostsSection
-                  organisation={companyData.organisation}
-                  posts={companyData.posts}
-                  canManage={canCreatePost}
-                  createPostAction={createOrganisationPostAction}
-                />
                 <CompanyJobsSection jobs={companyData.recentJobs} title="Recent job openings" companyName={companyData.organisation.name} />
                 <CompanyPeoplePreview peopleInsights={companyData.peopleInsights} basePath={basePath} />
                 <CompanyInsightsSection publicInsights={companyData.publicInsights} />
@@ -193,6 +188,16 @@ export default async function RecruiterHomePage({ searchParams }) {
             ) : null}
 
             {activeTab === 'about' ? <CompanyAboutSection organisation={companyData.organisation} canEdit={canEditOrganisation} /> : null}
+            {activeTab === 'blog' ? (
+              <CompanyPostsSection
+                organisation={companyData.organisation}
+                posts={companyData.posts}
+                canManage={canManagePosts}
+                createPostAction={createOrganisationPostAction}
+                updatePostAction={updateOrganisationPostAction}
+                deletePostAction={deleteOrganisationPostAction}
+              />
+            ) : null}
             {activeTab === 'jobs' ? <CompanyJobsSection jobs={companyData.jobs.items} title="Open jobs" companyName={companyData.organisation.name} /> : null}
             {activeTab === 'connections' && connectionData ? (
               <ConnectionsSections

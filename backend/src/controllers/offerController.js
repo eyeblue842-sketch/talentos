@@ -12,6 +12,7 @@ import {
   getOfferPdfByToken,
   getOfferPdfForCandidate,
   getOfferPdfForRecruiter,
+  getOfferDocumentForRecruiter,
   listOffersForApplication,
   rejectCandidateOffer,
   rejectOfferByToken,
@@ -145,6 +146,24 @@ export async function postOfferJoining(req, res, next) {
 
 export async function downloadRecruiterOfferPdf(req, res, next) {
   try {
+    const pdf = await getOfferPdfForRecruiter(req.user, req.params.offerId, req.user.activeMembership?.organisationId, requestMeta(req));
+    sendPdf(res, pdf);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Downloads the merged .docx offer letter (from the template's uploaded document);
+// falls back to the pdfkit PDF when the template has no uploaded document.
+export async function downloadRecruiterOfferDocument(req, res, next) {
+  try {
+    const doc = await getOfferDocumentForRecruiter(req.user, req.params.offerId, req.user.activeMembership?.organisationId, requestMeta(req));
+    if (doc) {
+      res.setHeader('Content-Type', doc.mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`);
+      res.send(doc.buffer);
+      return;
+    }
     const pdf = await getOfferPdfForRecruiter(req.user, req.params.offerId, req.user.activeMembership?.organisationId, requestMeta(req));
     sendPdf(res, pdf);
   } catch (error) {

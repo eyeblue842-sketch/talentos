@@ -254,10 +254,109 @@ async function refreshBatchCounts(batchId, tx = prisma) {
   });
 }
 
+// Skills must be short keywords. Parsers (especially the deterministic fallback on
+// low-quality/OCR text) sometimes dump whole sentences, headings, emails and contact
+// lines into the skills array. Keep only genuine skill-like tokens.
+export function sanitizeSkillList(skills) {
+  if (!Array.isArray(skills)) return [];
+  const seen = new Set();
+  const out = [];
+  const consider = (candidate) => {
+    let skill = String(candidate ?? '').replace(/\s+/g, ' ').trim();
+    if (!skill) return;
+    // "Heading: value" -> keep the value part.
+    if (skill.includes(':')) skill = skill.slice(skill.indexOf(':') + 1).trim();
+    // Strip leading bullets / symbols and any stray leading punctuation.
+    skill = skill.replace(/^[^A-Za-z0-9]+/, '').trim();
+    if (!skill) return;
+    if (/@|https?:\/\/|\d{5,}|[[\]]/.test(skill)) return;         // emails, urls, number runs, date brackets
+    if (/[.!?]$/.test(skill)) return;                             // sentence endings
+    if (skill.length < 1 || skill.length > 35) return;           // too long = a phrase/sentence
+    if (skill.split(/\s+/).length > 4) return;                   // > 4 words = not a skill
+    if ((skill.match(/[A-Za-z]/g) || []).length < 1) return;
+    if (/\b(19|20)\d{2}\b/.test(skill)) return;                  // contains a year -> a date range, not a skill
+    if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(skill)) return; // month/date
+    if (/^(x|xi|xii)th\b/i.test(skill)) return;                  // "Xth"/"XIIth" education levels
+    // Drop ALL-CAPS multi-word headings/names (e.g. "KEY SKILLS", "JOHN DOE").
+    if (skill === skill.toUpperCase() && /\s/.test(skill)) return;
+    // Drop sentence fragments that begin with a connective/filler word.
+    if (/^(and|or|the|with|based|various|of|to|for|in|on|at|as|a|an|is|are|was|were)\b/i.test(skill)) return;
+    const key = skill.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (out.length < 40) out.push(skill);
+  };
+  for (const raw of skills) {
+    // A single entry may actually be several bullet-joined skills.
+    String(raw ?? '').split(/[■•●▪‣·|]/).forEach(consider);
+  }
+  return out;
+}
+
+// Section headings / labels the parser sometimes mistakes for a candidate name.
+const NAME_JUNK_WORDS = new Set([
+  'education', 'experience', 'work experience', 'projects', 'project', 'certifications',
+  'certification', 'skills', 'technical skills', 'summary', 'objective', 'profile',
+  'declaration', 'references', 'achievements', 'languages', 'contact', 'contact details',
+  'personal details', 'personal information', 'hobbies', 'interests', 'resume',
+  'curriculum vitae', 'cv', 'career objective', 'professional summary', 'name',
+]);
+
+function titleCaseName(value) {
+  return String(value || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function nameFromFilename(filename) {
+  const base = String(filename || '').replace(/\.[^./\\]+$/, '');
+  const cleaned = base
+    .replace(/^naukri[_\s-]*/i, '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\d+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned ? titleCaseName(cleaned) : null;
+}
+
+// The parser occasionally returns a section heading ("Education"), a location
+// ("Ghaziabad"), a letterhead acronym ("SRT"), or the name with trailing labels
+// ("... Date of Birth"). Naukri exports embed the real name in the file name, so
+// prefer that whenever the parsed name is junk, and always normalise casing.
+export function resolveCandidateName(parsedName, filename) {
+  let clean = String(parsedName || '').replace(/\s+/g, ' ').trim();
+  // Strip trailing personal-detail labels the parser sometimes glues on.
+  clean = clean.replace(/[\s,;:-]+(date of birth|dob|gender|nationality|marital status|address|email|phone|mobile|contact)\b.*$/i, '').trim();
+  const fromFile = nameFromFilename(filename);
+  const isJunk = !clean || clean.length < 2 || NAME_JUNK_WORDS.has(clean.toLowerCase());
+  // Short ALL-CAPS tokens with no space are usually letterheads/logos, not names.
+  const isLetterhead = /^[A-Z]{2,5}$/.test(clean);
+  if (isJunk || isLetterhead) return fromFile || (isLetterhead ? null : clean) || null;
+  // Normalise ALL-CAPS or all-lowercase names to Title Case.
+  if (clean === clean.toUpperCase() || clean === clean.toLowerCase()) {
+    clean = titleCaseName(clean);
+  }
+  if (clean.split(/\s+/).length < 2 && fromFile && fromFile.split(/\s+/).length >= 2) {
+    return fromFile;
+  }
+  return clean;
+}
+
+function normalizeTotalExperienceYears(value) {
+  const numeric = typeof value === 'number' ? value : Number.parseFloat(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.min(60, Math.round(numeric));
+}
+
 function buildCandidateDataFromParsed(item, overrides = {}) {
   const parsedData = sanitizeResumeData(buildParsedDataPatch(item.parsedData, overrides));
   return sanitizeResumeData({
-    fullName: overrides.fullName || mergeCandidateValue(parsedData, 'fullName', item.sanitizedFilename.replace(getExtension(item.sanitizedFilename), '')),
+    fullName: overrides.fullName || resolveCandidateName(mergeCandidateValue(parsedData, 'fullName'), item.originalFilename || item.sanitizedFilename),
     email: normalizeEmail(overrides.email ?? mergeCandidateValue(parsedData, 'email')),
     phoneNumber: overrides.phoneNumber ?? mergeCandidateValue(parsedData, 'phoneNumber'),
     normalizedPhoneNumber: normalizePhone(overrides.phoneNumber ?? mergeCandidateValue(parsedData, 'phoneNumber')),
@@ -272,19 +371,19 @@ function buildCandidateDataFromParsed(item, overrides = {}) {
     currentCountry: overrides.currentCountry || null,
     postalCode: overrides.postalCode || null,
     summary: overrides.summary ?? mergeCandidateValue(parsedData, 'summary'),
-    totalExperience: overrides.totalExperience ?? 0,
-    skills: overrides.skills ?? mergeCandidateValue(parsedData, 'skills', []),
-    functionalSkills: overrides.functionalSkills ?? [],
-    tools: overrides.tools ?? [],
-    frameworks: overrides.frameworks ?? [],
-    cloudPlatforms: overrides.cloudPlatforms ?? [],
-    databases: overrides.databases ?? [],
-    softSkills: overrides.softSkills ?? [],
-    experienceEntries: overrides.experienceEntries ?? [],
-    educationEntries: overrides.educationEntries ?? [],
-    certificationEntries: overrides.certificationEntries ?? [],
-    languageEntries: overrides.languageEntries ?? [],
-    projectEntries: overrides.projectEntries ?? [],
+    totalExperience: overrides.totalExperience ?? normalizeTotalExperienceYears(mergeCandidateValue(parsedData, 'totalExperience', 0)),
+    skills: sanitizeSkillList(overrides.skills ?? mergeCandidateValue(parsedData, 'skills', [])),
+    functionalSkills: sanitizeSkillList(overrides.functionalSkills ?? mergeCandidateValue(parsedData, 'functionalSkills', [])),
+    tools: sanitizeSkillList(overrides.tools ?? mergeCandidateValue(parsedData, 'tools', [])),
+    frameworks: sanitizeSkillList(overrides.frameworks ?? mergeCandidateValue(parsedData, 'frameworks', [])),
+    cloudPlatforms: sanitizeSkillList(overrides.cloudPlatforms ?? mergeCandidateValue(parsedData, 'cloudPlatforms', [])),
+    databases: sanitizeSkillList(overrides.databases ?? mergeCandidateValue(parsedData, 'databases', [])),
+    softSkills: sanitizeSkillList(overrides.softSkills ?? mergeCandidateValue(parsedData, 'softSkills', [])),
+    experienceEntries: overrides.experienceEntries ?? mergeCandidateValue(parsedData, 'experienceEntries', []),
+    educationEntries: overrides.educationEntries ?? mergeCandidateValue(parsedData, 'educationEntries', []),
+    certificationEntries: overrides.certificationEntries ?? mergeCandidateValue(parsedData, 'certificationEntries', []),
+    languageEntries: overrides.languageEntries ?? mergeCandidateValue(parsedData, 'languageEntries', []),
+    projectEntries: overrides.projectEntries ?? mergeCandidateValue(parsedData, 'projectEntries', []),
     rawResumeText: sanitizeResumeString(item.extractedText || null),
     parserVersion: item.parserVersion || parsedData?.metadata?.parser || null,
     parserMetadata: {
@@ -693,6 +792,41 @@ export async function listResumeImportItems(actorUser, batchId, filters = {}, or
     prisma.resumeImportItem.findMany({
       where,
       orderBy: { [orderField]: direction },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.resumeImportItem.count({ where }),
+  ]);
+
+  return {
+    items: items.map(serializeItem),
+    meta: { page, pageSize, total, pageCount: Math.ceil(total / pageSize) },
+  };
+}
+
+// Flattened list of every uploaded resume for the recruiter's organisation, across
+// all import batches. Powers the batch-free "imported resumes" history view.
+export async function listOrganisationResumeImportItems(actorUser, filters = {}, organisationId = null) {
+  const orgId = organisationId || actorUser?.activeMembership?.organisationId || null;
+  if (!orgId) {
+    throw buildError('An active organisation is required.', 403, 'ORGANISATION_REQUIRED');
+  }
+  const page = Math.max(1, Number(filters.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize || 20)));
+  const where = {
+    organisationId: orgId,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.search ? {
+      OR: [
+        { originalFilename: { contains: filters.search, mode: 'insensitive' } },
+        { sanitizedFilename: { contains: filters.search, mode: 'insensitive' } },
+      ],
+    } : {}),
+  };
+  const [items, total] = await Promise.all([
+    prisma.resumeImportItem.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -1132,6 +1266,65 @@ export async function streamResumeImportItemFile(actorUser, batchId, itemId, org
   };
 }
 
+// Auto-create a candidate from a cleanly-parsed READY item (real identity, no
+// duplicate, no manual-review flag) so good resumes land in the databank + search
+// index immediately, with no manual confirm step. Failures are swallowed so the
+// item simply stays READY for manual confirmation.
+async function autoImportReadyItem(itemId) {
+  const item = await prisma.resumeImportItem.findUnique({ where: { id: itemId } });
+  if (!item || item.status !== 'READY') return;
+  const batch = await prisma.resumeImportBatch.findUnique({
+    where: { id: item.batchId },
+    select: { createdByUserId: true },
+  });
+  const uploaderUserId = batch?.createdByUserId || null;
+  if (!uploaderUserId) return;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const fresh = await tx.resumeImportItem.findUnique({ where: { id: item.id } });
+    if (!fresh || fresh.status !== 'READY') return null;
+
+    // Re-check duplicates inside the transaction before creating.
+    const duplicate = await detectDuplicateCandidate(fresh.organisationId, fresh.parsedData, tx);
+    if (duplicate && !duplicate.suggestedOnly) {
+      const dupItem = await tx.resumeImportItem.update({
+        where: { id: fresh.id },
+        data: {
+          status: 'DUPLICATE',
+          duplicateCandidateId: duplicate.candidate.id,
+          duplicateReason: duplicate.reason,
+          duplicateMatchFields: duplicate.matchFields,
+          requiresManualReview: true,
+        },
+      });
+      return { item: dupItem, candidate: null };
+    }
+
+    const created = await createImportedCandidate(tx, fresh, uploaderUserId, {});
+    const updated = await tx.resumeImportItem.update({
+      where: { id: fresh.id },
+      data: {
+        status: 'IMPORTED',
+        candidateId: created.candidate.id,
+        requiresManualReview: created.profileStatus === 'REVIEW_REQUIRED',
+        resolvedByUserId: uploaderUserId,
+        resolvedAt: new Date(),
+      },
+    });
+    return { item: updated, candidate: created.candidate };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  if (result?.candidate?.id) {
+    await Promise.allSettled([
+      markCandidateIntelligenceStale(result.candidate.id, 'RESUME_IMPORT_AUTO'),
+      enqueueResumeSearchIndexUpsertBestEffort(result.candidate.id, {
+        correlationId: itemId,
+        createdByUserId: uploaderUserId,
+      }),
+    ]);
+  }
+}
+
 export async function processResumeImportItem(itemId, workerId = null, taskId = null) {
   const item = await prisma.resumeImportItem.findUnique({ where: { id: itemId } });
   if (!item) return 'cancelled';
@@ -1287,6 +1480,20 @@ export async function processResumeImportItem(itemId, workerId = null, taskId = 
         metadata: processingMetadata,
       },
     });
+    // Good parses auto-create the candidate + index it immediately (no manual
+    // confirm). Poor/duplicate parses stay REVIEW_REQUIRED/DUPLICATE.
+    if (updated.status === 'READY') {
+      try {
+        await autoImportReadyItem(updated.id);
+      } catch (autoError) {
+        console.log(JSON.stringify({
+          level: 'warn',
+          event: 'resume.import.autoImport.failed',
+          itemId: updated.id,
+          message: String(autoError?.message || autoError).slice(0, 300),
+        }));
+      }
+    }
     await refreshBatchCounts(item.batchId);
     return updated.status === 'FAILED' ? 'cancelled' : 'success';
   } catch (error) {

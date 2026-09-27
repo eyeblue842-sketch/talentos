@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AssociateToJobButton } from '@/components/recruiter/associate-to-job-button';
+import { NviteComposer } from '@/components/recruiter/nvite-composer';
 import { Card } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -340,8 +342,7 @@ function ResultCard({
         <div className="flex w-full flex-wrap gap-2 md:w-auto md:max-w-40 md:justify-end">
           <Button as={Link} href={profileHref} variant="outline" size="sm">View Profile</Button>
           {candidate.resumeAvailable ? <Button as="a" href={`/api/resumes/candidate/${candidate.id}/download`} variant="outline" size="sm"><Download size={14} aria-hidden="true" />View Resume</Button> : null}
-          <Button type="button" variant="outline" size="sm" onClick={() => onSave(candidate.id)}>Save</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => onAddToAts(candidate.id)}>{selectedJobId ? 'Add to Job' : 'Add to ATS'}</Button>
+          <AssociateToJobButton candidateId={candidate.id} candidateName={getResultCandidateName(item)} size="sm" variant="outline" />
         </div>
       </div>
     </Card>
@@ -394,6 +395,7 @@ export function RecruiterSemanticSearchWorkspace({
   const [candidateInsightsStatus, setCandidateInsightsStatus] = useState(null);
   const [matchDetails, setMatchDetails] = useState(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [evidenceState, setEvidenceState] = useState(null);
   const [compareState, setCompareState] = useState(null);
   const [lastPayload, setLastPayload] = useState(null);
@@ -1407,6 +1409,7 @@ export function RecruiterSemanticSearchWorkspace({
                       <>
                         <Button type="button" variant="outline" size="sm" onClick={() => handleResultAction('save', selectedResultIds)}>Save candidates</Button>
                         {selectedJobId ? <Button type="button" variant="outline" size="sm" onClick={() => handleResultAction('addToAts', selectedResultIds)}>Add to Job</Button> : null}
+                        <Button type="button" size="sm" onClick={() => setInviteOpen(true)}>Invite to job</Button>
                       </>
                     ) : null}
                     <Button type="button" variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)} disabled={!hasSearchInputs(formState)}>Save Search</Button>
@@ -1724,6 +1727,17 @@ export function RecruiterSemanticSearchWorkspace({
       />
       <EvidenceDialog state={evidenceState} onClose={() => setEvidenceState(null)} />
       <CompareDialog state={compareState} onClose={() => setCompareState(null)} />
+      <NviteComposer
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        candidates={visibleItems
+          .filter((item) => selectedResultIds.includes(item.candidate.id))
+          .map((item) => ({ id: item.candidate.id, name: getResultCandidateName(item) }))}
+        onSent={() => {
+          setInviteOpen(false);
+          setSelectedResultIds([]);
+        }}
+      />
     </>
   );
 }

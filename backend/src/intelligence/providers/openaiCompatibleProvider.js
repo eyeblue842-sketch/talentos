@@ -24,6 +24,36 @@ function isNativeOpenAiGpt5Model(providerName, model) {
     && /^gpt-5(?:$|[-.])/i.test(String(model || '').trim());
 }
 
+function supportsStrictJsonSchemaResponseFormat(providerName, model) {
+  if (String(providerName || '').toUpperCase() !== 'OPENAI') return false;
+  return /^(gpt-5|gpt-4\.1|gpt-4o|o[134])(?:$|[-.])/i.test(String(model || '').trim());
+}
+
+function isStrictCompatibleSchema(schema) {
+  return Boolean(schema
+    && schema.type === 'object'
+    && schema.additionalProperties === false
+    && schema.properties
+    && Array.isArray(schema.required));
+}
+
+function buildResponseFormatPayload(providerName, model, schema) {
+  if (isStrictCompatibleSchema(schema) && supportsStrictJsonSchemaResponseFormat(providerName, model)) {
+    return {
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'careeriz_job_description',
+          strict: true,
+          schema,
+        },
+      },
+    };
+  }
+
+  return { response_format: { type: 'json_object' } };
+}
+
 function buildTokenLimitPayload(providerName, model, maxOutputTokens) {
   if (!Number.isFinite(maxOutputTokens) || maxOutputTokens <= 0) {
     return {};
@@ -148,6 +178,8 @@ export function createOpenAiCompatibleProvider() {
         try {
           const startedAt = Date.now();
           const model = settings.model || env.intelligenceModel;
+          const strictSchemaEnabled = supportsStrictJsonSchemaResponseFormat(providerName, model)
+            && isStrictCompatibleSchema(schema);
           const result = await withTimeout(callProvider({
             model,
             ...buildSamplingPayload(providerName, model, settings.temperature ?? 0.2),
@@ -157,7 +189,7 @@ export function createOpenAiCompatibleProvider() {
               model,
               settings.maxOutputTokens || env.intelligenceMaxOutputTokens,
             ),
-            response_format: { type: 'json_object' },
+            ...buildResponseFormatPayload(providerName, model, schema),
             messages: [
               {
                 role: 'system',
@@ -165,7 +197,9 @@ export function createOpenAiCompatibleProvider() {
               },
               {
                 role: 'user',
-                content: `${prompt}\n\nReturn strictly valid JSON matching this schema description:\n${JSON.stringify(schema, null, 2)}`,
+                content: strictSchemaEnabled
+                  ? `${prompt}\n\nReturn JSON that conforms exactly to the provided response_format schema.`
+                  : `${prompt}\n\nReturn strictly valid JSON matching this schema description:\n${JSON.stringify(schema, null, 2)}`,
               },
             ],
           }), env.intelligenceTimeoutMs);

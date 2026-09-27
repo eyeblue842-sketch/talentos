@@ -1,7 +1,7 @@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED'];
+const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'OFFER', 'HIRED', 'OFFER_DECLINED', 'REJECTED'];
 const decisionOptions = ['MOVE_NEXT_ROUND', 'REJECT', 'HOLD', 'CANCEL', 'COMPLETE', 'READY_FOR_OFFER'];
 
 function formatDateTime(value) {
@@ -53,8 +53,37 @@ export function RecruiterApplicationDetailView({
   const interviewRounds = buildInterviewRounds(application);
   const primaryRound = interviewRounds[0] || null;
 
+  const recentActivities = (application.activities || []).slice(0, 4);
+  const hasScreening = Boolean(application.answers?.length || application.flags?.length || application.screeningSummary?.totalQuestions);
+
   return (
     <div className="space-y-6">
+      {/* Compact pipeline stage strip + recent activity, replacing the tall timeline cards. */}
+      <Card className="bg-[var(--surface)]">
+        <div className="flex flex-wrap items-center gap-2">
+          {stages.map((stage, index) => {
+            const isCurrent = application.stage === stage;
+            const isPast = stages.indexOf(application.stage) > index && application.stage !== 'REJECTED';
+            return (
+              <div key={stage} className="flex items-center gap-2">
+                <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${isCurrent ? 'bg-[var(--brand)] text-white' : isPast ? 'bg-[var(--soft)] text-[var(--text)]' : 'border border-[var(--line)] text-[var(--muted)]'}`}>
+                  {formatLabel(stage)}
+                </span>
+                {index < stages.length - 1 ? <span className="text-[var(--muted)]">›</span> : null}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-4 space-y-1.5 text-sm">
+          {recentActivities.map((activity) => (
+            <p key={activity.id} className="text-[var(--muted)]">
+              <span className="font-semibold text-[var(--text)]">{formatLabel(activity.eventType || 'Activity')}</span> — {activity.message} <span className="text-xs">({new Date(activity.createdAt).toLocaleString()})</span>
+            </p>
+          ))}
+          {!recentActivities.length ? <p className="text-[var(--muted)]">No activity yet.</p> : null}
+        </div>
+      </Card>
+
       <Card className="bg-[var(--surface)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -376,7 +405,9 @@ export function RecruiterApplicationDetailView({
         <Card>
           <h2 className="font-[var(--font-display)] text-2xl font-semibold">Interview feedback</h2>
           {primaryRound ? (
-            <form action={safeActions.submitInterviewFeedbackAction.bind(null, legacyApplicationId, primaryRound.id)} className="mt-5 grid gap-3 md:grid-cols-2">
+            <details className="mt-4">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--brand)]">Add / edit interview feedback</summary>
+            <form action={safeActions.submitInterviewFeedbackAction.bind(null, legacyApplicationId, primaryRound.id)} className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="text-sm">
                 <span className="mb-1 block font-medium">Recommendation</span>
                 <select name="recommendation" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" defaultValue="HIRE">
@@ -428,6 +459,7 @@ export function RecruiterApplicationDetailView({
                 <button name="finalize" value="true" className="rounded-2xl bg-[var(--brand)] px-5 py-3 font-semibold text-white">Submit feedback</button>
               </div>
             </form>
+            </details>
           ) : (
             <p className="mt-4 text-sm text-[var(--muted)]">Feedback becomes available after the first interview round is created.</p>
           )}
@@ -457,19 +489,7 @@ export function RecruiterApplicationDetailView({
         </Card>
 
         <Card>
-          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Activity timeline</h2>
-          <div className="mt-5 space-y-3">
-            {application.activities?.map((activity) => (
-              <div key={activity.id} className="rounded-2xl border border-[var(--line)] p-3 text-sm">
-                <p className="font-semibold">{activity.eventType || 'ACTIVITY'}</p>
-                <p className="mt-1">{activity.message}</p>
-                <p className="mt-1 text-[var(--muted)]">{activity.actor?.email || 'System'} • {new Date(activity.createdAt).toLocaleString()}</p>
-              </div>
-            ))}
-            {!application.activities?.length ? <p className="text-sm text-[var(--muted)]">No recruiter activity yet.</p> : null}
-          </div>
-
-          <h3 className="mt-6 font-[var(--font-display)] text-xl font-semibold">Interview rounds</h3>
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Interview rounds</h2>
           <div className="mt-3 space-y-3">
             {interviewRounds.map((round) => (
               <div key={round.id} className="rounded-2xl border border-[var(--line)] p-3 text-sm">
@@ -488,6 +508,7 @@ export function RecruiterApplicationDetailView({
         </Card>
       </div>
 
+      {hasScreening ? (
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <Card>
           <h2 className="font-[var(--font-display)] text-2xl font-semibold">Screening answers</h2>
@@ -528,8 +549,9 @@ export function RecruiterApplicationDetailView({
           </div>
         </Card>
       </div>
+      ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <div className="grid gap-6">
         <Card>
           <h2 className="font-[var(--font-display)] text-2xl font-semibold">Recruiter notes</h2>
           <form action={safeActions.addNoteAction.bind(null, legacyApplicationId)} className="mt-5 space-y-3">
@@ -558,30 +580,6 @@ export function RecruiterApplicationDetailView({
               </div>
             ))}
             {!application.notes?.length ? <p className="text-sm text-[var(--muted)]">No recruiter notes yet.</p> : null}
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Submission timeline and metadata</h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--line)] p-4 text-sm">
-              <p className="font-semibold">Application reference</p>
-              <p className="mt-2 text-[var(--muted)]">{application.publicReference}</p>
-            </div>
-            <div className="rounded-2xl border border-[var(--line)] p-4 text-sm">
-              <p className="font-semibold">Submitted at</p>
-              <p className="mt-2 text-[var(--muted)]">{new Date(application.submittedAt).toLocaleString()}</p>
-            </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {application.timeline?.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-[var(--line)] p-3 text-sm">
-                <p className="font-semibold">{item.eventType}</p>
-                <p className="mt-1">{item.message}</p>
-                <p className="mt-1 text-[var(--muted)]">{new Date(item.createdAt).toLocaleString()}</p>
-              </div>
-            ))}
-            {!application.timeline?.length ? <p className="text-sm text-[var(--muted)]">No submission timeline items available.</p> : null}
           </div>
         </Card>
       </div>

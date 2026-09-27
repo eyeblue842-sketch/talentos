@@ -85,7 +85,10 @@ export function buildCandidateCard(candidate, organisationId) {
     educationDetail: latestEducation ? {
       degree: latestEducation.degree || latestEducation.course || null,
       institution: latestEducation.institution || latestEducation.school || null,
-      completionYear: latestEducation.completionYear || latestEducation.endYear || null,
+      completionYear: (() => {
+        const year = Number.parseInt(latestEducation.completionYear ?? latestEducation.endYear ?? '', 10);
+        return Number.isFinite(year) ? year : null;
+      })(),
     } : null,
     resumeAvailable: Boolean(
       (candidate.latestResumeAsset?.kind === 'RESUME' && candidate.latestResumeAsset?.status === 'ACTIVE')

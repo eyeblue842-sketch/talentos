@@ -2,8 +2,11 @@ import {
   addCandidatesToAts,
   applyToJob,
   cancelInterview,
+  createAtsOpening,
+  createCandidateInvite,
   emailCandidatesFromResumeSearch,
   getApplicationDetail,
+  getRecruiterAtsOpenings,
   getRecruiterPipeline,
   updatePipelineStage,
   scheduleInterview,
@@ -14,7 +17,108 @@ import {
   shortlistCandidatesFromResumeSearch,
   tagCandidatesFromResumeSearch,
 } from '../services/atsService.js';
+import {
+  listAssessmentTemplates,
+  createAssessmentTemplate,
+  updateAssessmentTemplate,
+  deleteAssessmentTemplate,
+} from '../services/assessmentTemplateService.js';
+import {
+  listOfferTemplates,
+  createOfferTemplate,
+  updateOfferTemplate,
+  deleteOfferTemplate,
+  uploadOfferTemplateDocument,
+} from '../services/offerTemplateService.js';
 import { sendSuccess } from '../utils/response.js';
+
+export async function getOfferTemplates(req, res, next) {
+  try {
+    const templates = await listOfferTemplates(req.user, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, templates);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postOfferTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const template = await createOfferTemplate(req.user, req.body, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 201, template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function patchOfferTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const template = await updateOfferTemplate(req.user, req.params.templateId, req.body, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 200, template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeOfferTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const result = await deleteOfferTemplate(req.user, req.params.templateId, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postOfferTemplateDocument(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const template = await uploadOfferTemplateDocument(req.user, req.params.templateId, req.file, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 200, template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getAssessmentTemplates(req, res, next) {
+  try {
+    const templates = await listAssessmentTemplates(req.user, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, templates);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postAssessmentTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const template = await createAssessmentTemplate(req.user, req.body, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 201, template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function patchAssessmentTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const template = await updateAssessmentTemplate(req.user, req.params.templateId, req.body, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 200, template);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeAssessmentTemplate(req, res, next) {
+  try {
+    const meta = { ipAddress: req.ip, userAgent: req.get('user-agent') };
+    const result = await deleteAssessmentTemplate(req.user, req.params.templateId, req.user.activeMembership?.organisationId, meta);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function applyForJob(req, res, next) {
   try {
@@ -29,6 +133,39 @@ export async function getPipeline(req, res, next) {
   try {
     const pipeline = await getRecruiterPipeline(req.user, req.query, req.user.activeMembership?.organisationId);
     sendSuccess(res, 200, pipeline.items, { stageGroups: pipeline.stageGroups });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getAtsOpenings(req, res, next) {
+  try {
+    const openings = await getRecruiterAtsOpenings(req.user, req.user.activeMembership?.organisationId);
+    sendSuccess(res, 200, openings);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postAtsOpening(req, res, next) {
+  try {
+    const opening = await createAtsOpening(req.user, req.body, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 201, opening);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postCandidateInvite(req, res, next) {
+  try {
+    const result = await createCandidateInvite(req.user, req.body, req.user.activeMembership?.organisationId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    sendSuccess(res, 201, result);
   } catch (error) {
     next(error);
   }
