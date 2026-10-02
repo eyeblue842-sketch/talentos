@@ -820,6 +820,7 @@ model User {
   directConversationsB                  DirectConversation[]            @relation("DirectConversationParticipantB")
   directMessagesSent                    DirectMessage[]                 @relation("DirectMessageSender")
   organisationPosts                     OrganisationPost[]              @relation("OrganisationPostAuthor")
+  feedPosts                             FeedPost[]                      @relation("FeedPostAuthor")
   purchasesMade                         Purchase[]                      @relation("PurchasePurchaser")
   billingProfilesUpdated                CompanyBillingProfile[]         @relation("BillingProfileUpdatedBy")
   jobCreditLedgerEntriesCreated         JobPostingCreditLedger[]        @relation("JobCreditLedgerCreatedBy")
@@ -950,6 +951,27 @@ model OrganisationPost {
 
   @@index([organisationId, status, publishedAt])
   @@index([authorUserId, createdAt])
+}
+
+enum FeedPostStatus {
+  PUBLISHED
+  ARCHIVED
+}
+
+// A candidate's own feed post (LinkedIn-style). Shown in the candidate feed
+// alongside OrganisationPost entries from companies the candidate follows.
+model FeedPost {
+  id           String         @id @default(cuid())
+  authorUserId String
+  content      String
+  imageUrl     String?
+  status       FeedPostStatus @default(PUBLISHED)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  authorUser   User           @relation("FeedPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([authorUserId, createdAt])
+  @@index([status, createdAt])
 }
 
 model NetworkPrivacySettings {

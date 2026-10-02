@@ -220,12 +220,20 @@ function buildCandidateProfileSectionPayload(formData) {
     case 'career-profile':
       return {
         preferredRoles: collectNormalizedStringArray(formData, 'preferredRoles'),
+        preferredIndustries: collectNormalizedStringArray(formData, 'preferredIndustries'),
+        preferredCompanySizes: collectNormalizedStringArray(formData, 'preferredCompanySizes'),
         preferredLocations: collectNormalizedStringArray(formData, 'preferredLocations'),
+        willingToRelocate: String(formData.get('willingToRelocate')) === 'true',
         workplacePreferences: parseOptionalJsonStringArrayField(formData, 'workplacePreferencesJson') ?? collectMultiValue(formData, 'workplacePreferences'),
         employmentPreferences: parseOptionalJsonStringArrayField(formData, 'employmentPreferencesJson') ?? collectMultiValue(formData, 'employmentPreferences'),
         availability: String(formData.get('availability') || '').trim() || undefined,
         employmentStatus: String(formData.get('employmentStatus') || '').trim() || null,
         noticePeriodDays: normalizeOptionalNumber(formData.get('noticePeriodDays')),
+        minExpectedSalary: normalizeOptionalNumber(formData.get('minExpectedSalary')),
+        preferredCurrency: normalizeOptionalText(formData.get('preferredCurrency')),
+        workAuthorization: normalizeOptionalText(formData.get('workAuthorization')),
+        travelWillingness: normalizeOptionalText(formData.get('travelWillingness')),
+        requiresVisaSponsorship: String(formData.get('requiresVisaSponsorship')) === 'true',
         expectedCtcLpa: normalizeOptionalNumber(formData.get('expectedCtcLpa')),
         profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
       };
@@ -300,23 +308,13 @@ export async function updateCandidateProfileAction(formData) {
 }
 
 export async function updateCandidateSettingsAction(formData) {
+  // NOTE: Role preferences, location/work mode, compensation and work
+  // authorization now live on the candidate Profile (Career profile section),
+  // not in Settings — so they are intentionally NOT sent from here. Sending
+  // them would overwrite the profile-managed values with empty defaults.
   await updateCandidateSettings({
     profileVisibility: String(formData.get('profileVisibility') || 'PRIVATE'),
     recommendationEnabled: formData.get('recommendationEnabled') === 'on',
-    preferredRoles: collectCommaSeparated(formData, 'preferredRoles'),
-    preferredIndustries: collectCommaSeparated(formData, 'preferredIndustries'),
-    preferredCompanySizes: collectCommaSeparated(formData, 'preferredCompanySizes'),
-    preferredLocations: collectCommaSeparated(formData, 'preferredLocations'),
-    willingToRelocate: formData.get('willingToRelocate') === 'on',
-    workplacePreferences: collectMultiValue(formData, 'workplacePreferences'),
-    employmentPreferences: collectMultiValue(formData, 'employmentPreferences'),
-    minExpectedSalary: formData.get('minExpectedSalary') ? Number(formData.get('minExpectedSalary')) : null,
-    preferredCurrency: String(formData.get('preferredCurrency') || ''),
-    availability: String(formData.get('availability') || ''),
-    noticePeriodDays: formData.get('noticePeriodDays') ? Number(formData.get('noticePeriodDays')) : null,
-    workAuthorization: String(formData.get('workAuthorization') || ''),
-    requiresVisaSponsorship: formData.get('requiresVisaSponsorship') === 'on',
-    travelWillingness: String(formData.get('travelWillingness') || ''),
     jobAlertEnabled: formData.get('jobAlertEnabled') === 'on',
     jobAlertFrequency: String(formData.get('jobAlertFrequency') || 'WEEKLY'),
     notifyForSavedJobUpdates: formData.get('notifyForSavedJobUpdates') === 'on',

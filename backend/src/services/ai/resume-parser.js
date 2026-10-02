@@ -40,20 +40,28 @@ function finalizeMergedCandidate(candidate) {
     }
   }
 
-  // Drop tenure markers that slipped into an experience entry's company/employer.
+  // Clean experience entries: strip tenure markers that slipped into a
+  // company/employer, and drop entries that carry no usable content at all
+  // (no company, no title/designation, no dates, no summary) so the candidate's
+  // Employment section is not polluted with empty blocks.
   const experience = result.experienceEntries;
   if (experience && Array.isArray(experience.value)) {
-    result.experienceEntries = {
-      ...experience,
-      value: experience.value.map((item) => {
+    const cleaned = experience.value
+      .map((item) => {
         if (!item || typeof item !== 'object') return item;
         const clean = { ...item };
         for (const key of ['company', 'employer']) {
           if (typeof clean[key] === 'string' && isRolePlaceholderValue(clean[key])) clean[key] = null;
         }
         return clean;
-      }),
-    };
+      })
+      .filter((item) => {
+        if (!item || typeof item !== 'object') return Boolean(item);
+        const meaningful = [item.company, item.employer, item.title, item.designation, item.jobTitle, item.startDate, item.endDate, item.summary, item.description]
+          .some((v) => typeof v === 'string' && v.trim().length > 0);
+        return meaningful;
+      });
+    result.experienceEntries = { ...experience, value: cleaned, confidence: cleaned.length ? experience.confidence : 0 };
   }
 
   return result;

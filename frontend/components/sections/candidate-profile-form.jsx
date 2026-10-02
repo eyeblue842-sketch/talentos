@@ -280,7 +280,15 @@ function buildValues(profile) {
     employmentStatus: profile.employmentStatus || 'EMPLOYED',
     lastWorkingDate: profile.lastWorkingDate ? String(profile.lastWorkingDate).slice(0, 10) : '',
     preferredRoles: commaSeparatedValue(profile.preferredRoles),
+    preferredIndustries: commaSeparatedValue(profile.preferredIndustries),
+    preferredCompanySizes: commaSeparatedValue(profile.preferredCompanySizes),
     preferredLocations: commaSeparatedValue(profile.preferredLocations),
+    willingToRelocate: Boolean(profile.willingToRelocate),
+    minExpectedSalary: profile.minExpectedSalary || '',
+    preferredCurrency: profile.preferredCurrency || '',
+    workAuthorization: profile.workAuthorization || '',
+    travelWillingness: profile.travelWillingness || '',
+    requiresVisaSponsorship: Boolean(profile.requiresVisaSponsorship),
     availability: profile.availability || 'IMMEDIATE',
     profileVisibility: profile.profileVisibility || 'PRIVATE',
     summary: profile.summary || '',
@@ -687,6 +695,8 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
             <div className="grid gap-4 md:grid-cols-2">
               <Input label="Preferred roles" value={values.preferredRoles} onChange={(event) => updateValue('preferredRoles', event.target.value)} error={errors.preferredRoles.error} />
               <Input label="Preferred locations" value={values.preferredLocations} onChange={(event) => updateValue('preferredLocations', event.target.value)} error={errors.preferredLocations.error} />
+              <Input label="Preferred industries" value={values.preferredIndustries} onChange={(event) => updateValue('preferredIndustries', event.target.value)} />
+              <Input label="Preferred company sizes" value={values.preferredCompanySizes} onChange={(event) => updateValue('preferredCompanySizes', event.target.value)} />
               <div className="md:col-span-2">
                 <CtcInputGroup
                   amountLabel="Expected annual CTC"
@@ -718,6 +728,14 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
                 <option value="PUBLIC">Public</option>
               </Select>
               <Input label="Notice period (days)" type="number" min="0" value={values.noticePeriodDays} onChange={(event) => updateValue('noticePeriodDays', event.target.value)} error={errors.noticePeriodDays.error} />
+              <Input label="Minimum expected salary" type="number" min="0" value={values.minExpectedSalary} onChange={(event) => updateValue('minExpectedSalary', event.target.value)} />
+              <Input label="Preferred currency" value={values.preferredCurrency} onChange={(event) => updateValue('preferredCurrency', event.target.value)} />
+              <Input label="Work authorization" value={values.workAuthorization} onChange={(event) => updateValue('workAuthorization', event.target.value)} />
+              <Input label="Travel willingness" value={values.travelWillingness} onChange={(event) => updateValue('travelWillingness', event.target.value)} />
+            </div>
+            <div className="flex flex-wrap gap-6">
+              <Checkbox label="Open to relocation" checked={values.willingToRelocate} onChange={(event) => updateValue('willingToRelocate', event.target.checked)} />
+              <Checkbox label="Requires visa sponsorship" checked={values.requiresVisaSponsorship} onChange={(event) => updateValue('requiresVisaSponsorship', event.target.checked)} />
             </div>
             <div className="grid gap-3">
               <p className="text-sm font-semibold text-[var(--color-text)]">Workplace preferences</p>
@@ -801,7 +819,15 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
       <input type="hidden" name="totalExperience" value={values.totalExperience} />
       <input type="hidden" name="skills" value={skillInput} />
       <input type="hidden" name="preferredRoles" value={values.preferredRoles} />
+      <input type="hidden" name="preferredIndustries" value={values.preferredIndustries} />
+      <input type="hidden" name="preferredCompanySizes" value={values.preferredCompanySizes} />
       <input type="hidden" name="preferredLocations" value={values.preferredLocations} />
+      <input type="hidden" name="willingToRelocate" value={String(values.willingToRelocate)} />
+      <input type="hidden" name="minExpectedSalary" value={values.minExpectedSalary} />
+      <input type="hidden" name="preferredCurrency" value={values.preferredCurrency} />
+      <input type="hidden" name="workAuthorization" value={values.workAuthorization} />
+      <input type="hidden" name="travelWillingness" value={values.travelWillingness} />
+      <input type="hidden" name="requiresVisaSponsorship" value={String(values.requiresVisaSponsorship)} />
       <input type="hidden" name="availability" value={values.availability} />
       <input type="hidden" name="employmentStatus" value={values.employmentStatus} />
       <input type="hidden" name="lastWorkingDate" value={values.lastWorkingDate} />

@@ -20,6 +20,7 @@ import { applicationWorkflowRouter } from './routes/applicationWorkflowRoutes.js
 import { intelligenceRouter } from './routes/intelligenceRoutes.js';
 import { meetingProviderRouter } from './routes/meetingProviderRoutes.js';
 import { socialRouter } from './routes/socialRoutes.js';
+import { feedRouter } from './routes/feedRoutes.js';
 import { setupRouter } from './routes/setupRoutes.js';
 import { resumeImportRouter } from './routes/resumeImportRoutes.js';
 import { networkRouter } from './routes/networkRoutes.js';
@@ -111,6 +112,7 @@ app.use('/api/requisitions', requisitionRouter);
 app.use('/api/interviews', interviewRouter);
 app.use('/api/meeting-providers', meetingProviderRouter);
 app.use('/api/social', socialRouter);
+app.use('/api/feed', feedRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/offers', offerRouter);
 app.use('/api/admin', adminRouter);

@@ -190,6 +190,12 @@ export async function getNetworkConnections(filters = {}) {
   return { items: response.data, meta: response.meta };
 }
 
+export async function getCandidateFeed(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/feed${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data?.items || [], meta: response.data?.meta || {} };
+}
+
 export async function getNetworkReceivedRequests(filters = {}) {
   const token = await requireToken();
   const response = await requestBackend(`/network/requests/received${buildQueryString(filters)}`, { method: 'GET' }, token);

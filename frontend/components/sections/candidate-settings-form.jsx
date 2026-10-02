@@ -34,7 +34,6 @@ export function CandidateSettingsForm({ settings }) {
   }, [state]);
 
   const profileVisibility = fieldState(state, 'profileVisibility');
-  const preferredLocations = fieldState(state, 'preferredLocations');
 
   return (
     <form action={formAction} className="grid gap-6" noValidate>
@@ -49,54 +48,9 @@ export function CandidateSettingsForm({ settings }) {
         </Alert>
       ) : null}
 
-      <FormSection title="Role preferences" description="Tell Careeriz which roles and employers fit your search.">
-        <Input name="preferredRoles" label="Preferred job titles" defaultValue={(settings.preferredRoles || []).join(', ')} />
-        <Input name="preferredIndustries" label="Preferred industries" defaultValue={(settings.preferredIndustries || []).join(', ')} />
-        <Input name="preferredCompanySizes" label="Preferred company sizes" defaultValue={(settings.preferredCompanySizes || []).join(', ')} />
-      </FormSection>
-
-      <FormSection title="Location and work mode" description="Control where and how you want to work.">
-        <Input name="preferredLocations" label="Preferred job locations" defaultValue={(settings.preferredLocations || []).join(', ')} error={preferredLocations.error} />
-        <Checkbox name="willingToRelocate" defaultChecked={settings.willingToRelocate} label="Open to relocation" />
-        <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--color-text)]">Preferred workplace types</legend>
-          <div className="flex flex-wrap gap-4">
-            {['REMOTE', 'HYBRID', 'ONSITE'].map((value) => (
-              <Checkbox key={value} name="workplacePreferences" value={value} defaultChecked={(settings.workplacePreferences || []).includes(value)} label={value.replaceAll('_', ' ')} />
-            ))}
-          </div>
-        </fieldset>
-        <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--color-text)]">Preferred employment types</legend>
-          <div className="flex flex-wrap gap-4">
-            {['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'].map((value) => (
-              <Checkbox key={value} name="employmentPreferences" value={value} defaultChecked={(settings.employmentPreferences || []).includes(value)} label={value.replaceAll('_', ' ')} />
-            ))}
-          </div>
-        </fieldset>
-      </FormSection>
-
-      <FormSection title="Compensation and availability">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Input name="minExpectedSalary" label="Minimum expected salary" type="number" defaultValue={settings.minExpectedSalary || ''} />
-          <Input name="preferredCurrency" label="Preferred currency" defaultValue={settings.preferredCurrency || ''} />
-          <Select name="availability" label="Availability" defaultValue={settings.availability || 'IMMEDIATE'}>
-            <option value="IMMEDIATE">Immediate</option>
-            <option value="TWO_WEEKS">Two weeks</option>
-            <option value="ONE_MONTH">One month</option>
-            <option value="NOT_LOOKING">Not looking</option>
-          </Select>
-          <Input name="noticePeriodDays" label="Notice period in days" type="number" defaultValue={settings.noticePeriodDays || ''} />
-        </div>
-      </FormSection>
-
-      <FormSection title="Work authorization">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Input name="workAuthorization" label="Work authorization" defaultValue={settings.workAuthorization || ''} />
-          <Input name="travelWillingness" label="Travel willingness" defaultValue={settings.travelWillingness || ''} />
-        </div>
-        <Checkbox name="requiresVisaSponsorship" defaultChecked={settings.requiresVisaSponsorship} label="Requires visa sponsorship" />
-      </FormSection>
+      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+        Looking for role preferences, location &amp; work mode, compensation, or work authorization? Those now live on your <a href="/candidate/profile" className="font-semibold text-[var(--color-primary)] underline">Profile</a> under <span className="font-semibold">Career profile</span>.
+      </div>
 
       <FormSection title="Alerts and notifications" description="Control which candidate updates appear in-app.">
         <Select name="profileVisibility" label="Profile visibility" defaultValue={settings.profileVisibility || 'PRIVATE'} error={profileVisibility.error}>
