@@ -50,7 +50,7 @@ export default async function RecruiterDatabasePage({ searchParams }) {
   const resumeSearchV2RolloutEnabled = isResumeSearchV2RolloutEnabledForServer({ user: currentUser, organisation });
   return (
     <WorkspaceShell
-      brand={organisation?.name || 'Careeriz Hire'}
+      brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl}
       items={recruiterNav}
       maxWidthClassName="max-w-none"
       paddingClassName="px-4 py-4 sm:px-6 sm:py-5 lg:px-6 lg:py-6"

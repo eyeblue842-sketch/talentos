@@ -110,7 +110,7 @@ export default async function RecruiterHomePage({ searchParams }) {
   ].filter((item) => typeof item.value === 'number');
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav} sidebarCollapsible>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav} sidebarCollapsible>
       <div className="grid gap-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="grid gap-2">

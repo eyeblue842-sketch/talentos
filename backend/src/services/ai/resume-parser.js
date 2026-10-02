@@ -1,7 +1,63 @@
 import { getResumeAiProviderSelection, parseResumeWithAi } from './ai-provider.js';
-import { buildDeterministicResumeParse, sanitizeParsedCandidateField, sanitizeResumeData, sanitizeResumeString } from '../resumeImportUtils.js';
+import {
+  buildDeterministicResumeParse,
+  isDateLikeValue,
+  isRolePlaceholderValue,
+  isSkillKeywordLike,
+  sanitizeParsedCandidateField,
+  sanitizeResumeData,
+  sanitizeResumeString,
+} from '../resumeImportUtils.js';
 
 export const RESUME_PARSER_VERSION = '3.0.0';
+
+// Scalar role/company fields that must never hold a tenure marker ("Present") or
+// a bare date, whichever parse path (AI or deterministic) produced them.
+const ROLE_SCALAR_FIELDS = ['currentTitle', 'currentDesignation', 'currentEmployer', 'headline'];
+// Skill arrays that must hold short keywords, not run-on competency paragraphs.
+const SKILL_ARRAY_FIELDS = ['skills', 'functionalSkills', 'tools', 'frameworks', 'cloudPlatforms', 'databases', 'softSkills'];
+
+// Final cleanup applied to the merged candidate so the stored profile is clean
+// regardless of which parser produced each field. The AI (intelligence) path and
+// the deterministic path both feed through here before the result is persisted.
+function finalizeMergedCandidate(candidate) {
+  if (!candidate || typeof candidate !== 'object') return candidate;
+  const result = { ...candidate };
+
+  for (const field of ROLE_SCALAR_FIELDS) {
+    const entry = result[field];
+    const value = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
+    if (typeof value === 'string' && (isRolePlaceholderValue(value) || isDateLikeValue(value))) {
+      result[field] = { ...entry, value: null, confidence: 0 };
+    }
+  }
+
+  for (const field of SKILL_ARRAY_FIELDS) {
+    const entry = result[field];
+    if (entry && Array.isArray(entry.value)) {
+      const cleaned = entry.value.filter((item) => typeof item === 'string' && isSkillKeywordLike(item));
+      result[field] = { ...entry, value: cleaned, confidence: cleaned.length ? entry.confidence : 0 };
+    }
+  }
+
+  // Drop tenure markers that slipped into an experience entry's company/employer.
+  const experience = result.experienceEntries;
+  if (experience && Array.isArray(experience.value)) {
+    result.experienceEntries = {
+      ...experience,
+      value: experience.value.map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        const clean = { ...item };
+        for (const key of ['company', 'employer']) {
+          if (typeof clean[key] === 'string' && isRolePlaceholderValue(clean[key])) clean[key] = null;
+        }
+        return clean;
+      }),
+    };
+  }
+
+  return result;
+}
 
 function hasMeaningfulValue(value) {
   if (value == null) return false;
@@ -71,7 +127,7 @@ export async function parseResumeTextDetailed(text, { originalFilename } = {}) {
     return {
       deterministicCandidate: deterministic.candidate,
       aiCandidate: null,
-      mergedCandidate: deterministic.candidate,
+      mergedCandidate: sanitizeResumeData(finalizeMergedCandidate(deterministic.candidate)),
       metadata: sanitizeResumeData({
         ...(deterministic.metadata || {}),
         parserVersion: RESUME_PARSER_VERSION,
@@ -99,7 +155,7 @@ export async function parseResumeTextDetailed(text, { originalFilename } = {}) {
   return {
     deterministicCandidate: deterministic.candidate,
     aiCandidate: aiParsed.candidate,
-    mergedCandidate: sanitizeResumeData(mergedCandidate),
+    mergedCandidate: sanitizeResumeData(finalizeMergedCandidate(mergedCandidate)),
     metadata: sanitizeResumeData({
       ...(deterministic.metadata || {}),
       ...(aiParsed.metadata || {}),

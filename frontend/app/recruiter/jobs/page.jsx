@@ -41,7 +41,7 @@ export default async function RecruiterJobsPage() {
   const assignees = members.filter((member) => ['OWNER', 'ADMIN', 'RECRUITER', 'HIRING_MANAGER'].includes(member.role));
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Recruitment'}
         title="Post a job"

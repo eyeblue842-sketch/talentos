@@ -36,7 +36,7 @@ export default async function RecruiterMembersPage({ searchParams }) {
   const currentUserCanManage = ['OWNER', 'ADMIN'].includes(currentUser?.activeMembership?.role || '');
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Recruiter'}
         title="Organisation members"

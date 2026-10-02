@@ -59,7 +59,7 @@ export default async function RecruiterDatabaseResultsPage({ searchParams }) {
   const resumeSearchV2RolloutEnabled = isResumeSearchV2RolloutEnabledForServer({ user: currentUser, organisation });
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav} sidebarCollapsible>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav} sidebarCollapsible>
       <PageHeader
         eyebrow={organisation?.slug || 'Careeriz Hire'}
         title="Candidate Search Results"

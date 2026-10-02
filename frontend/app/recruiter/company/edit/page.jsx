@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
+import { CompanyLogoUploader } from '@/components/sections/company-logo-uploader';
 import { RecruiterOnboardingForm } from '@/components/sections/recruiter-onboarding-form';
 import { getCurrentUser } from '@/lib/auth';
 import { getRecruiterOnboardingState } from '@/lib/api';
@@ -20,6 +21,15 @@ export default async function RecruiterCompanyEditPage() {
           <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">Company profile</p>
           <h1 className="mt-2 font-[var(--font-display)] text-3xl font-semibold">Edit company profile</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">Update the existing organisation workspace. This never creates a new organisation.</p>
+
+          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-muted)] p-4 sm:flex-row sm:items-center">
+            <CompanyLogoUploader organisation={state?.organisation} canEdit />
+            <div className="grid gap-1">
+              <p className="text-sm font-semibold text-[var(--color-text)]">Company logo</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">Click the logo to upload a new one. PNG, JPG, WEBP or SVG. It appears on your company page, job posts and the workspace sidebar.</p>
+            </div>
+          </div>
+
           <RecruiterOnboardingForm
             edit
             initialValues={{

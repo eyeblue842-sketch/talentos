@@ -23,7 +23,7 @@ export default async function RecruiterResumeImportBatchPage({ params, searchPar
   }
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Candidate management'}
         title={batch ? `Import batch ${batch.id}` : 'Import batch'}

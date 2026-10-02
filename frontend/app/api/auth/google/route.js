@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { getBackendApiBaseUrl } from '@/lib/auth';
 import { safeInternalPath } from '@/lib/roles';
 
 const ALLOWED_ROLES = new Set(['CANDIDATE', 'RECRUITER']);
@@ -32,9 +31,15 @@ export async function GET(request) {
     headers?.get?.('host') ||
     new URL(requestOrigin).host;
 
-  const backendApiBaseUrl = getBackendApiBaseUrl() || process.env.OAUTH_PUBLIC_BASE_URL;
-  const backendUrl = backendApiBaseUrl
-    ? new URL('auth/oauth/google/start', `${backendApiBaseUrl.replace(/\/+$/, '')}/`)
+  // This redirect is followed by the BROWSER, so it must resolve to a
+  // browser-reachable backend URL. getBackendApiBaseUrl() is the server-to-server
+  // base (e.g. the Docker-internal http://backend:5000/api) which the browser
+  // cannot resolve, so it must NOT be used here. OAUTH_PUBLIC_BASE_URL is the
+  // public backend origin provided for exactly this browser-facing OAuth start;
+  // fall back to the request's own forwarded host when it is not set.
+  const publicBackendBase = process.env.OAUTH_PUBLIC_BASE_URL;
+  const backendUrl = publicBackendBase
+    ? new URL('/api/auth/oauth/google/start', `${publicBackendBase.replace(/\/+$/, '')}/`)
     : new URL('/api/auth/oauth/google/start', `${forwardedProto}://${forwardedHost}`);
 
   backendUrl.searchParams.set('role', role);

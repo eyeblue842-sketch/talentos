@@ -392,6 +392,62 @@ test('intelligence-provider parsing invokes the configured AI provider and merge
   assert.equal(Array.isArray(parsed.candidate.experienceEntries.value), true);
 });
 
+test('merged parse clears placeholder employer/title ("Present") and drops run-on skill blobs from AI output', async () => {
+  env.intelligenceEnabled = true;
+  env.intelligenceProvider = 'OPENAI';
+  env.intelligenceModel = 'gpt-test';
+  resetIntelligenceProvider();
+
+  global.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      model: 'gpt-test',
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            candidate: {
+              fullName: { value: 'Vinoj Pillai', confidence: 0.96 },
+              currentEmployer: { value: 'Present', confidence: 0.8 },
+              currentTitle: { value: 'Head HR', confidence: 0.9 },
+              headline: { value: 'Aug 2022', confidence: 0.7 },
+              skills: {
+                value: [
+                  'Strategic HR Leadership Business Partnering (CXO) Workforce Planning Organizational Development',
+                  'Talent Acquisition',
+                  'Node.js',
+                ],
+                confidence: 0.88,
+              },
+              experienceEntries: {
+                value: [{ title: 'Head HR', company: 'Present', startDate: '2022-08', endDate: null }],
+                confidence: 0.8,
+              },
+            },
+            metadata: { parser: 'careeriz-openai-test' },
+          }),
+        },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    }),
+  });
+
+  const parsed = await parseResumeText(
+    'Vinoj Pillai\nHead HR\nvinoj@example.com\n+91 9999999999',
+    { originalFilename: 'vinoj-pillai.pdf' }
+  );
+
+  assert.equal(parsed.candidate.currentEmployer.value, null, 'employer "Present" must be cleared');
+  assert.notEqual(parsed.candidate.headline.value, 'Aug 2022', 'date-like headline must not be stored');
+  assert.equal(parsed.candidate.currentTitle.value, 'Head HR');
+  // The run-on competency blob is dropped; genuine keywords (incl. dotted "Node.js") are kept.
+  assert.equal(parsed.candidate.skills.value.includes('Talent Acquisition'), true);
+  assert.equal(parsed.candidate.skills.value.includes('Node.js'), true);
+  assert.equal(parsed.candidate.skills.value.some((s) => s.split(/\s+/).length > 6), false, 'no run-on skill blobs');
+  // Placeholder company inside experience entries is nulled too.
+  assert.equal(parsed.candidate.experienceEntries.value[0].company, null);
+});
+
 test('AI provider failure falls back to deterministic parsing and records fallback metadata', async () => {
   env.intelligenceEnabled = true;
   env.intelligenceProvider = 'OPENAI';
@@ -671,6 +727,83 @@ test('deterministic parsing keeps section boundaries strict across structured re
   assert.equal(parsed.candidate.cloudPlatforms.value.includes('AWS'), true);
   assert.equal(parsed.candidate.functionalSkills.value.includes('Agile'), true);
   assert.deepEqual(parsed.candidate.portfolioLinks.value, []);
+});
+
+test('deterministic parsing never stores a date as a job title, headline or employer', () => {
+  const parsed = buildDeterministicResumeParse([
+    'Ravi Sharma',
+    'ravi.sharma@example.com',
+    '+91 9876543210',
+    'Experience',
+    '08/2022',
+    'Senior Java Developer at Xportis Global',
+    'Jan 2020 - Present',
+  ].join('\n'), 'ravi-sharma.pdf');
+
+  assert.notEqual(parsed.candidate.currentTitle.value, '08/2022');
+  assert.notEqual(parsed.candidate.headline.value, '08/2022');
+  assert.equal(/^\d/.test(parsed.candidate.currentEmployer.value || ''), false);
+  for (const entry of parsed.candidate.experienceEntries.value) {
+    assert.equal(isDateLikeCheck(entry.title), false, `experience title should not be a date: ${entry.title}`);
+  }
+});
+
+function isDateLikeCheck(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  return (/\d/.test(normalized) && /^[\d/.\-\s–—]+$/.test(normalized));
+}
+
+test('deterministic parsing strips filename decorations ("New", "Resume", "Final") from the name fallback', () => {
+  // No usable name line in the body -> the parser falls back to the file name.
+  const parsed = buildDeterministicResumeParse(
+    'someone@example.com\n+91 9876543210\nSkills\nJava, Spring Boot',
+    'Vinoj Pillai New.pdf',
+  );
+  assert.equal(parsed.candidate.fullName.value, 'Vinoj Pillai');
+
+  const parsedResume = buildDeterministicResumeParse(
+    'someone2@example.com\n+91 9000000000',
+    'Jane Doe Resume Final.pdf',
+  );
+  assert.equal(parsedResume.candidate.fullName.value, 'Jane Doe');
+});
+
+test('deterministic parsing splits a mis-extracted colon-separated language run into individual languages', () => {
+  const parsed = buildDeterministicResumeParse([
+    'Meera Nair',
+    'meera@example.com',
+    '+91 9000000001',
+    'Languages',
+    'English: Hindi:',
+    'Gujarati: Malayalam:',
+  ].join('\n'), 'meera-nair.pdf');
+
+  const languages = parsed.candidate.languageEntries.value.map((entry) => entry.language).sort();
+  assert.deepEqual(languages, ['English', 'Gujarati', 'Hindi', 'Malayalam']);
+  assert.equal(languages.some((language) => /:/.test(language)), false);
+});
+
+test('deterministic parsing drops PDF-extraction gibberish tokens from education and experience summaries', () => {
+  const parsed = buildDeterministicResumeParse([
+    'Sanjay Rao',
+    'sanjay@example.com',
+    '+91 9000000002',
+    'Experience',
+    'Backend Engineer at Acme Labs',
+    'Jan 2021 - Present',
+    'Responsibilities: Built services #HRJ#15 da3524a1b2 reliably.',
+    'Education',
+    'B.Tech in Computer Science',
+    'VTU',
+    '2015 - 2019',
+    'Coursework #HRJ#15 da3524a1b2 in distributed systems.',
+  ].join('\n'), 'sanjay-rao.pdf');
+
+  const expSummaries = parsed.candidate.experienceEntries.value.map((entry) => entry.summary || '').join(' ');
+  const eduSummaries = parsed.candidate.educationEntries.value.map((entry) => entry.summary || '').join(' ');
+  assert.equal(/#HRJ#|da3524a1b2/.test(expSummaries), false);
+  assert.equal(/#HRJ#|da3524a1b2/.test(eduSummaries), false);
 });
 
 test('strict certification sanitization rejects contamination and keeps only real credentials', () => {

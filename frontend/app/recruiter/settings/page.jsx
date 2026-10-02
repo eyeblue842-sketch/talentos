@@ -15,7 +15,7 @@ export default async function RecruiterSettingsPage() {
   }
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Recruiter'}
         title="Organisation settings"

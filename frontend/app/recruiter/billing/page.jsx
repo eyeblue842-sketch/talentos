@@ -48,7 +48,7 @@ function MinimalEntitlementView({ organisation, summary, catalogue }) {
   const remaining = daysRemaining(summary.subscriptionExpiresAt);
 
   return (
-    <WorkspaceShell brand={organisation.name} items={recruiterNav}>
+    <WorkspaceShell brand={organisation.name} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation.slug}
         title="Plan & job credits"
@@ -135,7 +135,7 @@ export default async function RecruiterBillingPage() {
 
   if (loadError || !catalogue || (!dashboard && !summary)) {
     return (
-      <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+      <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
         <PageHeader
           eyebrow="Recruiter"
           title="Billing & subscription"
@@ -159,7 +159,7 @@ export default async function RecruiterBillingPage() {
   const hasNoCreditsAndNoPlan = dashboard.availableJobCredits === 0 && !subscription;
 
   return (
-    <WorkspaceShell brand={organisation.name} items={recruiterNav}>
+    <WorkspaceShell brand={organisation.name} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation.slug}
         title="Billing & subscription"

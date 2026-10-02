@@ -14,7 +14,7 @@ export default async function RecruiterResumeImportHistoryPage({ searchParams })
     : { items: [], meta: null };
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Candidate management'}
         title="Bulk Resume Import History"

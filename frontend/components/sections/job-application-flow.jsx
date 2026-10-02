@@ -271,7 +271,11 @@ export function JobApplicationFlow({ job, resumes, candidate }) {
 
       setSubmission(submitPayload.data);
       setStep(4);
-      router.refresh();
+      // NOTE: do not router.refresh() here. Once the application exists the apply
+      // page's server component re-renders into its "already applied / unavailable"
+      // state, which would unmount this flow and wipe the success screen the
+      // candidate just reached. The success screen's own buttons navigate to
+      // /candidate/applications and /jobs with fresh server data instead.
     });
   }
 

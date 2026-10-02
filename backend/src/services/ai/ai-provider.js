@@ -146,8 +146,15 @@ function isKeywordLike(item) {
   const text = String(item || '').trim();
   if (!text) return false;
   if (text.length > 60) return false;
-  if (text.split(/\s+/).length > 6) return false;
-  if (/[.!?;]/.test(text)) return false; // sentence punctuation
+  const wordCount = text.split(/\s+/).length;
+  if (wordCount > 6) return false;
+  if (/[!?;]/.test(text)) return false; // sentence punctuation
+  // A period is common in valid dotted tech names ("Node.js", "Next.js", ".NET",
+  // "D3.js"), so a bare "." must NOT disqualify a keyword. Only treat a period as
+  // prose when it is followed by whitespace ("... systems. Built ...") or when it
+  // ends a multi-word phrase (a trailing sentence full-stop).
+  if (/\.\s/.test(text)) return false;
+  if (/\.$/.test(text) && wordCount >= 3) return false;
   return true;
 }
 

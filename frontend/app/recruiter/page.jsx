@@ -17,7 +17,7 @@ export default async function RecruiterDashboardPage() {
   const showEmptyState = dashboard.jobsCount === 0 && dashboard.openRequisitions === 0;
 
   return (
-    <WorkspaceShell brand={organisation.name} items={recruiterNav}>
+    <WorkspaceShell brand={organisation.name} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation.slug}
         title="Recruitment overview"

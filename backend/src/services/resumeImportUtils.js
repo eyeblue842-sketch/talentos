@@ -826,6 +826,10 @@ function inferFullName(text, originalFilename) {
       .replace(/[_-]+/g, ' ')
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .replace(/\d+/g, ' ')
+      // Strip common filename decorations that are not part of the person's name
+      // ("Vinoj Pillai New.pdf", "Jane Doe Resume Final.pdf", "John CV v2.pdf").
+      .replace(/\b(resume|cv|curriculum|vitae|profile|bio\s?data|updated|update|final|latest|copy|new|old|draft|revised|version|v\d+)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
       .trim(),
   );
   return fromFile || null;
@@ -1069,11 +1073,89 @@ function looksLikeCountryValue(value) {
   return normalized.split(/\s+/).length <= 3;
 }
 
+// A value that is really a date, month/year token or date range — never a person's
+// job title, employer or headline (e.g. "08/2022", "2019 - 2021", "Jan 2020 - Present").
+export function isDateLikeValue(value) {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) return false;
+  const monthNames = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+  // Pure numeric / slash / dash date tokens: "08/2022", "2019-2021", "12.2020", "2020".
+  if (/\d/.test(normalized) && /^[\d/.\-\s–—]+$/.test(normalized)) return true;
+  // Month-year or month-year ranges with essentially nothing else in the string.
+  if (monthNames.test(normalized)) {
+    const withoutDates = normalized
+      .replace(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi, ' ')
+      .replace(/\b(19|20)\d{2}\b/g, ' ')
+      .replace(/present|current|to|till|[\d/.\-–—]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (withoutDates.length <= 2) return true;
+  }
+  return false;
+}
+
+// Drop obviously-corrupted tokens (PDF-extraction garbage such as "#HRJ#15",
+// hex blobs and replacement chars) from a free-text summary so parsed summaries
+// stay readable instead of carrying raw extraction noise.
+function stripGibberishTokens(value) {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) return null;
+  const cleaned = normalized
+    .split(/\s+/)
+    .filter((token) => {
+      if (/#/.test(token)) return false;
+      if (/[�]/u.test(token)) return false;
+      // Long tokens mixing letters, digits AND symbols are almost always extraction noise.
+      if (token.length >= 6 && /[A-Za-z]/.test(token) && /\d/.test(token) && /[^A-Za-z0-9]/.test(token)) return false;
+      // Long digit-heavy alphanumeric blobs ("da3524a1b2") are IDs/hashes, not words.
+      if (token.length >= 8 && /[A-Za-z]/.test(token) && /\d/.test(token)) {
+        const digits = (token.match(/\d/g) || []).length;
+        if (digits / token.length >= 0.3) return false;
+      }
+      return true;
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || null;
+}
+
+// Placeholder words that are never a real company / job title / headline — they
+// leak in when a parser (including the AI) mistakes a tenure marker for a value,
+// e.g. an employer coming back as "Present" or "Current".
+const ROLE_PLACEHOLDER_VALUES = new Set([
+  'present', 'current', 'currently', 'present employer', 'current employer',
+  'till date', 'to date', 'todate', 'ongoing', 'now', 'n/a', 'na', 'none',
+  'not applicable', 'not available', '-', '—', '–',
+]);
+
+export function isRolePlaceholderValue(value) {
+  const normalized = normalizeWhitespace(value).toLowerCase().replace(/[.:]+$/, '').trim();
+  if (!normalized) return false;
+  return ROLE_PLACEHOLDER_VALUES.has(normalized);
+}
+
+// A real skill is a short keyword, not a sentence or a run-on cluster of several
+// competencies jammed together (which is how designed/HR résumés and some AI
+// outputs dump whole skill paragraphs into one array item).
+export function isSkillKeywordLike(item) {
+  const text = normalizeWhitespace(item);
+  if (!text) return false;
+  if (text.length > 60) return false;
+  if (text.split(/\s+/).length > 6) return false;
+  if (/[!?;]/.test(text)) return false;
+  if (/\.\s/.test(text)) return false;              // period + space → prose
+  if (/\.$/.test(text) && text.split(/\s+/).length >= 3) return false;
+  return true;
+}
+
 function looksLikeJobTitleValue(value) {
   const normalized = normalizeWhitespace(value);
   if (!normalized) return false;
   if (normalized.length > FIELD_MAX_LENGTHS.currentTitle) return false;
   if (/@|https?:\/\//i.test(normalized)) return false;
+  if (isDateLikeValue(normalized)) return false;
+  if (isRolePlaceholderValue(normalized)) return false;
   if (/[:,]/.test(normalized) && !/\|/.test(normalized)) return false;
   if (/\b(email|e-mail|phone|mobile|address|declaration|details|task performed|environment setup)\b/i.test(normalized)) return false;
   if (normalized.split(/\s+/).length > 12) return false;
@@ -1086,6 +1168,8 @@ function looksLikeOrganisationValue(value) {
   if (!normalized) return false;
   if (normalized.length > FIELD_MAX_LENGTHS.currentEmployer) return false;
   if (/@|https?:\/\//i.test(normalized)) return false;
+  if (isDateLikeValue(normalized)) return false;
+  if (isRolePlaceholderValue(normalized)) return false;
   if (/\b(summary|responsibilities|declaration|project|environment|task performed|details|work experience|education|skills)\b/i.test(normalized)) return false;
   if (normalized.split(/\s+/).length > 10) return false;
   if (!/^[A-Za-z0-9&.,'() -]+$/.test(normalized)) return false;
@@ -1100,6 +1184,8 @@ function looksLikeHeadlineValue(value) {
   if (!normalized) return false;
   if (normalized.length > FIELD_MAX_LENGTHS.headline) return false;
   if (/@|https?:\/\//i.test(normalized)) return false;
+  if (isDateLikeValue(normalized)) return false;
+  if (isRolePlaceholderValue(normalized)) return false;
   if (/\b(e-mail|email|phone|mobile|address|declaration|details|work experience|education)\b/i.test(normalized)) return false;
   if (looksLikeOrganisationValue(normalized) && !looksLikeJobTitleValue(normalized)) return false;
   if (looksLikeJobTitleValue(normalized)) return true;
@@ -1348,23 +1434,29 @@ function parseHeaderTitleCompany(line) {
   const value = String(line || '').trim();
   if (!value) return { title: null, company: null };
 
+  // A date/date-range is never a title or company name.
+  const scalar = (raw) => {
+    const cleaned = sanitizeCandidateScalar(raw);
+    return cleaned && !isDateLikeValue(cleaned) ? cleaned : null;
+  };
+
   const atMatch = value.match(/^(.+?)\s+at\s+(.+)$/i);
   if (atMatch) {
     return {
-      title: sanitizeCandidateScalar(atMatch[1]),
-      company: sanitizeCandidateScalar(atMatch[2]),
+      title: scalar(atMatch[1]),
+      company: scalar(atMatch[2]),
     };
   }
 
   const parts = splitBySeparators(value);
   if (parts.length >= 2) {
     return {
-      title: sanitizeCandidateScalar(parts[0]),
-      company: sanitizeCandidateScalar(parts[1]),
+      title: scalar(parts[0]),
+      company: scalar(parts[1]),
     };
   }
 
-  return { title: sanitizeCandidateScalar(value), company: null };
+  return { title: scalar(value), company: null };
 }
 
 function parseExperienceEntries(lines = []) {
@@ -1385,11 +1477,11 @@ function parseExperienceEntries(lines = []) {
         .filter((line) => /^(technologies|technology|tools|stack|environment)\s*:/i.test(line))
         .map((line) => stripLeadingLabel(line, ['technologies', 'technology', 'tools', 'stack', 'environment']))
     );
-    const summary = normalizeWhitespace(chunk
+    const summary = stripGibberishTokens(chunk
       .filter((line) => ![headerLine, dateLine, locationLine].includes(line))
       .filter((line) => !/^(project|domain|technologies|technology|tools|stack|environment)\s*:/i.test(line))
       .map((line) => stripLeadingLabel(line, ['responsibilities', 'summary']))
-      .join(' ')) || null;
+      .join(' '));
 
     return {
       company: company || null,
@@ -1464,7 +1556,7 @@ function parseEducationEntries(lines = []) {
       score: scoreMatch?.[2] || null,
       location: locationLine,
       educationType: /\b(class\s*(x|xii|10|12)|school)\b/i.test(degree) ? 'SCHOOL' : 'COLLEGE',
-      summary: normalizeWhitespace(chunk.filter((line) => ![degreeLine, institutionLine, locationLine].includes(line)).join(' ')) || null,
+      summary: stripGibberishTokens(chunk.filter((line) => ![degreeLine, institutionLine, locationLine].includes(line)).join(' ')),
     };
   }).filter(Boolean).filter((entry) => entry.degree || entry.institution), (entry) => JSON.stringify([entry.degree, entry.institution, entry.year]));
 }
@@ -1579,8 +1671,27 @@ function parseLanguageEntries(lines = []) {
       continue;
     }
 
+    // No "language - proficiency" pairs matched. The item may still be a run of bare
+    // language names separated by colons / slashes / semicolons — e.g. a mis-extracted
+    // "English: Hindi: Gujarati: Malayalam:" line. Split it into individual languages
+    // and drop empty or punctuation-only fragments so we don't store the whole run-on
+    // string as a single "language".
+    const bareLanguages = item
+      .split(/[:;/|]+/)
+      .map((part) => normalizeWhitespace(part).replace(/[-:;]+$/, '').trim())
+      .filter((part) => part && part.length <= 40 && /^[A-Za-z][A-Za-z ()'-]*$/.test(part));
+
+    if (bareLanguages.length) {
+      for (const language of bareLanguages) {
+        entries.push({ language, name: language, proficiency: null, read: null, write: null, speak: null });
+      }
+      continue;
+    }
+
     const language = normalizeWhitespace(item);
-    entries.push({ language, name: language, proficiency: null, read: null, write: null, speak: null });
+    if (language) {
+      entries.push({ language, name: language, proficiency: null, read: null, write: null, speak: null });
+    }
   }
 
   return uniqueBy(entries.filter((entry) => entry.language && !/\b(declaration|passport|nationality)\b/i.test(entry.language)), (entry) => entry.language.toLowerCase());

@@ -49,7 +49,7 @@ export default async function RecruiterAtsPage({ searchParams }) {
   const selectedOpening = (openings || []).find((opening) => opening.id === selectedJobId) || null;
 
   return (
-    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} items={recruiterNav}>
+    <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
       <PageHeader
         eyebrow={organisation?.slug || 'Recruiter'}
         title="ATS Pipeline"

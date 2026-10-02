@@ -13,6 +13,7 @@ import { GlobalMessageLink } from '@/components/messaging/global-message-link';
 // display-only and is never a substitute for server authorization.
 export function CareerizAppShell({
   brand,
+  brandLogoUrl = null,
   items,
   children,
   className,
@@ -56,6 +57,7 @@ export function CareerizAppShell({
     >
       <Sidebar
         brand={brand}
+        brandLogoUrl={brandLogoUrl}
         items={items}
         profileLinks={sidebarProfileLinks}
         defaultProfileExpanded={defaultProfileExpanded}

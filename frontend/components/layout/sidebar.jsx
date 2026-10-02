@@ -71,7 +71,7 @@ const iconMap = {
   WalletCards,
 };
 
-export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpanded = false, collapsible = false }) {
+export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], defaultProfileExpanded = false, collapsible = false }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -312,7 +312,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
           <DropdownMenu
             trigger={(
               <Button variant="ghost" size="icon" aria-label="Open profile menu">
-                <Avatar size="sm" name={brand} />
+                <Avatar src={brandLogoUrl} size="sm" name={brand} />
               </Button>
             )}
             items={[
@@ -359,7 +359,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
               railExpanded && 'invisible',
             )}
           >
-            <Avatar name={brand} size="sm" />
+            <Avatar src={brandLogoUrl} name={brand} size="sm" />
             <button
               type="button"
               aria-expanded={railExpanded}
@@ -430,7 +430,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
-                  <Avatar name={brand} size="md" />
+                  <Avatar src={brandLogoUrl} name={brand} size="md" />
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-text-muted)]">Careeriz</p>
                     <h2 className="truncate text-xl font-semibold text-[var(--color-text)]">{brand}</h2>
@@ -457,7 +457,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
               <div className="mt-auto grid gap-3 pt-6">
                 <div className="flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-3">
                   <div className="flex items-center gap-3">
-                    <Avatar name={brand} size="sm" />
+                    <Avatar src={brandLogoUrl} name={brand} size="sm" />
                     <div>
                       <p className="text-sm font-semibold text-[var(--color-text)]">{brand}</p>
                       <p className="text-xs text-[var(--color-text-muted)]">AI-Powered Talent Intelligence Platform</p>
@@ -486,7 +486,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
       ) : (
         <aside className="hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/88 p-5 shadow-[var(--shadow-lg)] backdrop-blur lg:flex lg:min-h-[calc(100vh-4rem)] lg:flex-col">
           <div className="flex items-center gap-3">
-            <Avatar name={brand} size="md" />
+            <Avatar src={brandLogoUrl} name={brand} size="md" />
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-text-muted)]">Careeriz</p>
               <h2 className="truncate text-xl font-semibold text-[var(--color-text)]">{brand}</h2>
@@ -499,7 +499,7 @@ export function Sidebar({ brand, items, profileLinks = [], defaultProfileExpande
           <div className="mt-auto grid gap-3 pt-6">
             <div className="flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-3">
               <div className="flex items-center gap-3">
-                <Avatar name={brand} size="sm" />
+                <Avatar src={brandLogoUrl} name={brand} size="sm" />
                 <div>
                   <p className="text-sm font-semibold text-[var(--color-text)]">{brand}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">AI-Powered Talent Intelligence Platform</p>
