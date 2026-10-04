@@ -1,6 +1,7 @@
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Badge } from '@/components/ui/badge';
 import { CandidateProfilePageContent } from '@/components/sections/candidate-profile-page-content';
+import { CandidateProfileSectionNav } from '@/components/candidate/candidate-profile-section-nav';
 import { candidateNav } from '@/lib/navigation';
 import { getCandidateProfile } from '@/lib/api';
 import { PageHeader } from '@/components/ui/page-header';
@@ -20,6 +21,7 @@ export default async function CandidateProfilePage() {
     { id: 'certifications', label: 'Certifications', href: '#certifications' },
     { id: 'career-profile', label: 'Career Profile', href: '#career-profile' },
     { id: 'personal-details', label: 'Personal Details', href: '#personal-details' },
+    { id: 'privacy', label: 'Privacy', href: '#privacy' },
   ];
 
   return (
@@ -36,6 +38,7 @@ export default async function CandidateProfilePage() {
         />
         <Badge tone="brand">{completion.percentage}% complete</Badge>
       </div>
+      <CandidateProfileSectionNav links={profileLinks} />
       <CandidateProfilePageContent
         profile={profile}
         snapshot={snapshot}

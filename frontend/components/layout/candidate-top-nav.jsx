@@ -25,6 +25,7 @@ const PRIMARY_LINKS = [
   { label: 'Jobs', href: '/candidate/jobs', icon: Search, match: ['/candidate/jobs', '/candidate/saved-jobs', '/candidate/applications', '/candidate/interviews', '/candidate/offers'] },
   { label: 'Network', href: '/candidate/network', icon: Users, match: ['/candidate/network', '/candidate/messages'] },
   { label: 'Resumes', href: '/candidate/resumes', icon: FilePenLine, match: ['/candidate/resumes'] },
+  { label: 'Profile', href: '/candidate/profile', icon: User, match: ['/candidate/profile'] },
 ];
 
 function isActive(pathname, matches) {
