@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
@@ -35,11 +36,23 @@ export default async function CandidateJobsPage({ searchParams }) {
         <Card className="rounded-[30px] bg-white p-6 shadow-[0_18px_48px_rgba(16,36,24,0.07)]">
           <h2 className="font-[var(--font-display)] text-3xl font-semibold tracking-tight">Recommended for you</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">{recommendations.prompt || 'Based on your current profile and public job availability.'}</p>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {recommendations.recommendedJobs.map((job) => (
-              <PublicJobCard key={job.id} job={job} saveAction={saveJobAction} unsaveAction={unsaveJobAction} redirectTo="/candidate/jobs" />
-            ))}
-          </div>
+          {recommendations.recommendedJobs.length ? (
+            <ul className="mt-5 divide-y divide-[var(--line)]">
+              {recommendations.recommendedJobs.map((job) => (
+                <li key={job.id}>
+                  <Link
+                    href={`/jobs/${job.slug}`}
+                    className="flex items-center justify-between gap-3 py-3 text-lg font-semibold text-[var(--color-primary)] transition hover:underline"
+                  >
+                    <span>{job.title}</span>
+                    <span aria-hidden="true" className="text-[var(--muted)]">→</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-5 text-sm text-[var(--muted)]">No recommendations yet. Add your skills and preferred roles for better matches.</p>
+          )}
         </Card>
 
         <div className="grid gap-5 lg:grid-cols-2">
