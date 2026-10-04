@@ -2,21 +2,39 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
+import { CandidateJobActivity } from '@/components/candidate/candidate-job-activity';
 import { PaginationNav } from '@/components/sections/pagination-nav';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobSearchForm } from '@/components/sections/public-job-search-form';
 import { Card } from '@/components/ui/card';
-import { getCandidateRecommendations, getPublicJobs } from '@/lib/api';
+import {
+  getCandidateApplications,
+  getCandidateInterviews,
+  getCandidateOffers,
+  getCandidateRecommendations,
+  getCandidateSavedJobs,
+  getPublicJobs,
+} from '@/lib/api';
 import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
 import { buildPathWithQuery, withPage } from '@/lib/query';
 
 export default async function CandidateJobsPage({ searchParams }) {
   const params = await searchParams;
-  const [jobs, recommendations] = await Promise.all([
+  const [jobs, recommendations, savedJobs, applications, interviews, offers] = await Promise.all([
     getPublicJobs(params || {}),
     getCandidateRecommendations(),
+    getCandidateSavedJobs({ pageSize: 1 }).catch(() => ({ items: [], meta: {} })),
+    getCandidateApplications({ pageSize: 1 }).catch(() => ({ items: [], meta: {} })),
+    getCandidateInterviews().catch(() => []),
+    getCandidateOffers().catch(() => []),
   ]);
+  const activityCounts = {
+    saved: savedJobs?.meta?.total ?? savedJobs?.items?.length ?? 0,
+    applications: applications?.meta?.total ?? applications?.items?.length ?? 0,
+    interviews: Array.isArray(interviews) ? interviews.length : 0,
+    offers: Array.isArray(offers) ? offers.length : 0,
+  };
   if (String(params?.page || '1') !== String(jobs.meta.page)) {
     redirect(buildPathWithQuery('/candidate/jobs', withPage(params || {}, jobs.meta.page)));
   }
@@ -32,6 +50,13 @@ export default async function CandidateJobsPage({ searchParams }) {
             <PublicJobSearchForm action="/candidate/jobs" searchParams={params || {}} />
           </div>
         </Card>
+
+        <CandidateJobActivity
+          saved={activityCounts.saved}
+          applications={activityCounts.applications}
+          interviews={activityCounts.interviews}
+          offers={activityCounts.offers}
+        />
 
         <Card className="rounded-[30px] bg-white p-6 shadow-[0_18px_48px_rgba(16,36,24,0.07)]">
           <h2 className="font-[var(--font-display)] text-3xl font-semibold tracking-tight">Recommended for you</h2>
@@ -55,10 +80,14 @@ export default async function CandidateJobsPage({ searchParams }) {
           )}
         </Card>
 
-        <div className="grid gap-5 lg:grid-cols-2">
-          {jobs.items.map((job) => (
-            <PublicJobCard key={job.id} job={job} saveAction={saveJobAction} unsaveAction={unsaveJobAction} redirectTo={redirectTo} />
-          ))}
+        <div>
+          <h2 className="font-[var(--font-display)] text-3xl font-semibold tracking-tight">All open jobs</h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Browse every open role — search or filter above to narrow it down.</p>
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            {jobs.items.map((job) => (
+              <PublicJobCard key={job.id} job={job} saveAction={saveJobAction} unsaveAction={unsaveJobAction} redirectTo={redirectTo} />
+            ))}
+          </div>
         </div>
         <PaginationNav basePath="/candidate/jobs" params={params || {}} meta={jobs.meta} />
     </CareerizAppShell>
