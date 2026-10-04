@@ -538,15 +538,9 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
                   sizeClassName="h-24 w-24"
                 />
                 <div className="flex flex-col gap-3">
-                  <input
-                    ref={profilePhotoInputRef}
-                    type="file"
-                    name="profilePhoto"
-                    accept={PROFILE_PHOTO_ACCEPT}
-                    aria-label="Upload profile photo"
-                    className="sr-only"
-                    onChange={handleProfilePhotoChange}
-                  />
+                  {/* NOTE: the real file <input name="profilePhoto"> lives inside the
+                      <form> (outside this portaled Dialog) so the file is actually
+                      submitted; this button just triggers it via the shared ref. */}
                   <div className="flex flex-wrap gap-3">
                     <Button type="button" variant="secondary" onClick={() => profilePhotoInputRef.current?.click()}>
                       {profilePhoto.previewUrl || profilePhoto.currentPhotoSrc ? 'Change photo' : 'Upload photo'}
@@ -839,6 +833,18 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
       <input type="hidden" name="linkedInUrl" value={values.linkedInUrl} />
       <input type="hidden" name="githubUrl" value={values.githubUrl} />
       <input type="hidden" name="profilePhotoAction" value={profilePhoto.action} />
+      {/* Kept inside the form (not in the portaled Dialog) so the selected file is
+          part of the form submission. Triggered from the Dialog's "Upload photo". */}
+      <input
+        ref={profilePhotoInputRef}
+        type="file"
+        name="profilePhoto"
+        accept={PROFILE_PHOTO_ACCEPT}
+        aria-label="Upload profile photo"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={handleProfilePhotoChange}
+      />
       <input type="hidden" name="profileVisibility" value={values.profileVisibility} />
       <input type="hidden" name="workplacePreferencesJson" value={JSON.stringify(workplacePreferences)} />
       <input type="hidden" name="employmentPreferencesJson" value={JSON.stringify(employmentPreferences)} />
