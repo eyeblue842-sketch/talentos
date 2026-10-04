@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
-import { candidateNav } from '@/lib/navigation';
+import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
+import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
 import { getCandidateOffers } from '@/lib/api';
 
 function offerCard(item) {
@@ -40,6 +41,7 @@ export default async function CandidateOffersPage() {
         description="Track active offers, responses, expiry, superseded history, and joining-status continuity from the Milestone 4 offer lifecycle."
         breadcrumb={[{ label: 'Candidate' }, { label: 'Offers' }]}
       />
+      <CandidateSectionTabs tabs={candidateJobsTabs} />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="space-y-4">

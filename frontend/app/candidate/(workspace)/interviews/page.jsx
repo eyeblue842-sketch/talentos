@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
-import { candidateNav } from '@/lib/navigation';
+import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
+import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
 import { getCandidateInterviews } from '@/lib/api';
 import { requestInterviewRescheduleAction, withdrawInterviewRescheduleAction } from '@/app/candidate/actions';
 
@@ -99,6 +100,7 @@ export default async function CandidateInterviewsPage() {
         description="Review upcoming, completed, cancelled, and rescheduled interviews using the live Milestone 3 interview data."
         breadcrumb={[{ label: 'Candidate' }, { label: 'Interviews' }]}
       />
+      <CandidateSectionTabs tabs={candidateJobsTabs} />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="space-y-4">

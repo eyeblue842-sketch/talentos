@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation';
 import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
+import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
 import { PaginationNav } from '@/components/sections/pagination-nav';
 import { PublicJobCard } from '@/components/sections/public-job-card';
 import { PublicJobSearchForm } from '@/components/sections/public-job-search-form';
 import { Card } from '@/components/ui/card';
 import { getCandidateRecommendations, getPublicJobs } from '@/lib/api';
-import { candidateNav } from '@/lib/navigation';
+import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
 import { saveJobAction, unsaveJobAction } from '@/app/candidate/actions';
 import { buildPathWithQuery, withPage } from '@/lib/query';
 
@@ -22,6 +23,7 @@ export default async function CandidateJobsPage({ searchParams }) {
 
   return (
     <CareerizAppShell brand="Careeriz" items={candidateNav}>
+        <CandidateSectionTabs tabs={candidateJobsTabs} />
         <Card className="rounded-[32px] bg-[var(--surface)] p-6 shadow-[0_20px_60px_rgba(16,36,24,0.08)] md:p-7">
           <h1 className="font-[var(--font-display)] text-4xl font-semibold tracking-tight">Browse jobs</h1>
           <p className="mt-3 text-sm leading-7 text-[var(--muted)]">Search the public job market, save roles, and compare them against deterministic recommendations.</p>

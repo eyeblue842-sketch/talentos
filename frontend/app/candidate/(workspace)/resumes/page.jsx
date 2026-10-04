@@ -14,8 +14,8 @@ export default async function CandidateResumesPage() {
     <WorkspaceShell brand="Careeriz" items={candidateNav}>
       <PageHeader
         eyebrow="Candidate resumes"
-        title="Manage resumes and external builder access"
-        description="Upload resumes for applications, choose a primary version, and open the standalone Resume Builder through a safe integration boundary."
+        title="Manage your resumes"
+        description="Upload a resume for applications, choose a primary version, and let Careeriz parse it to fill your profile automatically."
         breadcrumb={[{ label: 'Candidate' }, { label: 'Resumes' }]}
       />
       <CandidateResumeCenter resumes={resumes} resumeBuilderState={resumeBuilderState} />

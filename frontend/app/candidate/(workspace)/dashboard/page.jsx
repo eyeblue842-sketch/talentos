@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, BriefcaseBusiness, CalendarClock, CircleCheck, WalletCards } from 'lucide-react';
+import { BriefcaseBusiness, CalendarClock, CircleCheck, WalletCards } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
@@ -13,11 +13,6 @@ import { CandidateResumeSuggestionBanner } from '@/components/sections/candidate
 export default async function CandidateDashboardPage() {
   const dashboard = await getCandidateDashboard();
   const resumeStatus = dashboard.resumeStatus || { hasResume: false, primaryResume: null };
-  const unreadNotificationsCount = Number(dashboard.metrics?.unreadNotificationsCount || 0);
-  const unreadNotificationsBadge = unreadNotificationsCount > 99 ? '99+' : String(unreadNotificationsCount);
-  const notificationsLabel = unreadNotificationsCount > 0
-    ? `Notifications, ${unreadNotificationsCount} unread`
-    : 'Notifications';
   const quickLinks = [
     { id: 'resume', label: 'Resume', href: '/candidate/resumes' },
     { id: 'resume-headline', label: 'Resume headline', href: '/candidate/profile#resume-headline' },
@@ -37,18 +32,6 @@ export default async function CandidateDashboardPage() {
           breadcrumb={[{ label: 'Candidate' }, { label: 'Dashboard' }]}
         />
         <div className="flex flex-wrap gap-3 lg:justify-end">
-          <Link
-            href="/candidate/notifications"
-            aria-label={notificationsLabel}
-            className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--color-text)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]"
-          >
-            <Bell size={18} aria-hidden="true" />
-            {unreadNotificationsCount > 0 ? (
-              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--brand)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                {unreadNotificationsBadge}
-              </span>
-            ) : null}
-          </Link>
           {dashboard.quickActions.map((action) => (
             <Link key={action.href} href={action.href} className="rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
               {action.label}

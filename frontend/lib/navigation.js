@@ -26,19 +26,25 @@ export const recruiterNav = [
   { label: 'Settings', href: '/recruiter/settings', icon: 'Settings2' },
 ];
 
+// Find Jobs now groups Saved Jobs, Applications, Interviews and Offers as tabs,
+// Network groups the Feed and Messages, and Notifications moved to a top-right
+// bell in the workspace header — so those are no longer separate sidebar items.
 export const candidateNav = [
   { label: 'Dashboard', href: '/candidate/dashboard', icon: 'LayoutDashboard' },
   { label: 'Find Jobs', href: '/candidate/jobs', icon: 'Search' },
   { label: 'Network', href: '/candidate/network', icon: 'Users' },
-  { label: 'Messages', href: '/candidate/messages', icon: 'Mail' },
-  { label: 'Saved Jobs', href: '/candidate/saved-jobs', icon: 'BriefcaseBusiness' },
-  { label: 'Applications', href: '/candidate/applications', icon: 'ClipboardList' },
-  { label: 'Interviews', href: '/candidate/interviews', icon: 'CalendarDays' },
-  { label: 'Offers', href: '/candidate/offers', icon: 'WalletCards' },
   { label: 'Resumes', href: '/candidate/resumes', icon: 'FilePenLine' },
   { label: 'Profile', href: '/candidate/profile', icon: 'Users' },
-  { label: 'Notifications', href: '/candidate/notifications', icon: 'BarChart3' },
   { label: 'Settings', href: '/candidate/settings', icon: 'Settings2' },
+];
+
+// Tab bar shown on the Find Jobs group of pages.
+export const candidateJobsTabs = [
+  { label: 'Find Jobs', href: '/candidate/jobs' },
+  { label: 'Saved Jobs', href: '/candidate/saved-jobs' },
+  { label: 'Applications', href: '/candidate/applications' },
+  { label: 'Interviews', href: '/candidate/interviews' },
+  { label: 'Offers', href: '/candidate/offers' },
 ];
 
 export const adminNav = [

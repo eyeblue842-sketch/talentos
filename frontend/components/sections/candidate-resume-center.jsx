@@ -8,15 +8,12 @@ import { Button } from '@/components/ui/button';
 import { CandidateResumeSuggestionBanner } from '@/components/sections/candidate-resume-suggestion-banner';
 import { formatCareerizDate } from '@/lib/date-format';
 import {
-  applyResumeParsedUpdatesAction,
-  linkExternalResumeBuilderAction,
   updateResumeAssetStateAction,
 } from '@/app/candidate/actions';
 
 export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
   const router = useRouter();
   const [uploadState, setUploadState] = useState({ status: 'idle', message: '' });
-  const [isPending, startTransition] = useTransition();
   const [isResumeActionPending, startResumeActionTransition] = useTransition();
   const [pendingResumeAssetId, setPendingResumeAssetId] = useState(null);
   const uploadRef = useRef(null);
@@ -102,20 +99,6 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
               Upload Resume
               <input ref={uploadRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={handleUpload} />
             </label>
-            {resumeBuilderState.enabled && resumeBuilderState.links.create ? (
-              <a
-                href={resumeBuilderState.links.create}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-2xl border border-[var(--line)] px-5 py-3 font-semibold text-[var(--text)]"
-              >
-                Create Resume
-              </a>
-            ) : (
-              <span className="rounded-2xl border border-dashed border-[var(--line)] px-5 py-3 font-semibold text-[var(--muted)]">
-                Resume Builder unavailable
-              </span>
-            )}
           </div>
         </div>
 
@@ -127,42 +110,6 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
           >
             {uploadState.message}
           </Alert>
-        ) : null}
-      </Card>
-
-      <Card className="rounded-[32px] p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold">External Resume Builder</h2>
-            <p className="mt-2 text-sm text-[var(--muted)]">
-              Deep links are generated centrally from environment configuration. Candidate data is never sent in query parameters.
-            </p>
-          </div>
-          <div className="rounded-full bg-[var(--soft)] px-3 py-1 text-xs font-semibold text-[var(--brand)]">
-            {resumeBuilderState.enabled ? 'Configured' : 'Disabled'}
-          </div>
-        </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm">
-            <p className="font-semibold">Create Resume</p>
-            <p className="mt-2 text-[var(--muted)]">Open the external builder to create a new resume.</p>
-          </div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm">
-            <p className="font-semibold">Edit Resume</p>
-            <p className="mt-2 text-[var(--muted)]">Resume editing stays outside Careeriz and can be linked back through external metadata.</p>
-          </div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 text-sm">
-            <p className="font-semibold">Manage Resumes</p>
-            <p className="mt-2 text-[var(--muted)]">Candidates can manage builder-side resume variants without exposing internal Careeriz routes.</p>
-          </div>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-3">
-          {resumeBuilderState.links.create ? <a href={resumeBuilderState.links.create} target="_blank" rel="noreferrer" className="rounded-2xl bg-[var(--brand)] px-4 py-3 font-semibold text-white">Open Create Flow</a> : null}
-          {resumeBuilderState.links.edit ? <a href={resumeBuilderState.links.edit} target="_blank" rel="noreferrer" className="rounded-2xl border border-[var(--line)] px-4 py-3 font-semibold text-[var(--text)]">Edit External Resume</a> : null}
-          {resumeBuilderState.links.manage ? <a href={resumeBuilderState.links.manage} target="_blank" rel="noreferrer" className="rounded-2xl border border-[var(--line)] px-4 py-3 font-semibold text-[var(--text)]">Manage in Resume Builder</a> : null}
-        </div>
-        {!resumeBuilderState.enabled ? (
-          <p className="mt-4 text-sm text-[var(--muted)]">{resumeBuilderState.disabledReason}</p>
         ) : null}
       </Card>
 
@@ -241,36 +188,6 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
                 </form>
               </div>
             </div>
-
-            {resume.parsedData?.availableFields?.length ? (
-              <div className="mt-5 rounded-2xl border border-[var(--line)] p-4">
-                <p className="font-semibold">Apply parsed profile suggestions</p>
-                <p className="mt-2 text-sm text-[var(--muted)]">Review resume-derived suggestions and apply only the fields you want to update.</p>
-                <div className="mt-4 flex flex-wrap gap-3 text-sm">
-                  {resume.parsedData.suggestedUpdates?.currentTitle ? (
-                    <label className="flex items-center gap-2 rounded-full border border-[var(--line)] px-3 py-2">
-                      <input type="checkbox" name={`resume-${resume.id}-title`} defaultChecked readOnly />
-                      <span>Title: {resume.parsedData.suggestedUpdates.currentTitle.resumeValue}</span>
-                    </label>
-                  ) : null}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <form action={applyResumeParsedUpdatesAction}>
-                    <input type="hidden" name="assetId" value={resume.id} />
-                    <input type="hidden" name="acceptAll" value="true" />
-                    <Button type="submit">Accept All Suggestions</Button>
-                  </form>
-                  <form action={applyResumeParsedUpdatesAction}>
-                    <input type="hidden" name="assetId" value={resume.id} />
-                    <input type="hidden" name="dismiss" value="true" />
-                    {Object.keys(resume.parsedData.suggestedUpdates || {}).map((field) => (
-                      <input key={field} type="hidden" name="fields" value={field} />
-                    ))}
-                    <Button type="submit" variant="outline">Dismiss</Button>
-                  </form>
-                </div>
-              </div>
-            ) : null}
           </Card>
         )) : (
           <Card className="rounded-[28px] p-10 text-center">
@@ -279,31 +196,6 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
           </Card>
         )}
       </div>
-
-      {resumeBuilderState.enabled ? (
-        <Card className="rounded-[28px] p-6">
-          <h3 className="font-[var(--font-display)] text-2xl font-semibold">Link external resume metadata</h3>
-          <p className="mt-2 text-sm text-[var(--muted)]">Use this only when you want Careeriz to remember the external resume ID and edit URL for future handoff.</p>
-          <form
-            action={(formData) => {
-              startTransition(async () => {
-                await linkExternalResumeBuilderAction(formData);
-                router.refresh();
-              });
-            }}
-            className="mt-5 grid gap-4 md:grid-cols-3"
-          >
-            <input name="externalResumeId" placeholder="External resume ID" className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-            <input name="externalResumeUrl" placeholder="External resume URL" className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-            <input name="externalResumeVersion" placeholder="External version" className="rounded-2xl border border-[var(--line)] px-4 py-3" />
-            <div className="md:col-span-3">
-              <Button type="submit" disabled={isPending} loading={isPending}>
-                {isPending ? 'Linking...' : 'Save External Resume Metadata'}
-              </Button>
-            </div>
-          </form>
-        </Card>
-      ) : null}
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { Card } from '@/components/ui/card';
 import { PaginationNav } from '@/components/sections/pagination-nav';
 import { PublicJobCard } from '@/components/sections/public-job-card';
-import { candidateNav } from '@/lib/navigation';
+import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
+import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
 import { getCandidateSavedJobs } from '@/lib/api';
 import { unsaveJobAction } from '@/app/candidate/actions';
 import { buildPathWithQuery, withPage } from '@/lib/query';
@@ -18,6 +19,7 @@ export default async function CandidateSavedJobsPage({ searchParams }) {
 
   return (
     <CareerizAppShell brand="Careeriz" items={candidateNav}>
+        <CandidateSectionTabs tabs={candidateJobsTabs} />
         <div>
           <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">Saved jobs</p>
           <h1 className="mt-2 font-[var(--font-display)] text-4xl font-semibold">Keep promising roles in one shortlist</h1>

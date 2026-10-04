@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation';
 import { CareerizAppShell } from '@/components/layout/careeriz-app-shell';
 import { ApplicationsList } from '@/components/sections/applications-list';
 import { PaginationNav } from '@/components/sections/pagination-nav';
-import { candidateNav } from '@/lib/navigation';
+import { candidateNav, candidateJobsTabs } from '@/lib/navigation';
+import { CandidateSectionTabs } from '@/components/candidate/candidate-section-tabs';
 import { getCandidateApplications } from '@/lib/api';
 import { buildPathWithQuery, withPage } from '@/lib/query';
 
@@ -15,6 +16,7 @@ export default async function CandidateApplicationsPage({ searchParams }) {
 
   return (
     <CareerizAppShell brand="Careeriz" items={candidateNav}>
+        <CandidateSectionTabs tabs={candidateJobsTabs} />
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.24em] text-[var(--brand)]">My applications</p>
