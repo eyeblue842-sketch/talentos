@@ -37,3 +37,8 @@ document-processor/tests/fixtures/preprocessing/_measure
 document-processor/.phasep1-paddlex-cache/
 document-processor/tests/fixtures/ocr_validation/_out_*/
 frontend/test-results/
+
+# Local secret/env backups and loose artifacts -- never commit
+.env.backup-*
+/careeriz-resume-profile-ui.diff
+/New Text Document.txt
