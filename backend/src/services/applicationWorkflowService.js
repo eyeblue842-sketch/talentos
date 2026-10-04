@@ -371,7 +371,7 @@ function serializeResumeAsset(asset) {
       case 'PARTIAL':
         return {
           label: 'Needs review',
-          message: 'Careeriz extracted limited resume data and skipped low-confidence updates. Review the resume or retry parsing.',
+          message: "Some details couldn't be read confidently, so we skipped them. Review your profile and fill in anything missing, or retry parsing.",
         };
       case 'FAILED':
         return {

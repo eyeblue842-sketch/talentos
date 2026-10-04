@@ -441,7 +441,7 @@ function buildResumeStatus(profile, latestResumeAsset = null) {
     message = 'Resume details are available to review and apply to your profile.';
   } else if (parsingStatus === 'PARTIAL') {
     label = 'Needs review';
-    message = 'Careeriz extracted limited resume data and skipped low-confidence updates. Review the resume or retry parsing.';
+    message = "Some details couldn't be read confidently, so we skipped them. Review your profile and fill in anything missing, or retry parsing.";
   } else if (parsingStatus === 'FAILED') {
     label = 'Parsing failed';
     message = "We couldn't fully parse this resume. Your uploaded file is safe. You can retry parsing or update your profile manually.";

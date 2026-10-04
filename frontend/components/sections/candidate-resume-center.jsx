@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { Info } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -137,13 +138,11 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
                   <p>Size: {formatFileSize(resume.sizeBytes)}</p>
                   <p>Uploaded: {formatCareerizDate(resume.createdAt)}</p>
                 </div>
-                {resume.parsedData?.summary ? (
-                  <div className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
-                    {resume.parsedData.summary}
-                  </div>
-                ) : null}
                 {resume.parsingStatusMessage ? (
-                  <p className="mt-3 text-sm text-[var(--muted)]">{resume.parsingStatusMessage}</p>
+                  <p className="mt-4 flex items-start gap-2 rounded-2xl bg-[var(--soft)] px-4 py-3 text-sm text-[var(--muted)]">
+                    <Info size={16} className="mt-0.5 shrink-0 text-[var(--brand)]" aria-hidden="true" />
+                    <span>{resume.parsingStatusMessage}</span>
+                  </p>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-3">
