@@ -36,6 +36,8 @@ export function CandidateTopNav({ brand = 'Careeriz', brandLogoUrl = null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
 
   async function handleLogout() {
     setIsLoggingOut(true);
@@ -95,25 +97,35 @@ export function CandidateTopNav({ brand = 'Careeriz', brandLogoUrl = null }) {
             <NotificationBell href="/candidate/notifications" />
           </div>
 
-          {/* Me menu */}
+          {/* Me menu — avatar (profile photo) sits beside the "Me" label */}
           <DropdownMenu
             align="right"
             trigger={(
               <button
                 type="button"
                 aria-label="Open your account menu"
-                className="flex min-w-[3.5rem] flex-col items-center justify-center rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:text-[var(--color-text)]"
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:text-[var(--color-text)]"
               >
-                <span className="flex items-center gap-0.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-                    <UserRound size={15} aria-hidden="true" />
-                  </span>
+                <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--color-primary-soft)]">
+                  {!photoLoaded ? (
+                    <span className="absolute inset-0 flex items-center justify-center text-[var(--color-primary)]">
+                      <UserRound size={16} aria-hidden="true" />
+                    </span>
+                  ) : null}
+                  {!photoFailed ? (
+                    <img
+                      src="/api/candidate/profile-photo"
+                      alt=""
+                      className={cn('absolute inset-0 h-full w-full object-cover transition-opacity', photoLoaded ? 'opacity-100' : 'opacity-0')}
+                      onLoad={() => setPhotoLoaded(true)}
+                      onError={() => setPhotoFailed(true)}
+                    />
+                  ) : null}
                 </span>
-                <span className="mt-0.5 hidden items-center gap-0.5 sm:flex">Me <ChevronDown size={12} aria-hidden="true" /></span>
+                <span className="hidden items-center gap-0.5 sm:flex">Me <ChevronDown size={14} aria-hidden="true" /></span>
               </button>
             )}
             items={[
-              { label: 'View profile', href: '/candidate/profile', icon: User },
               { label: 'Settings', href: '/candidate/settings', icon: Settings2 },
               { label: isLoggingOut ? 'Logging out…' : 'Logout', onSelect: handleLogout, icon: LogOut },
             ]}
