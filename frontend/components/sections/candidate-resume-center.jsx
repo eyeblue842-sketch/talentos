@@ -11,6 +11,15 @@ import {
   updateResumeAssetStateAction,
 } from '@/app/candidate/actions';
 
+// Human-readable file size (MB for larger files, KB for small ones) instead of raw bytes.
+function formatFileSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return 'Unknown';
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${size} bytes`;
+}
+
 export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
   const router = useRouter();
   const [uploadState, setUploadState] = useState({ status: 'idle', message: '' });
@@ -89,9 +98,9 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.22em] text-[var(--brand)]">Resume management</p>
-            <h2 className="mt-2 font-[var(--font-display)] text-3xl font-semibold">Upload a resume, let Careeriz parse it, then review structured updates</h2>
+            <h2 className="mt-2 font-[var(--font-display)] text-3xl font-semibold">Upload your resume</h2>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">
-              Resume upload, parsing, profile enrichment, and candidate review stay connected here. Careeriz stores the file, runs parsing in the background worker, and helps you update profile sections safely.
+              Once Careeriz parses it, review and update the missing details to complete your profile.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -125,10 +134,8 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
                   <span className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-semibold text-[var(--muted)]">{resume.parsingStatusLabel}</span>
                 </div>
                 <div className="mt-3 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
-                  <p>MIME type: {resume.mimeType}</p>
-                  <p>Size: {resume.sizeBytes} bytes</p>
-                  <p>Created: {formatCareerizDate(resume.createdAt)}</p>
-                  <p>Updated: {formatCareerizDate(resume.updatedAt)}</p>
+                  <p>Size: {formatFileSize(resume.sizeBytes)}</p>
+                  <p>Uploaded: {formatCareerizDate(resume.createdAt)}</p>
                 </div>
                 {resume.parsedData?.summary ? (
                   <div className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
