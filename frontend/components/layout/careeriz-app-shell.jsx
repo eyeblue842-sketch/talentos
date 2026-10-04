@@ -3,6 +3,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { cn } from '@/lib/utils';
 import { GlobalMessageLink } from '@/components/messaging/global-message-link';
 import { NotificationBell } from '@/components/notifications/notification-bell';
+import { CandidateTopNav } from '@/components/layout/candidate-top-nav';
 
 // The single authenticated application shell every workspace route enters
 // through. `items` is always computed server-side (see lib/navigation.js's
@@ -51,6 +52,33 @@ export function CareerizAppShell({
       secondaryActions={secondaryActions}
     />
   ) : null;
+
+  // Candidate workspace uses a LinkedIn-style top navigation bar (with a "Me"
+  // menu for Profile/Settings/Logout and the notification bell) instead of the
+  // left sidebar rail used by the recruiter/admin workspaces.
+  if (candidateWorkspace) {
+    return (
+      <div className="min-h-screen">
+        <CandidateTopNav brand={brand} brandLogoUrl={brandLogoUrl} />
+        <main className={cn('mx-auto w-full max-w-5xl', paddingClassName, className)}>
+          {rightContext ? (
+            <section className="min-w-0 space-y-6 xl:grid xl:grid-cols-[1fr_var(--shell-width-context-rail)] xl:items-start xl:gap-6 xl:space-y-0">
+              <div className="space-y-6">
+                {header}
+                {children}
+              </div>
+              <aside className="space-y-4">{rightContext}</aside>
+            </section>
+          ) : (
+            <section className="min-w-0 space-y-6">
+              {header}
+              {children}
+            </section>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <main

@@ -426,7 +426,7 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
           {railExpanded ? (
             <aside
               aria-label="Expanded navigation"
-              className="rail-panel-enter absolute left-0 top-0 z-40 flex w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:min-h-[calc(100vh-4rem)]"
+              className="rail-panel-enter absolute left-0 top-0 z-40 flex max-h-[calc(100vh-2rem)] w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:max-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)]"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
@@ -450,7 +450,7 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
                 </button>
               </div>
 
-              <nav className="mt-6 grid gap-2 overflow-y-auto">
+              <nav className="mt-6 grid min-h-0 flex-1 content-start gap-2 overflow-y-auto">
                 {navigationList('flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3 text-sm font-medium')}
               </nav>
 
