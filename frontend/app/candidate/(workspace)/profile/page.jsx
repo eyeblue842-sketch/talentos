@@ -10,6 +10,7 @@ export default async function CandidateProfilePage() {
   const { profile, completion, snapshot, resumeSuggestions } = await getCandidateProfile();
   const profileLinks = [
     { id: 'profile-snapshot', label: 'Profile Snapshot', href: '#profile-snapshot' },
+    { id: 'career-profile', label: 'Career Profile', href: '#career-profile' },
     { id: 'resume', label: 'Resume', href: '#resume' },
     { id: 'resume-headline', label: 'Resume Headline', href: '#resume-headline' },
     { id: 'profile-summary', label: 'Profile Summary', href: '#profile-summary' },
@@ -19,7 +20,6 @@ export default async function CandidateProfilePage() {
     { id: 'it-skills', label: 'IT Skills', href: '#it-skills' },
     { id: 'projects', label: 'Projects', href: '#projects' },
     { id: 'certifications', label: 'Certifications', href: '#certifications' },
-    { id: 'career-profile', label: 'Career Profile', href: '#career-profile' },
     { id: 'personal-details', label: 'Personal Details', href: '#personal-details' },
     { id: 'privacy', label: 'Privacy', href: '#privacy' },
   ];

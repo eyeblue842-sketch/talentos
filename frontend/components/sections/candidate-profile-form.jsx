@@ -324,7 +324,7 @@ function buildProfilePhotoState(profile) {
   };
 }
 
-export function CandidateProfileForm({ profile, activeSection: controlledActiveSection, onActiveSectionChange }) {
+export function CandidateProfileForm({ profile, activeSection: controlledActiveSection, onActiveSectionChange, resumeSlot = null }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(submitCandidateProfileFormAction, initialState);
   const summaryRef = useRef(null);
@@ -865,6 +865,34 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
         </Alert>
       ) : null}
 
+      <SectionCard id="career-profile" title="Career profile" description={null} onAction={() => setActiveSection('career-profile')}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {[
+            ['Preferred roles', readOnlyValue(values.preferredRoles)],
+            ['Preferred locations', readOnlyValue(values.preferredLocations)],
+            ['Expected annual CTC', formatCandidateAnnualCtc(normalizedExpectedCtcLpa)],
+            ['Availability', readOnlyValue(values.availability.replaceAll('_', ' '))],
+            ['Notice period', values.noticePeriodDays ? `${values.noticePeriodDays} days` : 'Not added'],
+            ['Employment status', readOnlyValue(values.employmentStatus.replaceAll('_', ' '))],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-[var(--line)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">{label}</p>
+              <p className="mt-2 text-sm text-[var(--color-text)]">{value}</p>
+            </div>
+          ))}
+          <div className="rounded-2xl border border-[var(--line)] p-4 md:col-span-2 xl:col-span-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Workplace preferences</p>
+            <div className="mt-3"><TagList items={workplacePreferences.map((item) => item.replaceAll('_', ' '))} /></div>
+          </div>
+          <div className="rounded-2xl border border-[var(--line)] p-4 md:col-span-2 xl:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Employment preferences</p>
+            <div className="mt-3"><TagList items={employmentPreferences.map((item) => item.replaceAll('_', ' '))} /></div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {resumeSlot}
+
       <SectionCard id="resume-headline" title="Resume headline" description={null} onAction={() => setActiveSection('resume-headline')}>
         <div className="rounded-2xl border border-[var(--line)] p-4">
           <p className="mt-2 text-sm text-[var(--color-text)]">{readOnlyValue(values.headline)}</p>
@@ -946,32 +974,6 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
             ))}
           </div>
         ) : <EmptyState message="No certifications added yet." actionLabel="+ Add Certification" onAction={() => setActiveSection('certifications')} />}
-      </SectionCard>
-
-      <SectionCard id="career-profile" title="Career profile" description={null} onAction={() => setActiveSection('career-profile')}>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {[
-            ['Preferred roles', readOnlyValue(values.preferredRoles)],
-            ['Preferred locations', readOnlyValue(values.preferredLocations)],
-            ['Expected annual CTC', formatCandidateAnnualCtc(normalizedExpectedCtcLpa)],
-            ['Availability', readOnlyValue(values.availability.replaceAll('_', ' '))],
-            ['Notice period', values.noticePeriodDays ? `${values.noticePeriodDays} days` : 'Not added'],
-            ['Employment status', readOnlyValue(values.employmentStatus.replaceAll('_', ' '))],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-[var(--line)] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">{label}</p>
-              <p className="mt-2 text-sm text-[var(--color-text)]">{value}</p>
-            </div>
-          ))}
-          <div className="rounded-2xl border border-[var(--line)] p-4 md:col-span-2 xl:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Workplace preferences</p>
-            <div className="mt-3"><TagList items={workplacePreferences.map((item) => item.replaceAll('_', ' '))} /></div>
-          </div>
-          <div className="rounded-2xl border border-[var(--line)] p-4 md:col-span-2 xl:col-span-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Employment preferences</p>
-            <div className="mt-3"><TagList items={employmentPreferences.map((item) => item.replaceAll('_', ' '))} /></div>
-          </div>
-        </div>
       </SectionCard>
 
       <SectionCard id="personal-details" title="Personal details" description={null} actionLabel="Edit" onAction={() => setActiveSection('personal-details')}>

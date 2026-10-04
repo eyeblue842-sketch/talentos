@@ -11,12 +11,18 @@ export function CandidateProfilePageContent({ profile, snapshot, resumeSuggestio
   return (
     <>
       <CandidateProfileSnapshot snapshot={snapshot} onEdit={() => setActiveSection('profile-snapshot')} />
-      <CandidateResumeSummaryCard snapshot={snapshot} />
-      <CandidateResumeSuggestionBanner suggestions={resumeSuggestions} compact />
+      {/* The resume summary + suggestions render inside the form, right after the
+          Career profile section, so Career profile sits above the Resume box. */}
       <CandidateProfileForm
         profile={profile}
         activeSection={activeSection}
         onActiveSectionChange={setActiveSection}
+        resumeSlot={(
+          <>
+            <CandidateResumeSummaryCard snapshot={snapshot} />
+            <CandidateResumeSuggestionBanner suggestions={resumeSuggestions} compact />
+          </>
+        )}
       />
     </>
   );
