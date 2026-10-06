@@ -17,7 +17,10 @@ export const recruiterNav = [
       { id: 'recruitment-interviews', label: 'Interviews', href: '/recruiter/interviews', icon: 'CalendarDays' },
       { id: 'recruitment-assessments', label: 'Assessment Forms', href: '/recruiter/assessments', icon: 'ClipboardList' },
       { id: 'recruitment-offer-templates', label: 'Offer Templates', href: '/recruiter/offer-templates', icon: 'FileText' },
-      ...(bulkResumeImportEnabled ? [{ id: 'recruitment-import', label: 'Bulk Resume Import', href: '/recruiter/candidates/import', icon: 'ClipboardList' }] : []),
+      // "Bulk Resume Import" removed here: it pointed to the same page as
+      // "Resume Databank" (/recruiter/candidates/import). The page and its
+      // upload + background parsing are unchanged — only the duplicate nav link
+      // is gone. (Admin keeps its own /admin/candidates/import entry below.)
     ],
   },
   { label: 'Members', href: '/recruiter/members', icon: 'Users' },
