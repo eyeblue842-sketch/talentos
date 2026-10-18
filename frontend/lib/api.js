@@ -1497,3 +1497,109 @@ export async function cancelBillingSubscription(reason) {
   }, token);
   return response.data;
 }
+
+// AI voice recruiter (feature/ai-voice-recruiter). These 404 while the backend
+// AI_SCREENING_ENABLED flag is off - callers should treat that as "feature not
+// available" and render nothing.
+export async function getApplicationScreeningCalls(applicationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/ai-recruiter/applications/${applicationId}/screening-calls`, { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function placeApplicationScreeningCall(applicationId, overrides = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/ai-recruiter/applications/${applicationId}/screening-calls`, {
+    method: 'POST',
+    body: JSON.stringify({ overrides }),
+  }, token);
+  return response.data;
+}
+
+export async function getRecruiterScreeningCall(screeningCallId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/ai-recruiter/screening-calls/${screeningCallId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+// Platform operator console (feature/platform-super-admin). Every endpoint is
+// server-gated to the single super-admin; a non-super-admin gets 403, which the
+// /platform layout turns into a 404.
+export async function getPlatformSession() {
+  const token = await requireToken();
+  const response = await requestBackend('/platform/session', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getPlatformOverview() {
+  const token = await requireToken();
+  const response = await requestBackend('/platform/overview', { method: 'GET' }, token);
+  return response.data;
+}
+
+export async function getPlatformOrganisations(query = '') {
+  const token = await requireToken();
+  const response = await requestBackend(`/platform/organisations${query ? `?${query}` : ''}`, { method: 'GET' }, token);
+  return { items: response.data, meta: response.meta || {} };
+}
+
+export async function getPlatformOrganisation(organisationId) {
+  const token = await requireToken();
+  const response = await requestBackend(`/platform/organisations/${organisationId}`, { method: 'GET' }, token);
+  return response.data;
+}
+
+// --- Phase 3: billing operations. Each reuses an audited, idempotent backend
+// primitive and returns { result, organisation } (the refreshed org detail). ---
+async function platformBillingPost(path, payload) {
+  const token = await requireToken();
+  const response = await requestBackend(path, { method: 'POST', body: JSON.stringify(payload || {}) }, token);
+  return response.data;
+}
+
+export function suspendPlatformSubscription(organisationId, reason) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/subscription/suspend`, { reason });
+}
+
+export function reactivatePlatformSubscription(organisationId, reason) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/subscription/reactivate`, { reason });
+}
+
+export function adjustPlatformCredits(organisationId, amount, reason) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/credits`, { amount, reason });
+}
+
+export function resendPlatformRenewalReminder(organisationId) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/renewal-reminder`, {});
+}
+
+export function reconcilePlatformPurchase(purchaseId, providerReference, reason) {
+  return platformBillingPost(`/platform/purchases/${purchaseId}/reconcile`, { providerReference, reason });
+}
+
+export function reviewPlatformRefund(purchaseId, approve, reason) {
+  return platformBillingPost(`/platform/purchases/${purchaseId}/review-refund`, { approve, reason });
+}
+
+export async function getPlatformComplimentaryPlans() {
+  const token = await requireToken();
+  const response = await requestBackend('/platform/products/complimentary', { method: 'GET' }, token);
+  return response.data;
+}
+
+export function grantPlatformComplimentary(organisationId, productCode, reason) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/subscription/complimentary`, { productCode, reason });
+}
+
+// --- Phase 4: user / email administration. ---
+export function invitePlatformUser(organisationId, email, role) {
+  return platformBillingPost(`/platform/organisations/${organisationId}/users/invite`, { email, role });
+}
+
+export function changePlatformUserEmail(userId, email, reason, organisationId) {
+  return platformBillingPost(`/platform/users/${userId}/email`, { email, reason, organisationId });
+}
+
+export function setPlatformUserActive(userId, active, reason, organisationId) {
+  return platformBillingPost(`/platform/users/${userId}/active`, { active, reason, organisationId });
+}

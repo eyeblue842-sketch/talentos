@@ -1,19 +1,21 @@
 import Link from 'next/link';
-import { Briefcase, Users } from 'lucide-react';
+import { Briefcase, Users, ChevronRight } from 'lucide-react';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { AddAtsOpeningButton } from '@/components/recruiter/add-ats-opening-button';
-import { ScheduleInterviewButton } from '@/components/recruiter/schedule-interview-button';
-import { CreateOfferButton } from '@/components/recruiter/create-offer-button';
+import { MoveCandidateControl } from '@/components/recruiter/move-candidate-control';
+import { InterviewPipelineCard } from '@/components/recruiter/interview-pipeline-card';
 import { recruiterNav } from '@/lib/navigation';
-import { getCurrentOrganisation, getRecruiterPipelinePage, getRecruiterAtsOpenings, getOrganisationMembers, getRecruiterAssessmentTemplates, getRecruiterOfferTemplates } from '@/lib/api';
+import { getCurrentOrganisation, getRecruiterPipelinePage, getRecruiterAtsOpenings, getOrganisationMembers, getRecruiterAssessmentTemplates } from '@/lib/api';
 import { moveApplicationStageAction, closeAtsOpeningAction } from '../actions';
 
 const stages = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'OFFER', 'HIRED', 'OFFER_DECLINED', 'REJECTED'];
 const stageLabel = (stage) => stage.replaceAll('_', ' ');
+// Serializable form passed to the client card (a label function can't be a prop).
+const stageOptions = stages.map((value) => ({ value, label: stageLabel(value) }));
 
 export default async function RecruiterAtsPage({ searchParams }) {
   const params = await searchParams;
@@ -24,7 +26,6 @@ export default async function RecruiterAtsPage({ searchParams }) {
   let pipeline = { items: [] };
   let members = [];
   let assessmentTemplates = [];
-  let offerTemplates = [];
   let error = '';
 
   try {
@@ -35,11 +36,10 @@ export default async function RecruiterAtsPage({ searchParams }) {
     if (selectedJobId) {
       const query = new URLSearchParams();
       query.set('jobId', selectedJobId);
-      [pipeline, members, assessmentTemplates, offerTemplates] = await Promise.all([
+      [pipeline, members, assessmentTemplates] = await Promise.all([
         getRecruiterPipelinePage(query.toString()),
         getOrganisationMembers().catch(() => []),
         getRecruiterAssessmentTemplates().catch(() => []),
-        getRecruiterOfferTemplates().catch(() => []),
       ]);
     }
   } catch (caught) {
@@ -47,6 +47,16 @@ export default async function RecruiterAtsPage({ searchParams }) {
   }
 
   const selectedOpening = (openings || []).find((opening) => opening.id === selectedJobId) || null;
+  const plannedRounds = selectedOpening?.interviewRounds || [];
+  const pipelineItems = pipeline.items || [];
+  const moveCandidates = pipelineItems.map((application) => ({
+    applicationId: application.id,
+    name: application.candidate?.fullName || 'Candidate',
+    currentStage: application.currentStage,
+  }));
+  const profileHrefFor = (application) => (application.submittedApplicationId
+    ? `/recruiter/ats/${application.submittedApplicationId}`
+    : (application.candidate?.id ? `/recruiter/database/${application.candidate.id}` : null));
 
   return (
     <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav}>
@@ -151,56 +161,81 @@ export default async function RecruiterAtsPage({ searchParams }) {
             </Card>
           ) : null}
 
-          <div className="grid gap-4 xl:grid-cols-5">
+          <Card className="bg-[var(--surface)]">
+            {/* Pipeline funnel — every stage with its live count, at a glance. */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+              {stages.map((stage, index) => {
+                const count = pipelineItems.filter((application) => application.currentStage === stage).length;
+                return (
+                  <div key={stage} className="flex items-center">
+                    <div className="flex min-w-[92px] flex-col items-center rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-center">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-secondary)]">{stageLabel(stage)}</span>
+                      <span className="text-lg font-bold text-[var(--color-text)]">{count}</span>
+                    </div>
+                    {index < stages.length - 1 ? <ChevronRight size={16} className="mx-0.5 shrink-0 text-[var(--color-text-secondary)]" aria-hidden="true" /> : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 border-t border-[var(--line)] pt-4">
+              <p className="mb-2 text-sm font-semibold text-[var(--color-text)]">Move a candidate</p>
+              <MoveCandidateControl
+                candidates={moveCandidates}
+                stageOptions={stageOptions}
+                moveStageAction={moveApplicationStageAction}
+                members={members}
+                templates={assessmentTemplates}
+                plannedRounds={plannedRounds}
+              />
+            </div>
+          </Card>
+
+          <div className="flex gap-4 overflow-x-auto pb-3">
             {stages.map((stage) => {
-              const items = pipeline.items.filter((application) => application.currentStage === stage);
+              const items = pipelineItems.filter((application) => application.currentStage === stage);
               return (
-                <Card key={stage} className="bg-[var(--surface)]">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold">{stageLabel(stage)}</p>
+                <div key={stage} className="flex w-64 shrink-0 flex-col rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+                  <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2.5">
+                    <p className="text-sm font-semibold text-[var(--color-text)]">{stageLabel(stage)}</p>
                     <Badge tone="brand">{items.length}</Badge>
                   </div>
-                  <div className="mt-4 space-y-3">
+                  <div className="flex-1 space-y-2 p-3">
                     {items.length === 0 ? <p className="text-sm text-[var(--color-text-secondary)]">No candidates.</p> : null}
-                    {items.map((application) => (
-                      <div key={application.id} className="rounded-2xl border border-[var(--line)] bg-white p-3 text-sm">
-                        <p className="font-semibold">{application.candidate?.fullName || 'Candidate'}</p>
-                        {application.appliedAt ? <p className="mt-1 text-[var(--color-text-secondary)]">Added {new Date(application.appliedAt).toLocaleDateString()}</p> : null}
-                        <form action={moveApplicationStageAction.bind(null, application.id)} className="mt-3 space-y-2">
-                          <select name="stage" defaultValue={application.currentStage} className="w-full rounded-2xl border border-[var(--line)] px-3 py-2">
-                            {stages.map((option) => <option key={option} value={option}>{stageLabel(option)}</option>)}
-                          </select>
-                          <button className="w-full rounded-2xl border border-[var(--line)] px-3 py-2 font-semibold">Move stage</button>
-                        </form>
-                        <ScheduleInterviewButton
-                          applicationId={application.id}
-                          candidateName={application.candidate?.fullName || 'Candidate'}
-                          members={members}
-                          templates={assessmentTemplates}
-                          plannedRounds={selectedOpening?.interviewRounds || []}
-                        />
-                        {stage === 'SELECTED' ? (
-                          <CreateOfferButton applicationId={application.id} candidateName={application.candidate?.fullName || 'Candidate'} templates={offerTemplates} />
-                        ) : null}
-                        {stage === 'OFFER' ? (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <form action={moveApplicationStageAction.bind(null, application.id)}>
-                              <input type="hidden" name="stage" value="HIRED" />
-                              <button className="rounded-2xl bg-[var(--color-primary-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-primary)]">Offer accepted</button>
-                            </form>
-                            <form action={moveApplicationStageAction.bind(null, application.id)}>
-                              <input type="hidden" name="stage" value="OFFER_DECLINED" />
-                              <button className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm font-semibold">Offer declined</button>
-                            </form>
-                          </div>
-                        ) : null}
-                        {application.submittedApplicationId ? (
-                          <Link href={`/recruiter/ats/${application.submittedApplicationId}`} className="mt-3 inline-flex font-semibold text-[var(--brand)]">Open application</Link>
-                        ) : null}
-                      </div>
-                    ))}
+                    {items.map((application) => {
+                      const candidateName = application.candidate?.fullName || 'Candidate';
+                      const profileHref = profileHrefFor(application);
+                      if (stage === 'INTERVIEW_SCHEDULED') {
+                        const rounds = (application.interviewProcesses || []).flatMap((process) => process.rounds || []);
+                        return (
+                          <InterviewPipelineCard
+                            key={application.id}
+                            applicationId={application.id}
+                            candidateName={candidateName}
+                            profileHref={profileHref}
+                            rounds={rounds}
+                            members={members}
+                            templates={assessmentTemplates}
+                            plannedRounds={plannedRounds}
+                          />
+                        );
+                      }
+                      return profileHref ? (
+                        <Link
+                          key={application.id}
+                          href={profileHref}
+                          className="group flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-text)] shadow-sm transition hover:border-[var(--brand)] hover:text-[var(--brand)] hover:shadow-md"
+                        >
+                          <span className="truncate">{candidateName}</span>
+                          <ChevronRight size={14} className="shrink-0 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
+                        </Link>
+                      ) : (
+                        <div key={application.id} className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-text)]">
+                          {candidateName}
+                        </div>
+                      );
+                    })}
                   </div>
-                </Card>
+                </div>
               );
             })}
           </div>

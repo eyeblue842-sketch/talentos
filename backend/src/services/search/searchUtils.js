@@ -36,8 +36,17 @@ export function buildDbWhere(filters = {}) {
       { fullName: { contains: keyword, mode: 'insensitive' } },
       { headline: { contains: keyword, mode: 'insensitive' } },
       { currentTitle: { contains: keyword, mode: 'insensitive' } },
+      { currentEmployer: { contains: keyword, mode: 'insensitive' } },
       { summary: { contains: keyword, mode: 'insensitive' } },
     );
+    // Name search is order- and separator-independent: match candidates whose
+    // full name contains EVERY token of the keyword (e.g. "pillai, Vinoj" or
+    // "Vinoj Pillai" both find "Vinoj Pillai New"). Covers multi-word names
+    // typed as one phrase or as several chips joined into the query.
+    const tokens = [...new Set(keyword.split(/[\s,]+/).map((token) => token.trim()).filter((token) => token.length >= 2))];
+    if (tokens.length > 1) {
+      or.push({ AND: tokens.map((token) => ({ fullName: { contains: token, mode: 'insensitive' } })) });
+    }
   }
 
   const designation = normalizeString(filters.designation);

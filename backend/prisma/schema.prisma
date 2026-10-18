@@ -2206,10 +2206,101 @@ model Application {
   interviewProcesses   InterviewProcess[]
   submittedApplication JobApplication?
   offers               Offer[]
+  screeningCalls       ScreeningCall[]
 
   @@unique([jobId, candidateId])
   @@index([organisationId, updatedAt])
   @@index([organisationId, currentStage])
+}
+
+// AI voice recruiter screening call (feature/ai-voice-recruiter). One row per
+// outbound HR-screening phone call placed for an Application. Telephony is
+// provider-routed by the candidate's country: PLIVO for India (+91), VAPI for
+// everyone else - see aiRecruiterService.resolveProvider. Only `application`
+// is a real Prisma relation; jobId/candidateId/organisationId/initiatedByUserId
+// are kept as plain scalars on purpose so adding this model touches a single
+// existing model (Application) rather than five. DO NOT point back-relations
+// here from Job/Candidate/Organisation/User - read them through `application`.
+enum ScreeningCallProvider {
+  PLIVO
+  VAPI
+}
+
+enum ScreeningCallStatus {
+  PENDING // created, not yet dispatched to a provider
+  DRY_RUN // simulated locally (feature disabled or provider unconfigured)
+  QUEUED // accepted by the provider, not yet ringing
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+  CANCELLED
+}
+
+enum ScreeningCallOutcome {
+  PENDING
+  INTERESTED
+  NOT_INTERESTED
+  CALLBACK_REQUESTED
+  DO_NOT_CONTACT
+  UNREACHABLE
+  INCOMPLETE
+}
+
+model ScreeningCall {
+  id                String                @id @default(cuid())
+  organisationId    String?
+  applicationId     String
+  jobId             String
+  candidateId       String
+  initiatedByUserId String?
+  provider          ScreeningCallProvider
+  providerCallId    String?               @unique
+  status            ScreeningCallStatus   @default(PENDING)
+  outcome           ScreeningCallOutcome  @default(PENDING)
+  dryRun            Boolean               @default(false)
+  toPhoneNumber     String
+  callerId          String?
+  // Consent snapshot captured when the call is triggered. The candidate's
+  // consent is collected at apply time in Careeriz; TRAI/DPDP require we can
+  // evidence it, so we stamp what consent basis this call relied on.
+  consentCaptured   Boolean               @default(false)
+  consentSource     String?
+  requestedAt       DateTime              @default(now())
+  dispatchedAt      DateTime?
+  answeredAt        DateTime?
+  endedAt           DateTime?
+  durationSeconds   Int?
+  endedReason       String?
+  recordingUrl      String?
+  transcript        String?
+  // Exact variable map sent to the agent (audit/debug/replay).
+  promptVariables   Json?
+  // Structured screening results extracted from the conversation. CTC/notice
+  // are free-text strings (candidates answer verbally, in ranges, or decline),
+  // not numbers.
+  currentCtc        String?
+  expectedCtc       String?
+  noticePeriod      String?
+  noticeNegotiable  Boolean?
+  buyoutAvailable   Boolean?
+  earliestJoinDate  String?
+  techAnswers       Json?
+  interestSummary   String?
+  aiSummary         String?
+  // Last raw provider webhook payload, for debugging and audit.
+  lastProviderEvent Json?
+  errorMessage      String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, createdAt])
+  @@index([applicationId])
+  @@index([status])
 }
 
 model ScreeningQuestionTemplate {

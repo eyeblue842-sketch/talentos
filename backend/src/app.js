@@ -28,6 +28,8 @@ import { messagingRouter } from './routes/messagingRoutes.js';
 import { billingRouter } from './routes/billingRoutes.js';
 import { adminBillingRouter } from './routes/adminBillingRoutes.js';
 import { organisationVerificationRouter } from './routes/organisationVerificationRoutes.js';
+import { aiRecruiterRouter } from './routes/aiRecruiterRoutes.js';
+import { platformRouter } from './routes/platformRoutes.js';
 import { postRazorpayWebhook } from './controllers/billingController.js';
 import { createRateLimiter } from './middleware/rateLimit.js';
 import { requestContext } from './middleware/requestContext.js';
@@ -123,5 +125,7 @@ app.use('/api/messages', messagingRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/admin/billing', adminBillingRouter);
 app.use('/api/admin/organisation-verification', organisationVerificationRouter);
+app.use('/api/ai-recruiter', aiRecruiterRouter);
+app.use('/api/platform', platformRouter);
 
 app.use(errorHandler);

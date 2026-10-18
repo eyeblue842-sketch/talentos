@@ -141,23 +141,20 @@ export async function listOrganisationInvitations(actorUser, organisationId = nu
   return normalized.map(serializeOrganisationInvitation);
 }
 
-export async function createOrganisationInvitation(actorUser, payload, organisationId = null, requestMeta = {}) {
-  const context = await requireOrganisationRole(actorUser, invitationManagingRoles, organisationId);
-  // Final publication-bypass closure section 2: this function has two
-  // converging entry points (the direct /organisations/invitations route
-  // and adminService.bulkInviteEnterpriseUsers via the org-scoped admin
-  // console) - both already carry route-level requireVerifiedOrganisation(),
-  // but the assertion is repeated here too so "inviting additional
-  // recruiter members" stays closed even if a future route forgets the
-  // middleware.
-  assertOrganisationVerifiedForAction(context.activeMembership.organisation, context.organisationId);
-  const email = normalizeEmail(payload.email);
+// Shared invitation-creation core. Runs AFTER the caller has established that
+// the actor is allowed to invite into `organisationId` - the org-scoped path
+// (createOrganisationInvitation) gates on org role + verification first, while
+// the platform super-admin path authorises cross-tenant at its route guard and
+// calls this directly. Keeping one body guarantees the token-hash / email /
+// audit that the accept flow depends on are identical for both entry points.
+export async function createInvitationRecord({ organisationId, invitedByUserId, email, role }, requestMeta = {}) {
+  const normalizedEmail = normalizeEmail(email);
 
   const existingMembership = await prisma.user.findUnique({
-    where: { email },
+    where: { email: normalizedEmail },
     include: {
       memberships: {
-        where: { organisationId: context.organisationId, status: 'ACTIVE' },
+        where: { organisationId, status: 'ACTIVE' },
       },
     },
   });
@@ -168,17 +165,17 @@ export async function createOrganisationInvitation(actorUser, payload, organisat
     throw error;
   }
 
-  await ensureNoDuplicateActiveInvitation(context.organisationId, email);
+  await ensureNoDuplicateActiveInvitation(organisationId, normalizedEmail);
 
   const rawToken = crypto.randomBytes(32).toString('hex');
   const invitation = await prisma.organisationInvitation.create({
     data: {
-      organisationId: context.organisationId,
-      email,
-      role: payload.role,
+      organisationId,
+      email: normalizedEmail,
+      role,
       tokenHash: hashInvitationToken(rawToken),
       expiresAt: new Date(Date.now() + invitationTtlMs),
-      invitedByUserId: actorUser.id,
+      invitedByUserId,
     },
     include: {
       organisation: true,
@@ -190,8 +187,8 @@ export async function createOrganisationInvitation(actorUser, payload, organisat
   await Promise.all([
     sendInvitationEmail(invitation, rawToken),
     recordAuditLog({
-      organisationId: context.organisationId,
-      actorUserId: actorUser.id,
+      organisationId,
+      actorUserId: invitedByUserId,
       action: 'organisation.invitation.create',
       entityType: 'OrganisationInvitation',
       entityId: invitation.id,
@@ -201,6 +198,23 @@ export async function createOrganisationInvitation(actorUser, payload, organisat
   ]);
 
   return serializeOrganisationInvitation(invitation);
+}
+
+export async function createOrganisationInvitation(actorUser, payload, organisationId = null, requestMeta = {}) {
+  const context = await requireOrganisationRole(actorUser, invitationManagingRoles, organisationId);
+  // Final publication-bypass closure section 2: this function has two
+  // converging entry points (the direct /organisations/invitations route
+  // and adminService.bulkInviteEnterpriseUsers via the org-scoped admin
+  // console) - both already carry route-level requireVerifiedOrganisation(),
+  // but the assertion is repeated here too so "inviting additional
+  // recruiter members" stays closed even if a future route forgets the
+  // middleware.
+  assertOrganisationVerifiedForAction(context.activeMembership.organisation, context.organisationId);
+
+  return createInvitationRecord(
+    { organisationId: context.organisationId, invitedByUserId: actorUser.id, email: payload.email, role: payload.role },
+    requestMeta,
+  );
 }
 
 export async function resendOrganisationInvitation(actorUser, invitationId, organisationId = null, requestMeta = {}) {

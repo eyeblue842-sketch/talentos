@@ -559,6 +559,33 @@ export async function moveApplicationStageAction(applicationId, formData) {
   revalidatePath(`/recruiter/ats/${applicationId}`);
 }
 
+// AI voice recruiter: place an outbound HR-screening call for this application.
+// Overrides are optional - the backend derives company brief / role details /
+// screening questions from the job when they are omitted. Returns the created
+// ScreeningCall so the UI can show its status.
+export async function placeScreeningCallAction(applicationId, formData) {
+  const overrides = {};
+  const brief = String(formData?.get?.('clientCompanyBrief') || '').trim();
+  const title = String(formData?.get?.('jobTitle') || '').trim();
+  const location = String(formData?.get?.('jobLocation') || '').trim();
+  const mode = String(formData?.get?.('jobMode') || '').trim();
+  const summary = String(formData?.get?.('jobSummary') || '').trim();
+  const questions = splitLineList(formData?.get?.('screeningQuestions'));
+  if (brief) overrides.clientCompanyBrief = brief;
+  if (title) overrides.jobTitle = title;
+  if (location) overrides.jobLocation = location;
+  if (mode) overrides.jobMode = mode;
+  if (summary) overrides.jobSummary = summary;
+  if (questions.length) overrides.screeningQuestions = questions;
+
+  const response = await recruiterRequest(`/ai-recruiter/applications/${applicationId}/screening-calls`, {
+    method: 'POST',
+    body: JSON.stringify({ overrides }),
+  });
+  revalidatePath(`/recruiter/ats/${applicationId}`);
+  return response.data;
+}
+
 export async function addNoteAction(applicationId, formData) {
   await recruiterRequest(`/ats/pipeline/${applicationId}/notes`, {
     method: 'POST',

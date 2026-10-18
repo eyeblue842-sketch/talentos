@@ -188,7 +188,12 @@ export function buildInitialSemanticSearchState(searchParams = {}) {
     sortBy: typeof searchParams.sortBy === 'string' ? searchParams.sortBy : 'relevance',
     pageSize: parseNumber(searchParams.pageSize) || 20,
     requiredSkills: typeof searchParams.requiredSkills === 'string' ? searchParams.requiredSkills : '',
-    optionalSkills: typeof searchParams.optionalSkills === 'string' ? searchParams.optionalSkills : '',
+    // Keyword chips are the single search box. If a legacy link carries only `q`
+    // (no skill params), seed it as an optional chip so the chip box reflects the
+    // active search.
+    optionalSkills: typeof searchParams.optionalSkills === 'string'
+      ? searchParams.optionalSkills
+      : (typeof searchParams.q === 'string' && searchParams.q.trim() && !searchParams.requiredSkills ? searchParams.q.trim() : ''),
     minExperience: parseNumber(searchParams.minExperience),
     maxExperience: parseNumber(searchParams.maxExperience),
     salaryMin: parseNumber(searchParams.salaryMin),

@@ -5,6 +5,9 @@ export function findAccessibleSemanticSearchCandidate(organisationId, candidateI
     where: {
       id: candidateId,
       OR: [
+        // Common recruiter databank - accessible to every organisation (same
+        // shared pool the search uses in candidateRetrieverService).
+        { searchableProfile: true, resumeVisibleToRecruiters: true },
         { organisationId },
         { applications: { some: { organisationId } } },
         { savedByRecruiters: { some: { organisationId } } },

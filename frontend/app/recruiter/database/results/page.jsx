@@ -65,7 +65,6 @@ export default async function RecruiterDatabaseResultsPage({ searchParams }) {
         title="Candidate Search Results"
         description="Review recruiter-safe profiles returned by your Careeriz search criteria."
         breadcrumb={[{ label: 'Recruiter' }, { label: 'Resume Search', href: '/recruiter/database' }, { label: 'Results' }]}
-        secondaryActions={[{ label: 'Modify Search', href: '/recruiter/database' }]}
       />
 
       {errorMessage ? (

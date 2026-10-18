@@ -1,5 +1,8 @@
 import { prisma } from '../../config/db.js';
 import { searchCandidates } from '../../services/searchService.js';
+import { searchResumesV2 } from '../../services/resumeSearchV2/service.js';
+import { findCandidateSearchRowsByIds } from '../../repositories/search/candidateSearchRepository.js';
+import { buildCandidateCard } from '../../services/search/candidateSearchCardService.js';
 
 const TRANSFERABLE_RELATIONSHIPS = new Set(['TRANSFERABLE']);
 
@@ -65,8 +68,13 @@ function mapIntentToSearchFilters(intent, plan) {
     || intent.filters.maxExperience != null,
   );
   const useRawKeyword = ['KEYWORD', 'BOOLEAN'].includes(plan.searchMode) || !hasStructuredIntent;
+  void useRawKeyword;
   const filters = {
-    keyword: useRawKeyword && !skillFilters.length ? intent.keyword || undefined : undefined,
+    // Always carry the free-text query into the DB-fallback keyword match (name /
+    // title / headline / summary). The keyword box now also populates `query`, so
+    // a single-box search (including a candidate name) still resolves when the
+    // OpenSearch skill retrieval returns nothing.
+    keyword: intent.keyword || undefined,
     location: intent.filters.location || undefined,
     locations: intent.filters.locations || undefined,
     preferredLocations: intent.filters.preferredLocations || undefined,
@@ -77,7 +85,6 @@ function mapIntentToSearchFilters(intent, plan) {
     employmentTypes: intent.filters.employmentTypes || undefined,
     displayCandidateType: intent.filters.displayCandidateType || undefined,
     activeWithin: intent.filters.activeWithin ?? undefined,
-    skills: skillFilters.join(', ') || undefined,
     minExperience: intent.filters.minExperience ?? undefined,
     maxExperience: intent.filters.maxExperience ?? undefined,
     salaryMin: intent.filters.salaryMin ?? undefined,
@@ -85,7 +92,7 @@ function mapIntentToSearchFilters(intent, plan) {
     currentCompany: intent.filters.currentEmployer || undefined,
     previousCompany: intent.filters.previousEmployer || undefined,
     companyScope: intent.filters.companyScope || undefined,
-    designation: intent.filters.designation || intent.role || undefined,
+    designation: intent.filters.designation || undefined,
     designationScope: intent.filters.designationScope || undefined,
     education: intent.filters.education || undefined,
     educationFilters: intent.filters.educationFilters || undefined,
@@ -102,6 +109,86 @@ function mapIntentToSearchFilters(intent, plan) {
   };
 
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value != null && value !== ''));
+}
+
+// --- OpenSearch-backed retrieval (keeps the existing Naukri-style UI/response
+// shape; only the engine behind the semantic API changes) ---------------------
+
+function tokenizeKeyword(raw) {
+  return uniqueStrings(String(raw || '').split(/[\s,]+/)).slice(0, 12);
+}
+
+// Translate the semantic search intent into a resume-search-v2 (OpenSearch)
+// request. Keywords/skills/role drive full-resume-text relevance ranking;
+// structured fields become OpenSearch filters. Salary is intentionally left to
+// the caller's existing downstream handling (avoids the salary-permission gate).
+function mapIntentToV2Payload(intent, plan) {
+  const skills = uniqueStrings([
+    ...(intent.filters.skills || []),
+    ...(intent.filters.requiredSkills || []),
+    ...(intent.filters.optionalSkills || []),
+  ]).slice(0, 25);
+  const role = intent.filters.designation || intent.role || null;
+  const keywordTerms = uniqueStrings([
+    ...skills,
+    ...(role ? [role] : []),
+    ...tokenizeKeyword(intent.keyword),
+  ]).slice(0, 25);
+  const keywords = keywordTerms.map((term) => ({ term: String(term).slice(0, 120), mode: 'SHOULD' }));
+
+  const locations = uniqueStrings([
+    ...(intent.filters.location ? [intent.filters.location] : []),
+    ...(Array.isArray(intent.filters.locations) ? intent.filters.locations : []),
+  ]).slice(0, 20).map((value) => String(value).slice(0, 120));
+
+  // IMPORTANT: skills / role / employer are matched as ranking keywords above,
+  // NOT as hard filters. A free-text query like "engineer" is parsed into a
+  // designation; turning that into a hard currentTitle filter (an AND match
+  // against the exact title field) over-constrains and returns nothing. Only
+  // genuine structured constraints a recruiter sets (location, experience
+  // range) become hard filters.
+  const filters = {};
+  if (locations.length) filters.currentLocation = locations;
+  if (intent.filters.minExperience != null) filters.minExperienceMonths = Math.max(0, Math.round(Number(intent.filters.minExperience) * 12));
+  if (intent.filters.maxExperience != null) filters.maxExperienceMonths = Math.max(0, Math.round(Number(intent.filters.maxExperience) * 12));
+
+  return {
+    keywords,
+    phrases: [],
+    filters,
+    sort: 'RELEVANCE',
+    pageSize: Math.min(50, Math.max(Number(plan?.pagination?.pageSize) || 25, 25)),
+    includeHighlights: false,
+    includeExplain: false,
+  };
+}
+
+// Returns the same `{ items, meta }` shape searchCandidates returns, with items
+// as fully-hydrated candidate cards in OpenSearch relevance order. Returns null
+// to signal the caller should fall back to the database engine.
+async function retrieveViaOpenSearch({ actorUser, organisationId, intent, plan }) {
+  if (!actorUser) return null;
+  // Mirror the meta shape searchCandidates returns so the downstream response
+  // schema (requires page/pageSize/warning) always validates.
+  const page = Math.max(1, Number(plan?.pagination?.page) || 1);
+  const pageSize = Math.max(1, Number(plan?.pagination?.pageSize) || 25);
+  const buildMeta = (total) => ({ total, page, pageSize, searchMode: 'opensearch', warning: null });
+
+  const payload = mapIntentToV2Payload(intent, plan);
+  const result = await searchResumesV2(actorUser, payload, {});
+  const orderedIds = uniqueStrings((result.items || []).map((item) => item.candidateId));
+  if (!orderedIds.length) {
+    return { items: [], meta: buildMeta(result.meta?.totalValue || 0) };
+  }
+  // Hydrate full cards (no extra keyword narrowing: OpenSearch already matched),
+  // then reorder to preserve OpenSearch relevance ranking.
+  const rows = await findCandidateSearchRowsByIds(orderedIds, {}, organisationId);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const items = orderedIds
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((row) => buildCandidateCard(row, organisationId));
+  return { items, meta: buildMeta(result.meta?.totalValue || items.length) };
 }
 
 function buildExpansionMaps(expansions = []) {
@@ -279,6 +366,13 @@ async function loadAccessibleCandidateIds(candidateIds = [], organisationId) {
     where: {
       id: { in: candidateIds },
       OR: [
+        // Common recruiter databank: any resume made searchable and visible to
+        // recruiters is part of the shared pool that EVERY organisation can
+        // search, regardless of which organisation uploaded/imported it. This
+        // is what makes a resume one org imports discoverable by all orgs.
+        { searchableProfile: true, resumeVisibleToRecruiters: true },
+        // Plus each org's own candidates even if not flagged searchable
+        // (their own imports, their applicants, and candidates they saved).
         { organisationId },
         { applications: { some: { organisationId } } },
         { savedByRecruiters: { some: { organisationId } } },
@@ -300,7 +394,24 @@ export async function retrieveCandidatesForSemanticSearch({
   expansions = [],
 }) {
   const filters = mapIntentToSearchFilters(intent, plan);
-  const searchResult = await searchCandidates(filters, organisationId, actorUser);
+  // Prefer the OpenSearch engine (accurate full-resume-text ranking across the
+  // common databank). Fall back to the database engine if OpenSearch is
+  // unavailable so search never hard-fails.
+  let searchResult = null;
+  try {
+    searchResult = await retrieveViaOpenSearch({ actorUser, organisationId, intent, plan });
+  } catch {
+    searchResult = null;
+  }
+  // Fall back to the database engine when OpenSearch is unavailable (null) OR
+  // returns no matches. The OpenSearch index matches resume CONTENT (skills,
+  // titles, employment history) but not candidate names, so a name lookup
+  // (e.g. "Vinoj Pillai") yields nothing there - the database keyword search
+  // matches fullName and recovers it. Genuine no-match queries return empty
+  // from both, so this never fabricates results.
+  if (!searchResult || searchResult.items.length === 0) {
+    searchResult = await searchCandidates(filters, organisationId, actorUser);
+  }
   const candidateIds = searchResult.items.map((candidate) => candidate.id);
   const accessibleIds = await loadAccessibleCandidateIds(candidateIds, organisationId);
   const visibleItems = searchResult.items.filter((candidate) => accessibleIds.has(candidate.id));

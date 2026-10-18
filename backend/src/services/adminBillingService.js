@@ -2,6 +2,7 @@ import { prisma } from '../config/db.js';
 import { recordAuditLog } from './auditLogService.js';
 import { enqueueBackgroundTask } from './backgroundTaskService.js';
 import { activatePurchase } from './billingService.js';
+import { getActiveProductPlan, buildProductSnapshot, isSubscriptionProduct } from './productCatalogueService.js';
 import { razorpayGateway } from './razorpayService.js';
 
 // Platform-level (Careeriz staff) billing administration (section 15).
@@ -250,4 +251,83 @@ export async function reviewFlaggedRefund(actorUser, purchaseId, approve, reason
   });
 
   return updated;
+}
+
+// Grant a FREE subscription to an organisation (spec section 15:
+// "complimentary subscription grants"). Rather than duplicate the
+// subscription/credit/invoice logic, we reuse the single entitlement-granting
+// primitive (activatePurchase): we create a synthetic COMPLIMENTARY Purchase at
+// amountPaise 0 with a money-zeroed productSnapshot, then activate it. The real
+// product plan still drives the access term and included job credits, while the
+// zeroed snapshot makes the generated GST invoice a correct Rupees-0 invoice -
+// no money is ever recorded as collected. Only a subscription product can be
+// comped (not the one-off job-post credit). Idempotency is left to the caller's
+// confirmation step; a repeated grant simply stacks another free term, which an
+// operator controls.
+export async function grantComplimentarySubscription(actorUser, organisationId, options = {}, requestMeta = {}) {
+  const { productCode, reason } = options;
+
+  const organisation = await prisma.organisation.findUnique({ where: { id: organisationId }, select: { id: true } });
+  if (!organisation) {
+    const error = new Error('Organisation not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!isSubscriptionProduct(productCode)) {
+    const error = new Error('Complimentary grants are only available for subscription products.');
+    error.statusCode = 400;
+    error.code = 'NOT_A_SUBSCRIPTION_PRODUCT';
+    throw error;
+  }
+
+  const plan = await getActiveProductPlan(productCode);
+  if (!plan) {
+    const error = new Error(`Product ${productCode} is not available.`);
+    error.statusCode = 404;
+    error.code = 'PRODUCT_NOT_FOUND';
+    throw error;
+  }
+
+  // Keep term / credits / active-days from the real plan; zero every monetary
+  // field so the invoice and recorded amount are a clean Rupees 0.
+  const productSnapshot = {
+    ...buildProductSnapshot(plan),
+    baseAmountPaise: 0,
+    gstAmountPaise: 0,
+    gstRatePercent: 0,
+    totalAmountPaise: 0,
+    complimentary: true,
+  };
+
+  const purchase = await prisma.purchase.create({
+    data: {
+      organisationId,
+      purchaserUserId: actorUser.id,
+      productPlanId: plan.id,
+      productCode: plan.code,
+      productVersion: plan.version,
+      productSnapshot,
+      provider: 'COMPLIMENTARY',
+      status: 'PENDING',
+      currency: plan.currency,
+      amountPaise: 0,
+      idempotencyKey: `comp:${organisationId}:${plan.code}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
+    },
+  });
+
+  const activated = await activatePurchase(purchase.id, {}, { source: 'admin_complimentary' });
+
+  await recordAuditLog({
+    organisationId,
+    actorUserId: actorUser.id,
+    action: 'admin.billing.subscription.complimentaryGrant',
+    entityType: 'Purchase',
+    entityId: purchase.id,
+    afterData: activated,
+    metadata: { productCode: plan.code, reason, subscriptionId: activated?.subscription?.id || null },
+    ...requestMeta,
+  });
+
+  return activated;
 }

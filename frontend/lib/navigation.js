@@ -67,6 +67,13 @@ export const adminNav = [
   { label: 'Lookups', href: '/admin/lookups', icon: 'ListFilter' },
 ];
 
+// Platform operator console (feature/platform-super-admin). Only ever rendered
+// for the single global super admin; the /platform layout enforces access.
+export const platformNav = [
+  { label: 'Dashboard', href: '/platform', icon: 'LayoutDashboard', exact: true },
+  { label: 'Organisations', href: '/platform/organisations', icon: 'Building2' },
+];
+
 export function getNavigationForRole(role) {
   if (role === 'CANDIDATE' || role === 'CANDIDATE_ADMIN') return candidateNav;
   if (role === 'RECRUITER' || role === 'RECRUITER_ADMIN') return recruiterNav;

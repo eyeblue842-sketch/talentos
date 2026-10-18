@@ -3,9 +3,11 @@ import { WorkspaceShell } from '@/components/layout/workspace-shell';
 import { Card } from '@/components/ui/card';
 import { RecruiterApplicationDetailView } from '@/components/sections/recruiter-application-detail-view';
 import { OfferStatusCard } from '@/components/recruiter/offer-status-card';
+import { AiScreeningPanel } from '@/components/recruiter/ai-screening-panel';
 import { PageHeader } from '@/components/ui/page-header';
 import { recruiterNav } from '@/lib/navigation';
 import {
+  getApplicationScreeningCalls,
   getCandidateMatchIntelligence,
   getCurrentOrganisation,
   getInterviewIntelligence,
@@ -69,6 +71,8 @@ export default async function RecruiterApplicationDetailPage({ params }) {
   let resumeIntelligence = null;
   let matchIntelligence = null;
   let interviewIntelligence = null;
+  // Null = AI screening feature is off (endpoint 404s) -> panel is hidden.
+  let screeningCalls = null;
   let error = '';
 
   try {
@@ -78,6 +82,9 @@ export default async function RecruiterApplicationDetailPage({ params }) {
       getOrganisationMembers(),
     ]);
     offers = application?.applicationId ? await getRecruiterOffersByApplication(application.applicationId) : [];
+    if (application) {
+      screeningCalls = await getApplicationScreeningCalls(application.applicationId || application.id).catch(() => null);
+    }
     if (application?.candidate?.id && application?.job?.id) {
       [resumeIntelligence, matchIntelligence] = await Promise.all([
         getResumeIntelligence({ candidateId: application.candidate.id }).catch(() => null),
@@ -114,6 +121,9 @@ export default async function RecruiterApplicationDetailPage({ params }) {
           />
         ) : null}
         {application ? <OfferStatusCard offers={offers} applicationId={application.applicationId || application.id} /> : null}
+        {application && screeningCalls ? (
+          <AiScreeningPanel applicationId={application.applicationId || application.id} calls={screeningCalls} />
+        ) : null}
     </WorkspaceShell>
   );
 }

@@ -9,6 +9,8 @@ import {
   Bot,
   BriefcaseBusiness,
   Clock3,
+  GraduationCap,
+  MapPin,
   Database,
   Download,
   FileSearch,
@@ -18,6 +20,7 @@ import {
   Save,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   UserRoundSearch,
   Users,
@@ -26,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KeywordStarChips } from './resume-search/keyword-star-chips';
 import { AssociateToJobButton } from '@/components/recruiter/associate-to-job-button';
 import { NviteComposer } from '@/components/recruiter/nvite-composer';
 import { Card } from '@/components/ui/card';
@@ -53,7 +57,6 @@ import {
   parseSemanticSearchResponse,
   parseSemanticSearchSuggestionsResponse,
   SEMANTIC_SEARCH_TERMINAL_STATUSES,
-  semanticSearchModes,
 } from '@/lib/semantic-search';
 import {
   parseCandidateIntelligenceResponse,
@@ -129,6 +132,7 @@ function buildFilterSummary(values = []) {
   const filtered = values.filter(Boolean);
   return filtered.length ? filtered.join(' | ') : 'Any';
 }
+
 
 function EvidenceDialog({ state, onClose }) {
   return (
@@ -285,8 +289,6 @@ function ResultCard({
   const badges = buildResultBadges(item);
   const candidate = item.candidate || {};
   const matchedTerms = (item.retrieval?.matchedTerms || []).map((term) => term.term);
-  const currentRole = [candidate.currentDesignation, candidate.currentCompany].filter(Boolean).join(' at ');
-  const previousRole = [candidate.previousDesignation, candidate.previousCompany].filter(Boolean).join(' at ');
   const salary = candidate.salaryVisible && (candidate.currentSalary != null || candidate.expectedSalary != null)
     ? `INR ${candidate.currentSalary ?? 'NA'}-${candidate.expectedSalary ?? 'NA'} LPA`
     : 'Salary not disclosed';
@@ -298,50 +300,48 @@ function ResultCard({
   if (returnTo) profileParams.set('returnTo', returnTo);
   const profileHref = `/recruiter/database/${candidate.id}${profileParams.toString() ? `?${profileParams.toString()}` : ''}`;
 
+  const relevancePct = summary.retrievalScore != null && summary.retrievalScore > 0 ? formatSemanticSearchScore(summary.retrievalScore) : null;
+  const subtitleParts = [candidate.currentDesignation, candidate.currentCompany, candidate.location].filter(Boolean);
+  const educationLabel = candidate.educationDetail
+    ? `${candidate.educationDetail.degree || 'Qualification'}${candidate.educationDetail.completionYear ? ` · ${candidate.educationDetail.completionYear}` : ''}`
+    : null;
+  const skills = candidate.skills || [];
+
   return (
-    <Card className="border-[var(--color-border)] p-4">
-      <div className="flex flex-wrap items-start gap-4">
-        <input type="checkbox" checked={selected} onChange={() => onToggleSelect(candidate.id)} aria-label={`Select ${getResultCandidateName(item)}`} className="mt-1 h-4 w-4 accent-[var(--color-primary)]" />
-        <CandidateAvatar src={candidate.profileImageUrl} name={getResultCandidateName(item)} sizeClassName="h-14 w-14" />
+    <Card className="border-[var(--color-border)] p-4 transition hover:border-[var(--color-border-strong)]">
+      <div className="flex items-start gap-3">
+        <input type="checkbox" checked={selected} onChange={() => onToggleSelect(candidate.id)} aria-label={`Select ${getResultCandidateName(item)}`} className="mt-1.5 h-4 w-4 accent-[var(--color-primary)]" />
+        <CandidateAvatar src={candidate.profileImageUrl} name={getResultCandidateName(item)} sizeClassName="h-11 w-11 flex-none" />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-base font-semibold text-[var(--color-text)]">
-                <Link className="hover:text-[var(--color-primary)]" href={profileHref}>
-                  {highlightText(getResultCandidateName(item), matchedTerms)}
-                </Link>
-              </h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{highlightText(getResultCandidateTitle(item), matchedTerms)}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {summary.retrievalScore != null ? <Badge tone="brand">Relevance {formatSemanticSearchScore(summary.retrievalScore)}</Badge> : null}
-              {summary.matchScore != null ? <Badge tone="info">Match {formatSemanticSearchScore(summary.matchScore)}</Badge> : null}
-            </div>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <Link className="text-base font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]" href={profileHref}>
+              {highlightText(getResultCandidateName(item), matchedTerms)}
+            </Link>
+            {relevancePct ? <Badge tone="success">{relevancePct} match</Badge> : null}
+            {badges.slice(0, 1).map((badge) => <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>)}
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--color-text-secondary)]">
-            <span>{candidate.totalExperience != null ? `${candidate.totalExperience} yrs` : 'Experience not provided'}</span>
+          <p className="mt-0.5 truncate text-sm text-[var(--color-text-secondary)]">
+            {subtitleParts.length ? highlightText(subtitleParts.join(' · '), matchedTerms) : highlightText(getResultCandidateTitle(item), matchedTerms)}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
+            <span className="inline-flex items-center gap-1"><BriefcaseBusiness size={14} aria-hidden="true" />{candidate.totalExperience != null ? `${candidate.totalExperience} yrs` : 'Exp N/A'}</span>
+            {educationLabel ? <span className="inline-flex items-center gap-1"><GraduationCap size={14} aria-hidden="true" />{educationLabel}</span> : null}
+            <span className="inline-flex items-center gap-1"><Clock3 size={14} aria-hidden="true" />{candidate.noticePeriodDays != null ? `${candidate.noticePeriodDays}d notice` : 'Notice N/A'}</span>
+            {candidate.location ? <span className="inline-flex items-center gap-1"><MapPin size={14} aria-hidden="true" />{candidate.location}</span> : null}
             <span>{salary}</span>
-            <span>{candidate.location || 'Location not provided'}</span>
-            <span>{candidate.noticePeriodDays != null ? `${candidate.noticePeriodDays} days notice` : 'Notice not provided'}</span>
           </div>
-          <div className="mt-3 grid gap-1 text-sm text-[var(--color-text-secondary)] md:grid-cols-2">
-            <p><strong className="font-semibold text-[var(--color-text)]">Current:</strong> {highlightText(currentRole || 'Not added', matchedTerms)}</p>
-            <p><strong className="font-semibold text-[var(--color-text)]">Previous:</strong> {highlightText(previousRole || 'Not added', matchedTerms)}</p>
-            <p><strong className="font-semibold text-[var(--color-text)]">Education:</strong> {candidate.educationDetail ? `${candidate.educationDetail.degree || 'Qualification'}${candidate.educationDetail.institution ? ` - ${candidate.educationDetail.institution}` : ''}${candidate.educationDetail.completionYear ? ` (${candidate.educationDetail.completionYear})` : ''}` : 'Not added'}</p>
-            <p><strong className="font-semibold text-[var(--color-text)]">Preferred:</strong> {candidate.preferredLocations?.length ? candidate.preferredLocations.join(', ') : 'Not specified'}</p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {(candidate.skills || []).slice(0, 8).map((skill) => <Badge key={skill} tone="neutral">{highlightText(skill, matchedTerms)}</Badge>)}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--color-text-muted)]">
-            <span>{candidate.resumeAvailable ? 'Resume attached' : 'No resume attached'}</span>
-            <span>Modified {candidate.updatedAt ? formatSemanticSearchDate(candidate.updatedAt) : 'Not available'}</span>
-            <span>Active {candidate.lastActiveAt ? formatSemanticSearchDate(candidate.lastActiveAt) : 'Not available'}</span>
-          </div>
+          {skills.length ? (
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {skills.slice(0, 7).map((skill) => (
+                <span key={skill} className="rounded-full bg-[var(--color-bg-muted)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)]">{highlightText(skill, matchedTerms)}</span>
+              ))}
+              {skills.length > 7 ? <span className="px-1 text-xs text-[var(--color-text-muted)]">+{skills.length - 7}</span> : null}
+            </div>
+          ) : null}
         </div>
-        <div className="flex w-full flex-wrap gap-2 md:w-auto md:max-w-40 md:justify-end">
-          <Button as={Link} href={profileHref} variant="outline" size="sm">View Profile</Button>
-          {candidate.resumeAvailable ? <Button as="a" href={`/api/resumes/candidate/${candidate.id}/download`} variant="outline" size="sm"><Download size={14} aria-hidden="true" />View Resume</Button> : null}
+        <div className="flex flex-none flex-col gap-2">
+          <Button as={Link} href={profileHref} variant="outline" size="sm">Profile</Button>
+          {candidate.resumeAvailable ? <Button as="a" href={`/api/resumes/candidate/${candidate.id}/download`} variant="outline" size="sm"><Download size={14} aria-hidden="true" />Resume</Button> : null}
           <AssociateToJobButton candidateId={candidate.id} candidateName={getResultCandidateName(item)} size="sm" variant="outline" />
         </div>
       </div>
@@ -917,10 +917,21 @@ export function RecruiterSemanticSearchWorkspace({
     );
   }
 
+  const activeFilterChips = [];
+  (formState.locations || []).forEach((location) => {
+    activeFilterChips.push({ key: `loc-${location}`, label: location, nextState: { ...formState, locations: (formState.locations || []).filter((item) => item !== location), page: 1 } });
+  });
+  if (formState.minExperience !== '' || formState.maxExperience !== '') {
+    activeFilterChips.push({ key: 'exp', label: `${formState.minExperience || 0}-${formState.maxExperience || 'Any'} yrs`, nextState: { ...formState, minExperience: '', maxExperience: '', page: 1 } });
+  }
+  if (formState.currentEmployer) {
+    activeFilterChips.push({ key: 'emp', label: formState.currentEmployer, nextState: { ...formState, currentEmployer: '', page: 1 } });
+  }
+
   return (
     <>
-      <div className={isResultsView && showLivePreview ? 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]' : isResultsView ? 'grid gap-6 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]' : 'space-y-4'}>
-        <div className={isResultsView && !showLivePreview ? 'contents' : 'min-w-0 space-y-4'}>
+      <div className={isResultsView && showLivePreview ? 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]' : 'space-y-4'}>
+        <div className="min-w-0 space-y-4">
           {!isResultsView ? <SearchSection
             title="AI Assist"
             description="Describe the candidate you are looking for. Careeriz will interpret the requirement and populate structured recruiter filters for review."
@@ -960,7 +971,8 @@ export function RecruiterSemanticSearchWorkspace({
             </div>
           </SearchSection> : null}
 
-          <div className={isResultsView ? 'min-w-0' : ''}>
+          {!isResultsView ? (
+          <div className="min-w-0">
           <SearchSection
             title="Search Criteria"
             description="Review and refine structured recruiter filters before running the existing Careeriz semantic search."
@@ -1075,9 +1087,8 @@ export function RecruiterSemanticSearchWorkspace({
                 defaultOpen
                 summary={buildFilterSummary([
                   formState.query && `Query: ${formState.query}`,
-                  formState.requiredSkills && `Skills: ${formState.requiredSkills}`,
-                  formState.optionalSkills && `Optional / excluded: ${formState.optionalSkills}`,
-                  formState.mode && `Mode: ${semanticSearchModes.find((mode) => mode.value === formState.mode)?.label || formState.mode}`,
+                  formState.requiredSkills && `Mandatory: ${formState.requiredSkills}`,
+                  formState.optionalSkills && `Optional: ${formState.optionalSkills}`,
                 ])}
               >
                 <div className="grid gap-3">
@@ -1087,19 +1098,14 @@ export function RecruiterSemanticSearchWorkspace({
                     onChange={(event) => setFormState((current) => ({ ...current, query: event.target.value, deferSearch: false }))}
                     placeholder="Enter skills, designation, technologies or companies"
                   />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[var(--color-text)]">Search mode</span>
-                      <select
-                        value={formState.mode}
-                        onChange={(event) => setFormState((current) => ({ ...current, mode: event.target.value }))}
-                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-text)]"
-                      >
-                        {semanticSearchModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
-                      </select>
-                    </label>
-                    <Input label="Required skills" value={formState.requiredSkills} onChange={(event) => setFormState((current) => ({ ...current, requiredSkills: event.target.value }))} placeholder="Java, Spring Boot, AWS" />
-                    <Input label="Optional / exclude keywords" value={formState.optionalSkills} onChange={(event) => setFormState((current) => ({ ...current, optionalSkills: event.target.value }))} placeholder="Tableau, legacy PHP" />
+                  <div className="grid gap-2">
+                    <span className="text-sm font-semibold text-[var(--color-text)]">Skill keywords</span>
+                    <KeywordStarChips
+                      requiredSkills={formState.requiredSkills}
+                      optionalSkills={formState.optionalSkills}
+                      onChange={(req, opt) => setFormState((current) => ({ ...current, requiredSkills: req, optionalSkills: opt }))}
+                      query={formState.query}
+                    />
                   </div>
                 </div>
               </FilterAccordion>
@@ -1383,13 +1389,105 @@ export function RecruiterSemanticSearchWorkspace({
             </div>
           </SearchSection>
           </div>
+          ) : null}
           <div className={isResultsView ? 'min-w-0 space-y-4' : ''}>
           {isResultsView ? (
             <SearchSection
-              title="Candidate Results"
-              description={result ? `${totalCount} profiles found${formState.query ? ` for ${formState.query}` : ''}` : 'Running the search criteria...'}
-              action={result?.execution?.status ? <SearchStatusBadge status={result.execution.status} /> : null}
+              title="Candidate search"
+              description={result ? `${totalCount} candidate${totalCount === 1 ? '' : 's'} matched${formState.query ? ` for "${formState.query}"` : ''}` : 'Running your search...'}
+              action={(
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => { window.location.href = '/recruiter/database'; }}>
+                    <SlidersHorizontal size={15} aria-hidden="true" />
+                    Modify search
+                  </Button>
+                  {savedSearchesEnabled && canReadSavedSearches ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setActiveUtilityPanel((current) => current === 'saved' ? null : 'saved')}>
+                      <Save size={15} aria-hidden="true" />
+                      Saved
+                    </Button>
+                  ) : null}
+                  {searchHistoryEnabled && canReadHistory ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setActiveUtilityPanel((current) => current === 'recent' ? null : 'recent')}>
+                      <History size={15} aria-hidden="true" />
+                      Recent
+                    </Button>
+                  ) : null}
+                </div>
+              )}
             >
+              {activeUtilityPanel === 'saved' ? (
+                <div className="mb-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] p-4">
+                  {savedSearches.length ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {savedSearches.map((item) => (
+                        <button key={item.id} type="button" onClick={() => applySavedSearch(item)} className="flex items-start justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
+                          <span><span className="block text-sm font-semibold text-[var(--color-text)]">{item.name}</span><span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">{item.description || item.rawQuery || 'Saved recruiter search'}</span></span>
+                          <span className="text-xs font-semibold text-[var(--color-primary)]">Apply</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-[var(--color-text-secondary)]">Your saved searches appear here once you save a search.</p>}
+                </div>
+              ) : null}
+              {activeUtilityPanel === 'recent' ? (
+                <div className="mb-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-muted)] p-4">
+                  {history.items.length ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {history.items.map((item) => (
+                        <button key={item.id} type="button" onClick={() => applyRecentSearch(item)} className="flex items-start justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
+                          <span><span className="block text-sm font-semibold text-[var(--color-text)]">{item.rawQuery || item.normalizedQuery || item.searchMode}</span><span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">{formatSemanticSearchDate(item.createdAt)}</span></span>
+                          <SearchStatusBadge status={item.latestExecution?.status || 'READY'} />
+                        </button>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-[var(--color-text-secondary)]">Your recent searches appear here after your first search.</p>}
+                </div>
+              ) : null}
+
+              {result ? (
+                <div className="mb-4">
+                  <KeywordStarChips
+                    requiredSkills={formState.requiredSkills}
+                    optionalSkills={formState.optionalSkills}
+                    onChange={(req, opt) => {
+                      const next = { ...formState, requiredSkills: req, optionalSkills: opt, query: [req, opt].filter(Boolean).join(', '), page: 1 };
+                      setFormState(next);
+                      runSearch({ payloadOverride: buildSemanticSearchPayload(next, 1, SEARCH_PAGE_SIZE), stateOverride: next });
+                    }}
+                    query={formState.query}
+                  />
+                </div>
+              ) : null}
+
+              {result ? (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Filters</span>
+                  {activeFilterChips.length ? activeFilterChips.map((chip) => (
+                    <span key={chip.key} className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      {chip.label}
+                      {chip.nextState ? (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${chip.label}`}
+                          className="leading-none text-[var(--color-primary)] hover:opacity-70"
+                          onClick={() => {
+                            setFormState(chip.nextState);
+                            // eslint-disable-next-line react-hooks/refs -- onClick is an event handler; rule misfires inside .map()
+                            runSearch({ payloadOverride: buildSemanticSearchPayload(chip.nextState, 1, SEARCH_PAGE_SIZE), stateOverride: chip.nextState });
+                          }}
+                        >
+                          <X size={13} aria-hidden="true" />
+                        </button>
+                      ) : null}
+                    </span>
+                  )) : <span className="text-xs text-[var(--color-text-muted)]">No filters applied</span>}
+                  <button type="button" onClick={() => { window.location.href = '/recruiter/database'; }} className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">
+                    <SlidersHorizontal size={13} aria-hidden="true" /> Add filter
+                  </button>
+                </div>
+              ) : null}
+
               {result ? (
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
                   <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">

@@ -198,6 +198,37 @@ const envSchema = z.object({
   // organisation created before enforcement is deliberately turned on.
   EMPLOYER_ORGANISATION_VERIFICATION_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false'),
   EMPLOYER_ORGANISATION_VERIFICATION_ROLLOUT_ORG_IDS: z.string().optional(),
+
+  // AI voice recruiter (feature/ai-voice-recruiter). Whole module is gated by
+  // AI_SCREENING_ENABLED and defaults OFF, so deploying this code is a no-op
+  // until an operator turns it on. AI_SCREENING_DRY_RUN defaults ON even when
+  // enabled: calls are simulated (no telephony, no spend) until explicitly set
+  // to 'false'. Telephony is provider-routed by candidate country - PLIVO for
+  // India (+91), VAPI for everyone else. Secrets live only in backend/.env.
+  AI_SCREENING_ENABLED: z.enum(['true', 'false']).default('false'),
+  AI_SCREENING_DRY_RUN: z.enum(['true', 'false']).default('true'),
+  // Shared secret echoed back by provider webhooks (query/header) so the
+  // unauthenticated webhook endpoints can reject forged deliveries.
+  AI_SCREENING_WEBHOOK_SECRET: z.string().optional(),
+  // Plivo (India leg): the published AI-agent's trigger URL + the purchased
+  // +91 caller ID. Auth id/token are kept for signed webhook verification.
+  PLIVO_AUTH_ID: z.string().optional(),
+  PLIVO_AUTH_TOKEN: z.string().optional(),
+  PLIVO_SCREENING_AGENT_TRIGGER_URL: z.string().url().optional(),
+  PLIVO_SCREENING_CALLER_ID: z.string().optional(),
+  // Vapi (international leg): API key + the published assistant and the
+  // Twilio-backed phone number id already provisioned in Vapi.
+  VAPI_API_KEY: z.string().optional(),
+  VAPI_ASSISTANT_ID: z.string().optional(),
+  VAPI_PHONE_NUMBER_ID: z.string().optional(),
+  VAPI_API_BASE_URL: z.string().url().default('https://api.vapi.ai'),
+
+  // Platform operator console (feature/platform-super-admin). The single global
+  // super-admin identity. /api/platform/* is restricted to the PLATFORM_ADMIN
+  // whose authenticated email matches this value (normalized). When unset the
+  // platform console denies everyone (fail closed) - it never falls back to any
+  // broader role.
+  PLATFORM_SUPER_ADMIN_EMAIL: z.string().email().optional(),
 }).superRefine((data, context) => {
   if (data.ELASTICSEARCH_ENABLED === 'true' && !data.ELASTICSEARCH_URL) {
     context.addIssue({
@@ -390,6 +421,18 @@ const envSchema = z.object({
       message: 'A Razorpay Test Mode key (rzp_test_...) must not be used when NODE_ENV=production.',
     });
   }
+
+  // When screening is live (enabled AND not dry-run), the webhook secret is
+  // mandatory - the provider webhook endpoints are unauthenticated and rely on
+  // it to reject forged deliveries. In dry-run no real webhooks arrive, so it
+  // stays optional while building/testing.
+  if (data.AI_SCREENING_ENABLED === 'true' && data.AI_SCREENING_DRY_RUN === 'false' && !data.AI_SCREENING_WEBHOOK_SECRET) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AI_SCREENING_WEBHOOK_SECRET'],
+      message: 'AI_SCREENING_WEBHOOK_SECRET is required when AI_SCREENING_ENABLED=true and AI_SCREENING_DRY_RUN=false.',
+    });
+  }
 });
 
 export function parseEnv(rawEnv) {
@@ -563,4 +606,18 @@ export const env = {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean),
+  aiScreeningEnabled: parsed.data.AI_SCREENING_ENABLED === 'true',
+  aiScreeningDryRun: parsed.data.AI_SCREENING_DRY_RUN === 'true',
+  aiScreeningWebhookSecret: parsed.data.AI_SCREENING_WEBHOOK_SECRET || null,
+  plivoAuthId: parsed.data.PLIVO_AUTH_ID || null,
+  plivoAuthToken: parsed.data.PLIVO_AUTH_TOKEN || null,
+  plivoScreeningAgentTriggerUrl: parsed.data.PLIVO_SCREENING_AGENT_TRIGGER_URL || null,
+  plivoScreeningCallerId: parsed.data.PLIVO_SCREENING_CALLER_ID || null,
+  vapiApiKey: parsed.data.VAPI_API_KEY || null,
+  vapiAssistantId: parsed.data.VAPI_ASSISTANT_ID || null,
+  vapiPhoneNumberId: parsed.data.VAPI_PHONE_NUMBER_ID || null,
+  vapiApiBaseUrl: parsed.data.VAPI_API_BASE_URL,
+  platformSuperAdminEmail: parsed.data.PLATFORM_SUPER_ADMIN_EMAIL
+    ? parsed.data.PLATFORM_SUPER_ADMIN_EMAIL.trim().toLowerCase()
+    : null,
 };

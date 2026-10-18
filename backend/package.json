@@ -22,6 +22,8 @@
     "db:test:reset": "node ./scripts/run-with-test-db.js npx prisma migrate reset --force --skip-generate --skip-seed --schema prisma/schema.prisma",
     "seed": "node prisma/seed.js",
     "seed:test-admin": "node scripts/seed-test-admin.js",
+    "seed:platform-admin": "node scripts/bootstrap-platform-admin.js",
+    "fix:platform-owner-role": "node scripts/fix-platform-owner-role.js",
     "resume-search:backfill": "node scripts/resume-search-backfill.js",
     "resume-search:reindex": "node scripts/resume-search-reindex.js",
     "catalogue:sync": "node scripts/sync-product-catalogue.js"
