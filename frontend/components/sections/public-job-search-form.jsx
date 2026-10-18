@@ -89,7 +89,7 @@ export function PublicJobSearchForm({
 
   return (
     <form action={action} className="grid gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-md)]">
-      <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
+      <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_minmax(170px,1fr)_auto]">
         <Input name="keyword" defaultValue={searchParams.keyword || ''} placeholder="Job title, skills or company" />
         <Input name="location" defaultValue={searchParams.location || ''} placeholder="Location" />
         <Input name="skills" defaultValue={searchParams.skills || ''} placeholder="Skills" />

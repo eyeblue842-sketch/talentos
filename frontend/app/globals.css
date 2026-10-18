@@ -121,6 +121,12 @@
   --shell-width-collapsed: 4rem;
   --shell-width-expanded: 17rem;
   --shell-width-context-rail: 20rem;
+  /* Current reserved width of the recruiter/admin left rail. Collapsed by
+     default; when the rail is PINNED open the Sidebar sets data-rail-pinned on
+     <html>, which widens this so the shell grid reserves the space and the
+     content is pushed right (never overlaid). Hover-expand does not pin, so it
+     keeps the lightweight absolute overlay. */
+  --shell-rail-current: var(--shell-width-collapsed);
 
   /* Compact/comfortable density, distinct from the page/marketing
      --space-* scale above - this is specifically for shell chrome
@@ -189,6 +195,22 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Base guard for every textarea (shared component + the 67 raw usages): keep
+   them inside their container and restrict resizing to the vertical axis so a
+   user drag can never push the field out of the layout. Specialised editors
+   that render their own control are unaffected (they use contenteditable divs,
+   not <textarea>). */
+textarea {
+  max-width: 100%;
+  resize: vertical;
+}
+
+/* When the left rail is pinned open, reserve its expanded width so the shell
+   grid pushes content right instead of letting the rail overlay the page. */
+html[data-rail-pinned="true"] {
+  --shell-rail-current: var(--shell-width-expanded);
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -222,9 +244,14 @@ button {
   font: inherit;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* In @layer base so Tailwind text-colour utilities (text-white, text-[...])
+   win on anchor-rendered buttons (Button as="a"). Unlayered, this rule would
+   override those utilities and force dark inherited text on purple buttons. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 button,

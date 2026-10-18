@@ -4,11 +4,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
 const variantStyles = {
-  primary: 'border-transparent bg-[var(--color-primary)] text-white shadow-[var(--shadow-md)] hover:bg-[var(--color-primary-hover)] hover:shadow-[var(--shadow-lg)]',
-  secondary: 'border-transparent bg-[var(--color-secondary)] text-white hover:opacity-92',
-  outline: 'border-[var(--color-border-strong)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]',
-  ghost: 'border-transparent bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]',
-  danger: 'border-transparent bg-[var(--color-danger)] text-white hover:opacity-92',
+  primary: 'border-transparent bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)] hover:bg-[var(--color-primary-hover)] hover:shadow-[var(--shadow-md)]',
+  secondary: 'border-transparent bg-[var(--color-secondary)] text-white shadow-[var(--shadow-sm)] hover:bg-[color:var(--color-primary)]',
+  outline: 'border-[var(--color-border-strong)] bg-[var(--color-bg-card)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]',
+  ghost: 'border-transparent bg-transparent text-[var(--color-text-secondary)] shadow-none hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]',
+  danger: 'border-transparent bg-[var(--color-danger)] text-white shadow-[var(--shadow-sm)] hover:opacity-90',
   link: 'border-transparent bg-transparent px-0 text-[var(--color-primary)] shadow-none hover:text-[var(--color-primary-hover)]',
 };
 
@@ -41,7 +41,7 @@ export function Button({
         'inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] border font-semibold shadow-[var(--shadow-sm)]',
         'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--focus-ring-glow)]',
         'disabled:cursor-not-allowed disabled:border-[var(--color-border)] disabled:bg-[var(--color-bg-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none',
-        'motion-safe:hover:-translate-y-px motion-reduce:hover:transform-none',
+        'transition-colors motion-safe:active:scale-[0.98]',
         variantStyles[variant],
         sizeStyles[size],
         className,

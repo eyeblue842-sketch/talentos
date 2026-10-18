@@ -85,7 +85,7 @@ export function CareerizAppShell({
       className={cn(
         'mx-auto grid min-h-screen gap-6',
         paddingClassName,
-        sidebarCollapsible ? 'lg:grid-cols-[var(--shell-width-collapsed)_1fr]' : 'lg:grid-cols-[var(--shell-width-expanded)_1fr]',
+        sidebarCollapsible ? 'lg:grid-cols-[var(--shell-rail-current)_1fr]' : 'lg:grid-cols-[var(--shell-width-expanded)_1fr]',
         maxWidthClassName,
         className,
       )}

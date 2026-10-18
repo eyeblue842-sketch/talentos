@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BellRing,
   BarChart3,
@@ -79,11 +79,13 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
   const [profileExpanded, setProfileExpanded] = useState(defaultProfileExpanded || pathname === '/candidate/profile');
   const [expandedGroups, setExpandedGroups] = useState(() => ({}));
   // Collapsed icon rail (opt-in via `collapsible`) expands into a full-nav
-  // overlay on hover OR click - never hover-only, so keyboard/touch users can
-  // reach it too. Expanding never resizes the grid column the rail sits in,
-  // so the page content next to it never shifts. Shares its mechanics with
-  // the Resume Search V2 filter rail via useCollapsibleRail, each with its
-  // own independent state and persistence key.
+  // panel on hover OR click - never hover-only, so keyboard/touch users can
+  // reach it too. Hover-expand is a lightweight absolute OVERLAY (no content
+  // shift); pinning it open instead reserves the expanded width in the shell
+  // grid so content is PUSHED right and never covered (see the data-rail-pinned
+  // effect below). Shares its mechanics with the Resume Search V2 filter rail
+  // via useCollapsibleRail, each with its own independent state and
+  // persistence key.
   const {
     expanded: railExpanded,
     pinned: railPinned,
@@ -97,6 +99,17 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
     handleBlur: handleRailBlur,
   } = useCollapsibleRail({ persistKey: collapsible ? RAIL_PINNED_STORAGE_KEY : null, defaultExpanded: false });
   const [lastSeenPathname, setLastSeenPathname] = useState(pathname);
+
+  // When the rail is PINNED open, reflect it on <html> so the shell grid
+  // (--shell-rail-current) reserves the expanded width and pushes content right
+  // instead of overlaying it. Hover-expand (not pinned) keeps the overlay.
+  useEffect(() => {
+    if (!collapsible) return undefined;
+    const root = document.documentElement;
+    if (railPinned) root.setAttribute('data-rail-pinned', 'true');
+    else root.removeAttribute('data-rail-pinned');
+    return () => root.removeAttribute('data-rail-pinned');
+  }, [collapsible, railPinned]);
 
   // Route-change close: a temporarily (hover/click) expanded rail returns to
   // collapsed after navigating, unless pinned open. Adjusted during render
@@ -346,7 +359,7 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
       {collapsible ? (
         <div
           ref={railRef}
-          className="sticky top-6 hidden self-start lg:block"
+          className="sticky top-6 z-40 hidden self-start lg:block"
           onMouseEnter={handleRailMouseEnter}
           onMouseLeave={handleRailMouseLeave}
           onFocus={handleRailFocus}
@@ -426,7 +439,7 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
           {railExpanded ? (
             <aside
               aria-label="Expanded navigation"
-              className="rail-panel-enter absolute left-0 top-0 z-40 flex max-h-[calc(100vh-2rem)] w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white/97 p-5 shadow-[var(--shadow-floating)] backdrop-blur lg:max-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)]"
+              className="rail-panel-enter absolute left-0 top-0 z-40 flex max-h-[calc(100vh-2rem)] w-[var(--shell-width-expanded)] flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-floating)] lg:max-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)]"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">

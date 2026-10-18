@@ -20,7 +20,7 @@ export function Textarea({
   const describedBy = [helpText ? `${textareaId}-help` : null, error ? `${textareaId}-error` : null].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className={cn('grid gap-2.5', className)}>
+    <div className={cn('grid min-w-0 max-w-full gap-2.5', className)}>
       {label ? (
         <label htmlFor={textareaId} className="text-sm font-semibold text-[var(--color-text)]">
           {label}
@@ -35,7 +35,7 @@ export function Textarea({
         aria-invalid={Boolean(error)}
         aria-describedby={describedBy}
         className={cn(
-          'min-h-28 w-full rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] px-3.5 py-3 text-sm text-[var(--color-text)] shadow-[var(--shadow-sm)]',
+          'min-h-28 max-h-80 w-full max-w-full resize-y overflow-y-auto rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] px-3.5 py-3 text-sm text-[var(--color-text)] shadow-[var(--shadow-sm)]',
           'placeholder:text-[var(--color-text-muted)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]',
           error ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)] focus:border-[var(--color-primary)]',
           disabled ? 'cursor-not-allowed bg-[var(--color-bg-muted)] text-[var(--color-text-disabled)]' : '',
