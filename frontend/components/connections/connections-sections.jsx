@@ -4,13 +4,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NetworkPageContent } from '@/components/network/network-page-content';
 import { MessagesWorkspace } from '@/components/messaging/messages-workspace';
+import { NetworkFeed } from '@/components/connections/network-feed';
 
 const sections = [
-  ['company-people', 'Company People'],
+  ['feed', 'Feed'],
   ['discover', 'Discover'],
   ['my-connections', 'My Connections'],
   ['invitations', 'Invitations'],
   ['messages', 'Messages'],
+  ['company-people', 'Company People'],
 ];
 
 function sectionHref(section) {
@@ -46,6 +48,7 @@ export function ConnectionsSections({ section, organisation, data, redirectTo })
     </nav>
   );
 
+  if (section === 'feed') return <div className="space-y-6">{tabs}<NetworkFeed initialItems={data.feed?.items || []} initialMeta={data.feed?.meta || {}} /></div>;
   if (section === 'company-people') return <div className="space-y-6">{tabs}<CompanyPeople organisation={organisation} members={data.members} invitations={data.invitations} /></div>;
   if (section === 'messages') return <div className="space-y-6">{tabs}<MessagesWorkspace initialConversations={data.conversations.items} initialConversation={data.activeConversation} initialMessages={data.messages.items} initialMessagesMeta={data.messages.meta} activeConversationId={data.activeConversationId} basePath="/recruiter/home?tab=connections&section=messages" /></div>;
 

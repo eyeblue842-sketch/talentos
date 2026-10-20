@@ -196,6 +196,12 @@ export async function getCandidateFeed(filters = {}) {
   return { items: response.data?.items || [], meta: response.data?.meta || {} };
 }
 
+export async function getNetworkFeed(filters = {}) {
+  const token = await requireToken();
+  const response = await requestBackend(`/feed/network${buildQueryString(filters)}`, { method: 'GET' }, token);
+  return { items: response.data?.items || [], meta: response.data?.meta || {} };
+}
+
 export async function getNetworkReceivedRequests(filters = {}) {
   const token = await requireToken();
   const response = await requestBackend(`/network/requests/received${buildQueryString(filters)}`, { method: 'GET' }, token);

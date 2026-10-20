@@ -1,4 +1,5 @@
 import { createFeedPost, deleteFeedPost, getCandidateFeed } from '../services/feedService.js';
+import { getNetworkFeed, toggleFeedReaction } from '../services/networkFeedService.js';
 import { sendSuccess } from '../utils/response.js';
 
 export async function getFeedController(req, res, next) {
@@ -25,6 +26,27 @@ export async function createFeedPostController(req, res, next) {
 export async function deleteFeedPostController(req, res, next) {
   try {
     const result = await deleteFeedPost(req.user, req.params.postId);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getNetworkFeedController(req, res, next) {
+  try {
+    const feed = await getNetworkFeed(req.user, {
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+    });
+    sendSuccess(res, 200, feed);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function toggleFeedReactionController(req, res, next) {
+  try {
+    const result = await toggleFeedReaction(req.user, req.params.postId, String(req.body?.type || '').toUpperCase());
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

@@ -822,6 +822,7 @@ model User {
   directMessagesSent                    DirectMessage[]                 @relation("DirectMessageSender")
   organisationPosts                     OrganisationPost[]              @relation("OrganisationPostAuthor")
   feedPosts                             FeedPost[]                      @relation("FeedPostAuthor")
+  feedPostReactions                     FeedPostReaction[]              @relation("FeedPostReactionUser")
   purchasesMade                         Purchase[]                      @relation("PurchasePurchaser")
   billingProfilesUpdated                CompanyBillingProfile[]         @relation("BillingProfileUpdatedBy")
   jobCreditLedgerEntriesCreated         JobPostingCreditLedger[]        @relation("JobCreditLedgerCreatedBy")
@@ -962,17 +963,37 @@ enum FeedPostStatus {
 // A candidate's own feed post (LinkedIn-style). Shown in the candidate feed
 // alongside OrganisationPost entries from companies the candidate follows.
 model FeedPost {
-  id           String         @id @default(cuid())
+  id           String             @id @default(cuid())
   authorUserId String
   content      String
   imageUrl     String?
-  status       FeedPostStatus @default(PUBLISHED)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  authorUser   User           @relation("FeedPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  status       FeedPostStatus     @default(PUBLISHED)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  authorUser   User               @relation("FeedPostAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  reactions    FeedPostReaction[]
 
   @@index([authorUserId, createdAt])
   @@index([status, createdAt])
+}
+
+enum FeedReactionType {
+  LIKE
+  SHARE
+}
+
+model FeedPostReaction {
+  id        String           @id @default(cuid())
+  postId    String
+  userId    String
+  type      FeedReactionType
+  createdAt DateTime         @default(now())
+  post      FeedPost         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User             @relation("FeedPostReactionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, type])
+  @@index([userId, createdAt])
+  @@index([postId, type])
 }
 
 model NetworkPrivacySettings {

@@ -157,8 +157,18 @@ function getEffectivePrivacy(user) {
   };
 }
 
+const RECRUITER_ROLES = new Set(['RECRUITER', 'RECRUITER_ADMIN']);
+
+// Professional connections are candidate <-> recruiter only: recruiters (of any
+// organisation) are never suggested to, searchable by, or connectable with each
+// other. Colleagues are reached through Company People instead.
+function isRecruiterToRecruiter(actor, target) {
+  return RECRUITER_ROLES.has(actor.role) && RECRUITER_ROLES.has(target.role);
+}
+
 function canSearchTarget(actor, target) {
   if (actor.id === target.id) return true;
+  if (isRecruiterToRecruiter(actor, target)) return false;
   const privacy = getEffectivePrivacy(target);
   if (!privacy.showInPeopleSearch) return false;
   if ((target.role === 'RECRUITER' || target.role === 'RECRUITER_ADMIN') && !privacy.showRecruiterIdentity) {
@@ -178,6 +188,7 @@ function canSearchTarget(actor, target) {
 function canSendConnectionRequest(actor, target) {
   if (!target) return false;
   if (actor.id === target.id) return false;
+  if (isRecruiterToRecruiter(actor, target)) return false;
   const privacy = getEffectivePrivacy(target);
   if (privacy.allowConnectionRequestsFrom === 'NOBODY') return false;
   if (privacy.allowConnectionRequestsFrom === 'RECRUITERS_ONLY') {
@@ -727,6 +738,10 @@ export async function sendConnectionRequest(actor, payload) {
   const blockedRelationship = await getBlockedRelationship(actor.id, target.id);
   if (blockedRelationship) {
     throw createHttpError('Connection requests are unavailable for this user.', 403);
+  }
+
+  if (isRecruiterToRecruiter(actor, target)) {
+    throw createHttpError('Recruiters connect with candidates only.', 403);
   }
 
   if (!canSendConnectionRequest(actor, target)) {

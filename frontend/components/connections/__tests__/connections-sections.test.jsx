@@ -27,7 +27,13 @@ describe('ConnectionsSections', () => {
   test('renders the required section order and stable URLs', () => {
     render(<ConnectionsSections section="company-people" organisation={{ name: 'Northstar' }} data={data} redirectTo="/recruiter/home?tab=connections&section=company-people" />);
     expect(screen.getByRole('link', { name: 'Company People' })).toHaveAttribute('href', '/recruiter/home?tab=connections&section=company-people');
-    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Company People', 'Discover', 'My Connections', 'Invitations', 'Messages', 'Manage members']);
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Feed', 'Discover', 'My Connections', 'Invitations', 'Messages', 'Company People', 'Manage members']);
+  });
+
+  test('opens on the Feed tab and lists Company People last', () => {
+    render(<ConnectionsSections section="feed" organisation={{ name: 'Northstar' }} data={{ ...data, feed: { items: [], meta: { connectionCount: 0 } } }} redirectTo="/recruiter/home?tab=connections&section=feed" />);
+    expect(screen.getByText('Your feed is empty')).toBeInTheDocument();
+    expect(screen.getAllByRole('link').map((link) => link.textContent).at(-1)).toBe('Company People');
   });
 
   test('keeps Messages as a separate section using the existing workspace', () => {
