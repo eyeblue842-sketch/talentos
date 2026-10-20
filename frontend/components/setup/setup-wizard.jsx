@@ -117,6 +117,14 @@ function buildPayload(values) {
   };
 }
 
+// Same-origin /api in production (the reverse proxy routes /api/setup to the API);
+// the direct backend port only when running locally without a proxy.
+function setupApiBase() {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL;
+  const local = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  return local ? 'http://localhost:5000/api' : '/api';
+}
+
 export function SetupWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -156,7 +164,7 @@ export function SetupWizard() {
     setSubmitError('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api'}/setup`, {
+      const response = await fetch(`${setupApiBase()}/setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
