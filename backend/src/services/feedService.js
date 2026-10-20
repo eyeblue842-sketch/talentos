@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { collectNetworkFeedItems } from './networkFeedService.js';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 30;
@@ -38,7 +39,7 @@ export async function getCandidateFeed(user, { page = 1, pageSize = DEFAULT_PAGE
   // Over-fetch a window from both sources, merge by date, then page in memory.
   const windowSize = skip + take + 1;
 
-  const [orgPosts, ownPosts] = await Promise.all([
+  const [orgPosts, network] = await Promise.all([
     followedOrgIds.length
       ? prisma.organisationPost.findMany({
         where: { organisationId: { in: followedOrgIds }, status: 'PUBLISHED' },
@@ -47,11 +48,9 @@ export async function getCandidateFeed(user, { page = 1, pageSize = DEFAULT_PAGE
         include: { organisation: { select: { id: true, name: true, slug: true, logoUrl: true, industry: true } } },
       })
       : Promise.resolve([]),
-    prisma.feedPost.findMany({
-      where: { authorUserId: user.id, status: 'PUBLISHED' },
-      orderBy: { createdAt: 'desc' },
-      take: windowSize,
-    }),
+    // The candidate's own posts, their connections' posts, and what those
+    // connections liked or shared - each with like/share state for the viewer.
+    collectNetworkFeedItems(user, windowSize),
   ]);
 
   const items = [
@@ -62,6 +61,7 @@ export async function getCandidateFeed(user, { page = 1, pageSize = DEFAULT_PAGE
       content: post.content,
       imageUrl: post.imageUrl || null,
       createdAt: post.publishedAt || post.createdAt,
+      sortAt: post.publishedAt || post.createdAt,
       canDelete: false,
       author: {
         name: post.organisation?.name || 'Company',
@@ -72,24 +72,12 @@ export async function getCandidateFeed(user, { page = 1, pageSize = DEFAULT_PAGE
         userId: null,
       },
     })),
-    ...ownPosts.map((post) => ({
-      id: `me_${post.id}`,
-      postId: post.id,
+    ...network.items.map((item) => ({
+      ...item,
       type: 'CANDIDATE',
-      content: post.content,
-      imageUrl: post.imageUrl || null,
-      createdAt: post.createdAt,
-      canDelete: true,
-      author: {
-        name: candidateDisplayName(user),
-        subtitle: user?.candidateProfile?.headline || user?.candidateProfile?.currentTitle || 'You',
-        logoUrl: null,
-        organisationSlug: null,
-        organisationId: null,
-        userId: user.id,
-      },
+      author: { ...item.author, logoUrl: null, organisationSlug: null, organisationId: null },
     })),
-  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  ].sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime());
 
   const pageItems = items.slice(skip, skip + take);
   const hasMore = items.length > skip + take;
@@ -130,6 +118,11 @@ export async function createFeedPost(user, payload = {}) {
     imageUrl: post.imageUrl || null,
     createdAt: post.createdAt.toISOString(),
     canDelete: true,
+    likeCount: 0,
+    shareCount: 0,
+    viewerLiked: false,
+    viewerShared: false,
+    activity: null,
     author: {
       name: candidateDisplayName(user),
       subtitle: user?.candidateProfile?.headline || user?.candidateProfile?.currentTitle || 'You',

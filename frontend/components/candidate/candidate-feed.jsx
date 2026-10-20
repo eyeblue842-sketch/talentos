@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Building2, Loader2, Send, Trash2 } from 'lucide-react';
+import { Building2, Loader2, Repeat2, Send, ThumbsUp, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -43,6 +43,7 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
   const [posting, setPosting] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [reactingId, setReactingId] = useState('');
 
   async function submitPost(event) {
     event.preventDefault();
@@ -77,6 +78,34 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
       if (!response.ok) throw new Error('delete failed');
     } catch {
       setItems(previous); // restore on failure
+    }
+  }
+
+  async function react(item, type) {
+    if (reactingId) return;
+    setReactingId(item.postId);
+    try {
+      const response = await fetch(`/api/feed/posts/${encodeURIComponent(item.postId)}/reaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.data) throw new Error(body?.message || 'Could not update your reaction.');
+      const result = body.data;
+      setItems((current) => current.map((entry) => (entry.postId === item.postId && entry.type !== 'ORGANISATION'
+        ? {
+          ...entry,
+          likeCount: result.likeCount,
+          shareCount: result.shareCount,
+          viewerLiked: type === 'LIKE' ? result.active : entry.viewerLiked,
+          viewerShared: type === 'SHARE' ? result.active : entry.viewerShared,
+        }
+        : entry)));
+    } catch (reactError) {
+      setError(reactError.message);
+    } finally {
+      setReactingId('');
     }
   }
 
@@ -134,6 +163,11 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
       {items.length ? (
         items.map((item) => (
           <Card key={item.id} className="rounded-2xl p-5">
+            {item.activity ? (
+              <p className="mb-3 text-xs font-medium text-[var(--color-text-secondary)]">
+                {item.activity.byName} {item.activity.type === 'SHARED' ? 'shared this' : 'liked this'}
+              </p>
+            ) : null}
             <div className="flex items-start gap-3">
               <Avatar item={item} />
               <div className="min-w-0 flex-1">
@@ -154,6 +188,16 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
                 </div>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--color-text)]">{item.content}</p>
                 {item.imageUrl ? <img src={item.imageUrl} alt="" className="mt-3 max-h-96 w-full rounded-xl object-cover" /> : null}
+                {item.type !== 'ORGANISATION' ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+                    <Button type="button" variant="ghost" size="sm" disabled={reactingId === item.postId} aria-pressed={Boolean(item.viewerLiked)} onClick={() => react(item, 'LIKE')} className={item.viewerLiked ? 'text-[var(--color-primary)]' : ''} leadingIcon={ThumbsUp}>
+                      {item.viewerLiked ? 'Liked' : 'Like'}{item.likeCount ? ` · ${item.likeCount}` : ''}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" disabled={reactingId === item.postId} aria-pressed={Boolean(item.viewerShared)} onClick={() => react(item, 'SHARE')} className={item.viewerShared ? 'text-[var(--color-primary)]' : ''} leadingIcon={Repeat2}>
+                      {item.viewerShared ? 'Shared' : 'Share'}{item.shareCount ? ` · ${item.shareCount}` : ''}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </Card>

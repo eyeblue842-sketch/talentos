@@ -98,12 +98,9 @@ function serializePost(post, viewerId, connectionIds, sortAt) {
   };
 }
 
-export async function getNetworkFeed(user, { page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
-  const take = clampPageSize(pageSize);
-  const currentPage = Math.max(1, Number(page) || 1);
-  const skip = (currentPage - 1) * take;
-  const windowSize = skip + take + 1;
-
+// Newest-first items for the viewer's network feed, over-fetched to `windowSize`
+// so callers can page (or merge with other sources) in memory.
+export async function collectNetworkFeedItems(user, windowSize) {
   const connectionList = await getConnectionUserIds(user.id);
   const connectionIds = new Set(connectionList);
   const audience = [...connectionList, user.id];
@@ -141,9 +138,20 @@ export async function getNetworkFeed(user, { page = 1, pageSize = DEFAULT_PAGE_S
   reacted.forEach((row) => remember(row.post, row.createdAt));
   ownShares.forEach((row) => remember(row.post, row.createdAt));
 
-  const items = [...byPost.values()]
-    .sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime())
-    .map(({ post, sortAt }) => serializePost(post, user.id, connectionIds, sortAt));
+  return {
+    connectionCount: connectionList.length,
+    items: [...byPost.values()]
+      .sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime())
+      .map(({ post, sortAt }) => serializePost(post, user.id, connectionIds, sortAt)),
+  };
+}
+
+export async function getNetworkFeed(user, { page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+  const take = clampPageSize(pageSize);
+  const currentPage = Math.max(1, Number(page) || 1);
+  const skip = (currentPage - 1) * take;
+
+  const { items, connectionCount } = await collectNetworkFeedItems(user, skip + take + 1);
 
   return {
     items: items.slice(skip, skip + take),
@@ -151,7 +159,7 @@ export async function getNetworkFeed(user, { page = 1, pageSize = DEFAULT_PAGE_S
       page: currentPage,
       pageSize: take,
       hasMore: items.length > skip + take,
-      connectionCount: connectionList.length,
+      connectionCount,
     },
   };
 }
