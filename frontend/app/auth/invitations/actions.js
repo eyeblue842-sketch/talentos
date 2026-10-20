@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { acceptOrganisationInvitation } from '@/lib/api';
+import { buildInvitationAcceptPath } from '@careeriz/shared';
 import { ORGANISATION_COOKIE } from '@/lib/auth';
 
 export async function acceptOrganisationInvitationAction(token) {

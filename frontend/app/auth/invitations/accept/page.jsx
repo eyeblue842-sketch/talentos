@@ -3,6 +3,7 @@ import { buildInvitationAcceptPath, INVITATION_TOKEN_PARAM } from '@careeriz/sha
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { InvitationSwitchAccount } from '@/components/auth/invitation-switch-account';
 import { acceptOrganisationInvitationAction } from '../actions';
 import { getInvitationTokenDetail } from '@/lib/api';
 import { buildPathWithParams, employerAuthRoutes } from '@/lib/auth-experience';
@@ -11,6 +12,7 @@ import { getCurrentUser } from '@/lib/auth';
 export default async function InvitationAcceptPage({ searchParams }) {
   const params = await searchParams;
   const token = typeof params?.[INVITATION_TOKEN_PARAM] === 'string' ? params[INVITATION_TOKEN_PARAM] : '';
+  const acceptError = typeof params?.error === 'string' ? params.error.slice(0, 300) : '';
   const user = await getCurrentUser();
 
   if (!token) {
@@ -61,7 +63,20 @@ export default async function InvitationAcceptPage({ searchParams }) {
               <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Expires: {new Date(invitation.expiresAt).toLocaleString()}</p>
             </div>
 
-            {!user ? (
+            {acceptError ? (
+              <Alert tone="danger" title="Invitation could not be accepted">
+                {acceptError}
+              </Alert>
+            ) : null}
+
+            {user && invitation.email && user.email?.toLowerCase() !== invitation.email.toLowerCase() ? (
+              <div className="space-y-3">
+                <Alert tone="warning" title="Wrong account">
+                  This invitation was sent to {invitation.email}, but you are signed in as {user.email}. Sign out and continue with {invitation.email}.
+                </Alert>
+                <InvitationSwitchAccount returnTo={buildInvitationAcceptPath(token)} />
+              </div>
+            ) : !user ? (
               <div className="flex flex-wrap gap-3">
                 <Button href={employerEntryHref}>Employer Sign In</Button>
                 <Button href={employerEntryHref} variant="outline">Create Employer Account</Button>
