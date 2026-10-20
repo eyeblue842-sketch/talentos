@@ -1,4 +1,4 @@
-# Trimmed single-server production stack (AWS EC2 t3.small, 2 GB + swap).
+# Trimmed single-server production stack (AWS EC2 c7i-flex.large, 4 GB + swap).
 # Omitted on purpose: Elasticsearch, OpenSearch, document-processor (too heavy for
 # this box). Recruiter resume search uses the Postgres fallback.
 services:
@@ -16,7 +16,7 @@ services:
       retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    mem_limit: 400m
+    mem_limit: 1g
 
   redis:
     image: redis:7-alpine
@@ -62,7 +62,7 @@ services:
       retries: 10
     volumes:
       - resume_storage:/app/backend/storage/resumes
-    mem_limit: 600m
+    mem_limit: 1g
 
   worker:
     build:
@@ -87,10 +87,10 @@ services:
       LOCAL_STORAGE_PATH: ./storage/resumes
       DOCUMENT_PROCESSOR_ENABLED: "false"
       LINKEDIN_PUBLISHING_ENABLED: "false"
-      WORKER_CONCURRENCY: "2"
+      WORKER_CONCURRENCY: "3"
     volumes:
       - resume_storage:/app/backend/storage/resumes
-    mem_limit: 500m
+    mem_limit: 800m
 
   frontend:
     build:
@@ -105,7 +105,7 @@ services:
       OAUTH_PUBLIC_BASE_URL: ${PUBLIC_URL}
       NEXT_PUBLIC_APP_NAME: Careeriz
       NODE_ENV: production
-    mem_limit: 400m
+    mem_limit: 700m
 
   caddy:
     image: caddy:2-alpine
