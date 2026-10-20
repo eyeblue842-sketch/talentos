@@ -93,6 +93,22 @@ describe('RecruiterJobPostWizard', () => {
     expect(screen.getAllByRole('button', { name: /^Continue$/i })[0]).toBeEnabled();
   });
 
+  it('defaults LinkedIn sharing to No and serializes an explicit Yes; a missing connection never blocks publishing', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, data: { connected: false } }) });
+    const { container } = renderWizard();
+    const hidden = () => container.querySelector('input[name="shareOnLinkedIn"]').value;
+    expect(hidden()).toBe('no');
+    expect(screen.getByLabelText(/No, publish only on Careeriz/i)).toBeChecked();
+
+    fireEvent.click(screen.getByLabelText(/Yes, share on LinkedIn/i));
+    expect(hidden()).toBe('yes');
+    expect(await screen.findByText(/No LinkedIn account is connected yet/i)).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith('/api/social/linkedin/status');
+
+    fireEvent.click(screen.getByLabelText(/No, publish only on Careeriz/i));
+    expect(hidden()).toBe('no');
+  });
+
   it('hides salary in preview and serialized payload when recruiter chooses Hide salary', async () => {
     const { container } = renderWizard();
     await fillEssentials();

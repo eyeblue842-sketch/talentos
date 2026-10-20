@@ -9,6 +9,7 @@ import { isEntitlementEnforcementEnabled, shouldComputeShadowDecision, logEntitl
 import { runSerializableTransaction } from '../utils/serializableTransaction.js';
 import { addDays } from '../utils/dateUtils.js';
 import { assertOrganisationVerifiedForAction } from './organisationVerificationGate.js';
+import { enqueueJobDistribution } from './linkedin/linkedinDistributionService.js';
 
 // Default Careeriz job validity: 31 calendar days from the FIRST successful
 // publication. The first-publication date is authoritative and preserved
@@ -259,6 +260,8 @@ function normalizeJobPayload(payload) {
     // explicitly checks "Hide salary from candidates".
     publicSalaryEnabled: payload.publicSalaryEnabled ?? true,
     featuredInPortal: payload.featuredInPortal ?? false,
+    // Recruiter opt-in to LinkedIn sharing; OFF unless explicitly chosen.
+    shareOnLinkedIn: payload.shareOnLinkedIn ?? false,
     visibility: payload.visibility || 'EXTERNAL',
     location: payload.location,
     locations: payload.locations ?? [],
@@ -501,6 +504,10 @@ export async function createJob(actorUser, payload, organisationId = null, reque
 
   const job = await (isPublishing ? runSerializableTransaction(prisma, run) : prisma.$transaction(run));
 
+  // LinkedIn distribution is queued only AFTER the publish transaction has
+  // committed, and can never fail or roll back the Careeriz publication.
+  if (isPublishing) await enqueueJobDistribution(job.id, { actorUserId: actorUser.id });
+
   if (capturedRequisition?.createdById && capturedRequisition.createdById !== actorUser.id) {
     await createNotification({
       organisationId: context.organisationId,
@@ -643,6 +650,9 @@ export async function updateJob(jobId, actorUser, payload, organisationId = null
   }
 
   const job = isPublishing ? await runSerializableTransaction(prisma, run) : await prisma.$transaction(run);
+
+  // Only a transition INTO the open state queues LinkedIn posts; later edits never re-post.
+  if (isPublishing) await enqueueJobDistribution(job.id, { actorUserId: actorUser.id });
 
   return serializeJob(job, { includeRequisition: true });
 }

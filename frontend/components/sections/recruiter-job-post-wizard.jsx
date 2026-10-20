@@ -445,6 +445,20 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
   const [generationError, setGenerationError] = useState('');
   const [screeningQuestions, setScreeningQuestions] = useState([]);
   const [publishingConfirmed, setPublishingConfirmed] = useState(false);
+  // Recruiter opt-in for LinkedIn sharing; defaults to "no" (Careeriz only).
+  const [shareOnLinkedIn, setShareOnLinkedIn] = useState('no');
+  const [linkedInConnected, setLinkedInConnected] = useState(null);
+  async function loadLinkedInStatus() {
+    if (linkedInConnected !== null) return;
+    try {
+      const response = await fetch('/api/social/linkedin/status');
+      const body = await response.json().catch(() => ({}));
+      setLinkedInConnected(Boolean(response.ok && body?.data?.connected));
+    } catch {
+      setLinkedInConnected(false);
+    }
+  }
+
   const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [generatingDescription, startDescriptionGeneration] = useTransition();
@@ -821,6 +835,7 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
       <input type="hidden" name="isPublic" value={essentials.isPublic ? 'on' : ''} />
       <input type="hidden" name="featuredInPortal" value={essentials.featuredInPortal ? 'on' : ''} />
       <input type="hidden" name="autoCloseOnTargetHire" value={essentials.autoCloseOnTargetHire ? 'on' : ''} />
+      <input type="hidden" name="shareOnLinkedIn" value={shareOnLinkedIn} />
       <input type="hidden" name="visibility" value="EXTERNAL" />
       {screeningQuestions.map((question) => (
         <div key={question.localId} className="hidden">
@@ -1209,6 +1224,25 @@ export function RecruiterJobPostWizard({ organisationName, organisationAbout, as
               <p><span className="font-semibold text-[var(--color-text)]">Salary:</span> {essentials.salaryVisible ? 'Visible to candidates' : 'Hidden from candidates'}</p>
               <p><span className="font-semibold text-[var(--color-text)]">Questions:</span> {screeningQuestions.length ? `${screeningQuestions.length} selected` : 'Skipped'}</p>
             </div>
+            <fieldset className="grid gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4">
+              <legend className="px-1 text-sm font-semibold text-[var(--color-text)]">Also share this job on LinkedIn</legend>
+              <label className="flex items-start gap-3 text-sm text-[var(--color-text-secondary)]">
+                <input type="radio" name="shareOnLinkedInChoice" className="mt-1" checked={shareOnLinkedIn === 'no'} onChange={() => setShareOnLinkedIn('no')} />
+                <span>No, publish only on Careeriz</span>
+              </label>
+              <label className="flex items-start gap-3 text-sm text-[var(--color-text-secondary)]">
+                <input type="radio" name="shareOnLinkedInChoice" className="mt-1" checked={shareOnLinkedIn === 'yes'} onChange={() => { setShareOnLinkedIn('yes'); loadLinkedInStatus(); }} />
+                <span>Yes, share on LinkedIn</span>
+              </label>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Sharing posts the role title, location and a Careeriz apply link to the LinkedIn profile you have connected and authorized. Your job is published on Careeriz first; a LinkedIn problem never blocks or undoes publication.
+              </p>
+              {shareOnLinkedIn === 'yes' && linkedInConnected === false ? (
+                <p role="status" className="rounded-[var(--radius-md)] bg-[var(--color-bg-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                  No LinkedIn account is connected yet. You can still publish now — after publishing, open the job and choose <strong>Connect LinkedIn</strong>; recently published jobs you opted in will then be posted automatically.
+                </p>
+              ) : null}
+            </fieldset>
             <label className="flex items-start gap-3 text-sm text-[var(--color-text-secondary)]">
               <input type="checkbox" className="mt-1" checked={publishingConfirmed} onChange={(event) => setPublishingConfirmed(event.target.checked)} />
               <span>I reviewed the candidate preview and application questions, and I am ready to publish this job.</span>

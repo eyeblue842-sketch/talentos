@@ -1,5 +1,6 @@
 import { Inter } from 'next/font/google';
 import { AppProviders } from '@/components/providers/app-providers';
+import { LinkedInAttributionBeacon } from '@/components/analytics/linkedin-attribution-beacon';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
@@ -14,6 +15,7 @@ export default function RootLayout({ children }) {
     <html lang="en" className={inter.variable}>
       <body className="font-[var(--font-body)] text-[var(--text)]">
         <AppProviders>{children}</AppProviders>
+        <LinkedInAttributionBeacon />
       </body>
     </html>
   );

@@ -34,6 +34,7 @@ import {
 import { getResumeAiProviderSelection } from './ai/ai-provider.js';
 import { parseResumeText, RESUME_PARSER_VERSION } from './ai/resume-parser.js';
 import { indexCandidateResume } from './searchService.js';
+import { processLinkedInPostTask } from './linkedin/linkedinDistributionService.js';
 import { enqueueResumeSearchIndexUpsert, processResumeSearchIndexTask } from './resumeSearchV2/indexingService.js';
 import {
   normalizeCandidateProfileForPresentation,
@@ -879,6 +880,8 @@ export async function processBackgroundTask(task) {
       return handleSubscriptionRenewalReminderTask(task);
     case 'JOB_AUTO_CLOSE':
       return handleJobAutoCloseTask(task);
+    case 'LINKEDIN_POST':
+      return processLinkedInPostTask(task);
     case 'EMAIL_RETRY':
       return handleEmailRetryTask(task);
     case 'NOTIFICATION_RETRY':

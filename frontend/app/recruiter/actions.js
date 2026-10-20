@@ -138,6 +138,9 @@ function buildJobPayload(formData) {
     // backend/src/serializers/index.js:serializePublicJob).
     publicSalaryEnabled: formData.get('hideSalaryFromCandidates') !== 'on',
     featuredInPortal: formData.get('featuredInPortal') === 'on',
+    // Sent only by the publish wizard; omitted elsewhere (e.g. edit form) so an
+    // unrelated edit never flips a recruiter's LinkedIn choice.
+    ...(formData.has('shareOnLinkedIn') ? { shareOnLinkedIn: formData.get('shareOnLinkedIn') === 'yes' } : {}),
     visibility: String(formData.get('visibility') || 'EXTERNAL'),
     status: requestedStatus,
   };

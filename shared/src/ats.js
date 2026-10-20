@@ -255,6 +255,7 @@ const jobBaseFieldsSchema = z.object({
   maxApplications: z.coerce.number().int().min(1).max(100000).optional().nullable(),
   targetHires: z.coerce.number().int().min(1).max(100000).optional().nullable(),
   autoCloseOnTargetHire: z.boolean().optional(),
+  shareOnLinkedIn: z.boolean().optional(),
   status: jobStatusSchema.optional(),
 });
 

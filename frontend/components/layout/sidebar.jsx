@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   ListFilter,
   LogOut,
+  Share2,
   Mail,
   Menu,
   Pin,
@@ -45,6 +46,7 @@ import { cn } from '@/lib/utils';
 const RAIL_PINNED_STORAGE_KEY = 'careeriz.nav-rail-pinned';
 
 const iconMap = {
+  Share2,
   BarChart3,
   Bell,
   BellRing,

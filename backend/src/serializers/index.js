@@ -699,6 +699,7 @@ export function serializeJob(job, options = {}) {
     isPublic: job.isPublic,
     publicSalaryEnabled: job.publicSalaryEnabled,
     featuredInPortal: job.featuredInPortal,
+    shareOnLinkedIn: Boolean(job.shareOnLinkedIn),
     visibility: job.visibility,
     location: job.location,
     locations: job.locations || [],

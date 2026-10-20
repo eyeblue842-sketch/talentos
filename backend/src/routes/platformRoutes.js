@@ -18,6 +18,19 @@ import {
   changeUserEmailController,
   setUserActiveController,
 } from '../controllers/platformController.js';
+import {
+  linkedInDashboard,
+  linkedInAttribution,
+  linkedInUpdateSettings,
+  linkedInCreateDestination,
+  linkedInUpdateDestination,
+  linkedInConnectDestination,
+  linkedInDisconnectDestination,
+  linkedInShareableJobs,
+  linkedInSetExclusion,
+  linkedInDistributeJob,
+  linkedInRetryPost,
+} from '../controllers/platformLinkedInController.js';
 
 // Global platform operator console (feature/platform-super-admin). EVERY route
 // is double-gated: auth() establishes an authenticated, active account (valid
@@ -44,6 +57,20 @@ platformRouter.post('/purchases/:purchaseId/reconcile', reconcilePurchaseControl
 platformRouter.post('/purchases/:purchaseId/review-refund', reviewRefundController);
 platformRouter.get('/products/complimentary', getComplimentaryPlans);
 platformRouter.post('/organisations/:organisationId/subscription/complimentary', grantComplimentaryController);
+
+// LinkedIn: platform-owned profiles + distribution (super-admin only; the router-level
+// guard above applies. Recruiters/org admins can never reach these).
+platformRouter.get('/linkedin', linkedInDashboard);
+platformRouter.get('/linkedin/attribution', linkedInAttribution);
+platformRouter.put('/linkedin/settings', linkedInUpdateSettings);
+platformRouter.post('/linkedin/destinations', linkedInCreateDestination);
+platformRouter.patch('/linkedin/destinations/:id', linkedInUpdateDestination);
+platformRouter.post('/linkedin/destinations/:id/connect', linkedInConnectDestination);
+platformRouter.post('/linkedin/destinations/:id/disconnect', linkedInDisconnectDestination);
+platformRouter.get('/linkedin/jobs', linkedInShareableJobs);
+platformRouter.put('/linkedin/jobs/:jobId/exclusion', linkedInSetExclusion);
+platformRouter.post('/linkedin/jobs/:jobId/distribute', linkedInDistributeJob);
+platformRouter.post('/linkedin/posts/:postId/retry', linkedInRetryPost);
 
 // Phase 4 - user / email administration.
 platformRouter.post('/organisations/:organisationId/users/invite', inviteUserController);

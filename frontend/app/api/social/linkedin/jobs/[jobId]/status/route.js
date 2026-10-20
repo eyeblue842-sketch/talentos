@@ -1,0 +1,14 @@
+import { NextResponse } from 'next/server';
+import { mapApiRouteError, proxyBackendJson, requireApiSession } from '@/lib/api-route';
+
+export async function GET(_request, { params }) {
+  try {
+    const session = await requireApiSession();
+    if (!session.ok) return session.response;
+    const { jobId } = await params;
+    const response = await proxyBackendJson(`/social/linkedin/jobs/${encodeURIComponent(jobId)}/status`, { method: 'GET' }, session.token);
+    return NextResponse.json(response);
+  } catch (error) {
+    return mapApiRouteError(error);
+  }
+}

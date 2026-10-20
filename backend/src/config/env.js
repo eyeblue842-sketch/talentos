@@ -77,6 +77,11 @@ const envSchema = z.object({
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
   LINKEDIN_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  // Automatic LinkedIn publishing stays OFF until the LinkedIn app is verified
+  // to hold the Share on LinkedIn product (w_member_social).
+  LINKEDIN_PUBLISHING_ENABLED: z.enum(['true', 'false']).default('false'),
+  LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default('202606'),
+  LINKEDIN_ENABLE_PAGE_SCOPES: z.enum(['true', 'false']).default('false'),
   CUSTOM_MEETING_ENABLED: z.enum(['true', 'false']).default('true'),
   PUBLIC_APP_URL: z.string().url().optional(),
   MEETING_TOKEN_ENCRYPTION_KEY: z.string().optional(),
@@ -535,6 +540,9 @@ export const env = {
   linkedinClientId: parsed.data.LINKEDIN_CLIENT_ID,
   linkedinClientSecret: parsed.data.LINKEDIN_CLIENT_SECRET,
   linkedinRedirectUri: parsed.data.LINKEDIN_OAUTH_REDIRECT_URI,
+  linkedinPublishingEnabled: parsed.data.LINKEDIN_PUBLISHING_ENABLED === 'true',
+  linkedinApiVersion: parsed.data.LINKEDIN_API_VERSION,
+  linkedinEnablePageScopes: parsed.data.LINKEDIN_ENABLE_PAGE_SCOPES === 'true',
   customMeetingEnabled: parsed.data.CUSTOM_MEETING_ENABLED === 'true',
   publicAppUrl: parsed.data.PUBLIC_APP_URL || parsed.data.FRONTEND_URL,
   meetingTokenEncryptionKey: parsed.data.MEETING_TOKEN_ENCRYPTION_KEY,

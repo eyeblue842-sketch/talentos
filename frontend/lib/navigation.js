@@ -72,6 +72,7 @@ export const adminNav = [
 export const platformNav = [
   { label: 'Dashboard', href: '/platform', icon: 'LayoutDashboard', exact: true },
   { label: 'Organisations', href: '/platform/organisations', icon: 'Building2' },
+  { label: 'LinkedIn', href: '/platform/linkedin', icon: 'Share2' },
 ];
 
 export function getNavigationForRole(role) {

@@ -1,6 +1,7 @@
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { enqueueBackgroundTask, recoverExpiredLeaseTasks } from './backgroundTaskService.js';
+import { sweepLinkedInPosts } from './linkedin/linkedinDistributionService.js';
 
 function hoursFromNow(hours) {
   return new Date(Date.now() + (hours * 60 * 60 * 1000));
@@ -20,6 +21,7 @@ export async function scheduleProductionBackgroundTasks() {
     scheduleJobAutoCloseTasks(),
     scheduleCleanupTasks(),
     recoverStuckTasks(),
+    sweepLinkedInPosts(),
   ]);
 }
 
