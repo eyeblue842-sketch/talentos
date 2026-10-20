@@ -122,6 +122,8 @@ async function sendInvitationEmail(invitation, rawToken) {
     role: invitation.role,
     invitationUrl: invitationUrl.toString(),
     expiresAt: invitation.expiresAt,
+    invitedByName: invitation.invitedByUser?.name || null,
+    invitedByEmail: invitation.invitedByUser?.email || null,
   });
 }
 

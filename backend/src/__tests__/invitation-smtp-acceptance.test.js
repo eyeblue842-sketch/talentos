@@ -122,6 +122,6 @@ test('nodemailer\'s untouched default (quoted-printable) soft-wraps this invitat
   assert.match(received.raw, /Content-Transfer-Encoding: quoted-printable/);
 
   const rawBodyLines = received.raw.split('\r\n\r\n').slice(1).join('\r\n\r\n').split('\r\n').filter(Boolean);
-  const urlSplitAcrossLines = rawBodyLines.some((line) => /accept=$/.test(line));
+  const urlSplitAcrossLines = rawBodyLines.some((line) => /=$/.test(line) && line.startsWith('http'));
   assert.equal(urlSplitAcrossLines, true, 'This ~116-char URL is expected to straddle the ~76-char QP soft-wrap boundary.');
 });

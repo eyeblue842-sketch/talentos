@@ -292,17 +292,33 @@ export async function sendEmailVerificationEmail(to, token) {
 // Exported alongside buildPasswordResetEmailMessage/buildPasswordResetOtpEmailMessage
 // above so a real-SMTP-acceptance test can construct and send the exact same
 // message the app sends without going through the transport-selection gate.
-export function buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt }) {
+export function buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt, invitedByName, invitedByEmail }) {
+  const inviter = invitedByName && invitedByEmail
+    ? `${invitedByName} (${invitedByEmail})`
+    : invitedByName || invitedByEmail || null;
+  const roleLabel = String(role || '').replace(/_/g, ' ').toLowerCase();
+  const intro = inviter
+    ? `${inviter} has invited you to join ${organisationName} on Careeriz Hire as ${roleLabel}.`
+    : `You have been invited to join ${organisationName} on Careeriz Hire as ${roleLabel}.`;
   return {
     to,
-    subject: `Join ${organisationName} on Careeriz Hire`,
-    text: `You were invited to join ${organisationName} on Careeriz Hire as ${role}. Use this link before ${dayjs(expiresAt).format('DD MMM YYYY, hh:mm A')}: ${invitationUrl}`,
+    subject: inviter ? `${invitedByName || invitedByEmail} invited you to join ${organisationName} on Careeriz Hire` : `Join ${organisationName} on Careeriz Hire`,
+    text: [
+      intro,
+      '',
+      'Accept the invitation using this link:',
+      invitationUrl,
+      '',
+      `This link expires on ${dayjs(expiresAt).format('DD MMM YYYY, hh:mm A')}.`,
+      '',
+      'If you were not expecting this invitation, you can ignore this email.',
+    ].join('\n'),
   };
 }
 
-export async function sendOrganisationInvitationEmail({ to, organisationName, role, invitationUrl, expiresAt }) {
+export async function sendOrganisationInvitationEmail({ to, organisationName, role, invitationUrl, expiresAt, invitedByName, invitedByEmail }) {
   await sendTransactionalEmail(
-    buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt })
+    buildOrganisationInvitationEmailMessage({ to, organisationName, role, invitationUrl, expiresAt, invitedByName, invitedByEmail })
   );
 }
 
