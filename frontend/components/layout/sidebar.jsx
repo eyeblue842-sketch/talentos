@@ -470,27 +470,6 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
               </nav>
 
               <div className="mt-auto grid gap-3 pt-6">
-                <div className="flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar src={brandLogoUrl} name={brand} size="sm" />
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--color-text)]">{brand}</p>
-                      <p className="text-xs text-[var(--color-text-muted)]">AI-Powered Talent Intelligence Platform</p>
-                    </div>
-                  </div>
-                  <DropdownMenu
-                    trigger={(
-                      <Button variant="ghost" size="icon" aria-label="Open workspace menu">
-                        <Users size={18} aria-hidden="true" />
-                      </Button>
-                    )}
-                    items={[
-                      settingsItem ? { label: 'Settings', href: settingsItem.href, icon: Settings2 } : null,
-                      notificationItem ? { label: 'Notifications', href: notificationItem.href, icon: Bell } : null,
-                      { label: isLoggingOut ? 'Logging out...' : 'Logout', onSelect: handleLogout, icon: LogOut },
-                    ].filter(Boolean)}
-                  />
-                </div>
                 <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
                   {isLoggingOut ? 'Logging out...' : 'Logout'}
                 </Button>
@@ -512,27 +491,6 @@ export function Sidebar({ brand, brandLogoUrl = null, items, profileLinks = [], 
           </nav>
 
           <div className="mt-auto grid gap-3 pt-6">
-            <div className="flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-3">
-              <div className="flex items-center gap-3">
-                <Avatar src={brandLogoUrl} name={brand} size="sm" />
-                <div>
-                  <p className="text-sm font-semibold text-[var(--color-text)]">{brand}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">AI-Powered Talent Intelligence Platform</p>
-                </div>
-              </div>
-              <DropdownMenu
-                trigger={(
-                  <Button variant="ghost" size="icon" aria-label="Open workspace menu">
-                    <Users size={18} aria-hidden="true" />
-                  </Button>
-                )}
-                items={[
-                  settingsItem ? { label: 'Settings', href: settingsItem.href, icon: Settings2 } : null,
-                  notificationItem ? { label: 'Notifications', href: notificationItem.href, icon: Bell } : null,
-                  { label: isLoggingOut ? 'Logging out...' : 'Logout', onSelect: handleLogout, icon: LogOut },
-                ].filter(Boolean)}
-              />
-            </div>
             <Button type="button" variant="outline" className="w-full justify-center" onClick={handleLogout} leadingIcon={LogOut} disabled={isLoggingOut}>
               {isLoggingOut ? 'Logging out...' : 'Logout'}
             </Button>
