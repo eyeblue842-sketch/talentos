@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
@@ -20,7 +21,8 @@ const sizeStyles = {
 };
 
 export function Button({
-  as: Comp = 'button',
+  as: AsComp,
+  href,
   type = 'button',
   variant = 'primary',
   size = 'md',
@@ -32,6 +34,9 @@ export function Button({
   children,
   ...props
 }) {
+  // `href` renders a Link here so server components can use <Button href> without
+  // passing a component function across the server/client boundary (`as={Link}`).
+  const Comp = AsComp || (href ? Link : 'button');
   const isDisabled = disabled || loading;
 
   return (
@@ -48,6 +53,7 @@ export function Button({
       )}
       disabled={Comp === 'button' ? isDisabled : undefined}
       aria-disabled={Comp !== 'button' ? isDisabled : undefined}
+      {...(href ? { href } : {})}
       {...props}
     >
       {loading ? <Spinner size="sm" className="text-current" /> : LeadingIcon ? <LeadingIcon size={16} aria-hidden="true" /> : null}

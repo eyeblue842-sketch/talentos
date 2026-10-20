@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildInvitationAcceptPath, INVITATION_TOKEN_PARAM } from '@careeriz/shared';
 import { Alert } from '@/components/ui/alert';
@@ -64,13 +63,13 @@ export default async function InvitationAcceptPage({ searchParams }) {
 
             {!user ? (
               <div className="flex flex-wrap gap-3">
-                <Button as={Link} href={employerEntryHref}>Employer Sign In</Button>
-                <Button as={Link} href={employerEntryHref} variant="outline">Create Employer Account</Button>
+                <Button href={employerEntryHref}>Employer Sign In</Button>
+                <Button href={employerEntryHref} variant="outline">Create Employer Account</Button>
               </div>
             ) : (
               <form action={acceptOrganisationInvitationAction.bind(null, token)} className="flex flex-wrap gap-3">
                 <Button type="submit">Accept Invitation</Button>
-                <Button as={Link} href="/recruiter" variant="outline">Back to Recruiter Workspace</Button>
+                <Button href="/recruiter" variant="outline">Back to Recruiter Workspace</Button>
               </form>
             )}
           </div>

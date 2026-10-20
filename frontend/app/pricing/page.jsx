@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { PublicHeader } from '@/components/public/public-header';
 import { PricingCards } from '@/components/billing/pricing-cards';
 import { Button } from '@/components/ui/button';
@@ -29,7 +28,7 @@ export default async function PricingPage() {
           <PricingCards
             products={catalogue.products}
             renderAction={(product) => (
-              <Button as={Link} href="/recruiter/billing" className="w-full">
+              <Button href="/recruiter/billing" className="w-full">
                 {product.code === 'JOB_POST_45D' ? 'Buy a job credit' : 'Get started'}
               </Button>
             )}
