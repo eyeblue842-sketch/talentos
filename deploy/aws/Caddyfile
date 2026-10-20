@@ -1,0 +1,11 @@
+{$SITE_ADDRESS} {
+	encode gzip
+	# Callbacks LinkedIn/Google hit directly go to the API; everything else to Next.js.
+	@api path /api/auth/oauth/* /api/social/linkedin/callback
+	handle @api {
+		reverse_proxy backend:5000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

@@ -1,0 +1,130 @@
+# Trimmed single-server production stack (AWS EC2 t3.small, 2 GB + swap).
+# Omitted on purpose: Elasticsearch, OpenSearch, document-processor (too heavy for
+# this box). Recruiter resume search uses the Postgres fallback.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: careeriz
+      POSTGRES_USER: careeriz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careeriz -d careeriz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 400m
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "100mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      TRUST_PROXY: "true"
+      DATABASE_URL: postgresql://careeriz:${POSTGRES_PASSWORD}@postgres:5432/careeriz?schema=public
+      DIRECT_URL: postgresql://careeriz:${POSTGRES_PASSWORD}@postgres:5432/careeriz?schema=public
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379
+      REDIS_KEY_PREFIX: careeriz
+      ELASTICSEARCH_ENABLED: "false"
+      RESUME_SEARCH_V2_ENABLED: "false"
+      RESUME_INDEXING_ENABLED: "false"
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_PATH: ./storage/resumes
+      DOCUMENT_PROCESSOR_ENABLED: "false"
+      LINKEDIN_PUBLISHING_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5000/api/health').then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - resume_storage:/app/backend/storage/resumes
+    mem_limit: 600m
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://careeriz:${POSTGRES_PASSWORD}@postgres:5432/careeriz?schema=public
+      DIRECT_URL: postgresql://careeriz:${POSTGRES_PASSWORD}@postgres:5432/careeriz?schema=public
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379
+      REDIS_KEY_PREFIX: careeriz
+      ELASTICSEARCH_ENABLED: "false"
+      RESUME_SEARCH_V2_ENABLED: "false"
+      RESUME_INDEXING_ENABLED: "false"
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_PATH: ./storage/resumes
+      DOCUMENT_PROCESSOR_ENABLED: "false"
+      LINKEDIN_PUBLISHING_ENABLED: "false"
+      WORKER_CONCURRENCY: "2"
+    volumes:
+      - resume_storage:/app/backend/storage/resumes
+    mem_limit: 500m
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_URL}/api
+      BACKEND_API_BASE_URL: http://backend:5000/api
+      OAUTH_PUBLIC_BASE_URL: ${PUBLIC_URL}
+      NEXT_PUBLIC_APP_NAME: Careeriz
+      NODE_ENV: production
+    mem_limit: 400m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  redis_data:
+  resume_storage:
+  caddy_data:
+  caddy_config:
