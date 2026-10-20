@@ -48,7 +48,7 @@ export function ConnectionsSections({ section, organisation, data, redirectTo })
     </nav>
   );
 
-  if (section === 'feed') return <div className="space-y-6">{tabs}<NetworkFeed initialItems={data.feed?.items || []} initialMeta={data.feed?.meta || {}} /></div>;
+  if (section === 'feed') return <div className="space-y-6">{tabs}<NetworkFeed initialItems={data.feed?.items || []} initialMeta={data.feed?.meta || {}} jobs={data.openJobs || []} canPost /></div>;
   if (section === 'company-people') return <div className="space-y-6">{tabs}<CompanyPeople organisation={organisation} members={data.members} invitations={data.invitations} /></div>;
   if (section === 'messages') return <div className="space-y-6">{tabs}<MessagesWorkspace initialConversations={data.conversations.items} initialConversation={data.activeConversation} initialMessages={data.messages.items} initialMessagesMeta={data.messages.meta} activeConversationId={data.activeConversationId} basePath="/recruiter/home?tab=connections&section=messages" /></div>;
 

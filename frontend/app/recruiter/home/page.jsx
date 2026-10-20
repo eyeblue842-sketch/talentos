@@ -92,7 +92,7 @@ export default async function RecruiterHomePage({ searchParams }) {
         activeConversationId ? getMessageConversation(activeConversationId).catch(() => null) : Promise.resolve(null),
         activeConversationId ? getConversationMessages(activeConversationId, { limit: 25 }).catch(() => ({ items: [], meta: { nextCursor: null } })) : Promise.resolve({ items: [], meta: { nextCursor: null } }),
       ]);
-      connectionData = { feed, connections, receivedRequests, sentRequests, suggestions, searchResults, privacy, members, invitations, conversations, activeConversation, messages, activeConversationId };
+      connectionData = { feed, openJobs: (companyData?.jobs?.items || []).filter((job) => job.slug).map((job) => ({ slug: job.slug, title: job.title })), connections, receivedRequests, sentRequests, suggestions, searchResults, privacy, members, invitations, conversations, activeConversation, messages, activeConversationId };
     }
   } catch (caught) {
     error = caught.message || 'Recruiter home could not be loaded.';

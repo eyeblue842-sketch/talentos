@@ -1,5 +1,6 @@
 import { prisma } from '../config/db.js';
 import { collectNetworkFeedItems } from './networkFeedService.js';
+import { assertRecruiterPostAllowed, isRecruiterRole } from './recruiterPostPolicy.js';
 
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 30;
@@ -18,7 +19,7 @@ function buildError(code, message, statusCode = 400) {
 }
 
 function candidateDisplayName(user) {
-  return user?.candidateProfile?.fullName || user?.fullName || user?.email || 'Candidate';
+  return user?.candidateProfile?.fullName || user?.name || user?.fullName || user?.email?.split('@')[0] || 'Member';
 }
 
 // Returns a merged, newest-first timeline combining:
@@ -106,6 +107,11 @@ export async function createFeedPost(user, payload = {}) {
     throw buildError('INVALID_IMAGE_URL', 'Image URL must start with http:// or https://', 422);
   }
 
+  const recruiter = isRecruiterRole(user.role);
+  if (recruiter) {
+    await assertRecruiterPostAllowed(user, content);
+  }
+
   const post = await prisma.feedPost.create({
     data: { authorUserId: user.id, content, imageUrl, status: 'PUBLISHED' },
   });
@@ -113,10 +119,11 @@ export async function createFeedPost(user, payload = {}) {
   return {
     id: `me_${post.id}`,
     postId: post.id,
-    type: 'CANDIDATE',
+    type: recruiter ? 'RECRUITER' : 'CANDIDATE',
     content: post.content,
     imageUrl: post.imageUrl || null,
     createdAt: post.createdAt.toISOString(),
+    sortAt: post.createdAt.toISOString(),
     canDelete: true,
     likeCount: 0,
     shareCount: 0,
@@ -125,7 +132,10 @@ export async function createFeedPost(user, payload = {}) {
     activity: null,
     author: {
       name: candidateDisplayName(user),
-      subtitle: user?.candidateProfile?.headline || user?.candidateProfile?.currentTitle || 'You',
+      subtitle: recruiter
+        ? (user?.recruiterProfile?.designation || 'Recruiter')
+        : (user?.candidateProfile?.headline || user?.candidateProfile?.currentTitle || 'Candidate'),
+      role: recruiter ? 'RECRUITER' : 'CANDIDATE',
       logoUrl: null,
       userId: user.id,
     },

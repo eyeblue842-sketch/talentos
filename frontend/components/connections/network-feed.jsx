@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { Repeat2, ThumbsUp } from 'lucide-react';
+import { Repeat2, Send, ThumbsUp, Trash2 } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,15 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 }
 
-function FeedItem({ item, onReact, pending }) {
+// Renders plain post text with http(s) links made clickable.
+function LinkedText({ text }) {
+  const parts = String(text || '').split(/(https?:\/\/[^\s<>"')]+)/g);
+  return parts.map((part, index) => (/^https?:\/\//.test(part)
+    ? <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--color-primary)] underline break-all">{part}</a>
+    : <span key={index}>{part}</span>));
+}
+
+function FeedItem({ item, onReact, onDelete, pending }) {
   return (
     <Card className="rounded-2xl p-5">
       {item.activity ? (
@@ -46,7 +54,7 @@ function FeedItem({ item, onReact, pending }) {
           <p className="text-xs text-[var(--color-text-muted)]">{timeAgo(item.createdAt)}</p>
         </div>
       </div>
-      <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--color-text)]">{item.content}</p>
+      <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--color-text)]"><LinkedText text={item.content} /></p>
       {item.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.imageUrl} alt="" className="mt-4 max-h-96 w-full rounded-xl object-cover" />
@@ -64,6 +72,11 @@ function FeedItem({ item, onReact, pending }) {
         >
           {item.viewerLiked ? 'Liked' : 'Like'}{item.likeCount ? ` · ${item.likeCount}` : ''}
         </Button>
+        {item.canDelete ? (
+          <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => onDelete(item)} leadingIcon={Trash2} className="ml-auto">
+            Delete
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -82,12 +95,58 @@ function FeedItem({ item, onReact, pending }) {
 }
 
 // Feed of the viewer's connections: their posts plus what they liked or shared.
-export function NetworkFeed({ initialItems = [], initialMeta = {} }) {
+export function NetworkFeed({ initialItems = [], initialMeta = {}, jobs = [], canPost = false }) {
   const [items, setItems] = useState(initialItems);
   const [meta, setMeta] = useState(initialMeta);
   const [pendingId, setPendingId] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState('');
+
+  function attachJob(slug) {
+    if (!slug) return;
+    const link = `${window.location.origin}/jobs/${slug}`;
+    setDraft((current) => {
+      if (current.includes(link)) return current;
+      return current && !current.endsWith('\n') ? `${current}\n${link}` : `${current}${link}`;
+    });
+  }
+
+  async function submitPost(event) {
+    event.preventDefault();
+    if (!draft.trim() || posting) return;
+    setPosting(true);
+    setPostError('');
+    try {
+      const response = await fetch('/api/feed/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: draft.trim() }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.data) throw new Error(body?.message || 'Could not publish your post.');
+      setItems((current) => [body.data, ...current]);
+      setDraft('');
+    } catch (caught) {
+      setPostError(caught.message);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function handleDelete(item) {
+    const previous = items;
+    setItems((current) => current.filter((entry) => entry.postId !== item.postId));
+    try {
+      const response = await fetch(`/api/feed/posts/${encodeURIComponent(item.postId)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('delete failed');
+    } catch {
+      setItems(previous);
+      setError('Could not delete the post.');
+    }
+  }
 
   async function handleReact(item, type) {
     setPendingId(item.postId);
@@ -143,11 +202,43 @@ export function NetworkFeed({ initialItems = [], initialMeta = {} }) {
         <h2 className="text-2xl font-semibold">Feed</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Posts from the candidates you are connected with, and posts they have liked or shared.</p>
       </div>
+      {canPost ? (
+        <Card className="rounded-2xl p-5">
+          <form onSubmit={submitPost} className="grid gap-3">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              maxLength={4000}
+              rows={3}
+              placeholder="Share an update with your network…"
+              className="w-full resize-y rounded-[var(--radius-lg)] border border-[var(--color-border)] px-4 py-3 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+            />
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Job openings can&apos;t be posted as text. To promote a job, attach its Careeriz job link.
+            </p>
+            {postError ? <Alert tone="danger" title="Post not published">{postError}</Alert> : null}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {jobs.length ? (
+                <select
+                  aria-label="Attach a Careeriz job link"
+                  className="max-w-xs rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                  value=""
+                  onChange={(event) => attachJob(event.target.value)}
+                >
+                  <option value="">Attach a job link…</option>
+                  {jobs.map((job) => <option key={job.slug} value={job.slug}>{job.title}</option>)}
+                </select>
+              ) : <span />}
+              <Button type="submit" loading={posting} disabled={!draft.trim()} leadingIcon={Send}>Post</Button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
       {error ? <Alert tone="danger" title="Something went wrong">{error}</Alert> : null}
       {items.length ? (
         <div className="grid gap-4">
           {items.map((item) => (
-            <FeedItem key={item.id} item={item} onReact={handleReact} pending={pendingId === item.postId} />
+            <FeedItem key={item.id} item={item} onReact={handleReact} onDelete={handleDelete} pending={pendingId === item.postId} />
           ))}
         </div>
       ) : (
