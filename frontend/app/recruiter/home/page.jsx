@@ -120,7 +120,7 @@ export default async function RecruiterHomePage({ searchParams }) {
               <span>Home</span>
             </nav>
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text)]">Recruiter home</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text)]">{currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter home'}</h1>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">

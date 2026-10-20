@@ -96,6 +96,7 @@ export async function registerUser(payload) {
     const createdUser = await tx.user.create({
       data: {
         email: normalizedEmail,
+        name: payload.fullName?.trim() || null,
         passwordHash: hashedPassword,
         role,
         recruiterProfile: role === 'RECRUITER'

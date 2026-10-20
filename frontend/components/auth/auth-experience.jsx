@@ -190,7 +190,8 @@ export function AuthExperience({
   initialSearchParams = {},
 }) {
   const [registerForm, setRegisterForm] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -242,8 +243,17 @@ export function AuthExperience({
     setErrorMessage('');
     setStatusMessage('');
 
+    const firstName = registerForm.firstName.trim();
+    const lastName = registerForm.lastName.trim();
+    if (!firstName || !lastName) {
+      setErrorMessage('First name and last name are required.');
+      setPendingAction('');
+      return;
+    }
+
     try {
       const payload = {
+        fullName: `${firstName} ${lastName}`,
         email: registerForm.email,
         password: registerForm.password,
         role: audience === 'employer' ? 'RECRUITER' : 'CANDIDATE',
@@ -251,10 +261,6 @@ export function AuthExperience({
 
       if (audience === 'employer') {
         payload.employerType = employerType;
-      }
-
-      if (audience === 'candidate' && registerForm.fullName.trim()) {
-        payload.fullName = registerForm.fullName.trim();
       }
 
       // Preserved so the emailed verification link can send the user back
@@ -385,14 +391,22 @@ export function AuthExperience({
                     <span className="h-px flex-1 bg-[var(--color-border)]" />
                   </div>
                 ) : null}
-                {audience === 'candidate' ? (
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Input
-                    label="Full name"
-                    value={registerForm.fullName}
-                    onChange={(event) => setRegisterForm((current) => ({ ...current, fullName: event.target.value }))}
-                    placeholder="Aarav Sharma"
+                    label="First name"
+                    value={registerForm.firstName}
+                    onChange={(event) => setRegisterForm((current) => ({ ...current, firstName: event.target.value }))}
+                    placeholder="Aarav"
+                    autoComplete="given-name"
                   />
-                ) : null}
+                  <Input
+                    label="Last name"
+                    value={registerForm.lastName}
+                    onChange={(event) => setRegisterForm((current) => ({ ...current, lastName: event.target.value }))}
+                    placeholder="Sharma"
+                    autoComplete="family-name"
+                  />
+                </div>
                 <Input
                   label={audience === 'employer' ? 'Work email' : 'Email'}
                   type="email"
@@ -420,7 +434,7 @@ export function AuthExperience({
                   </InlineValidationMessage>
                 ) : null}
                 <FormActions className="justify-between">
-                  <Button onClick={handleRegister} loading={pendingAction === 'register'} disabled={registerPasswordMismatch} trailingIcon={ArrowRight}>
+                  <Button onClick={handleRegister} loading={pendingAction === 'register'} disabled={registerPasswordMismatch || !registerForm.firstName.trim() || !registerForm.lastName.trim()} trailingIcon={ArrowRight}>
                     {audience === 'candidate' ? 'Create profile' : 'Create employer account'}
                   </Button>
                   <Button variant="link" as={Link} href={mode === 'register' ? alternateRoutes.login : alternateRoutes.register}>

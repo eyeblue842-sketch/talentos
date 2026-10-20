@@ -646,6 +646,7 @@ export function serializeUser(user, options = {}) {
   return {
     id: user.id,
     email: user.email,
+    name: user.name || null,
     role: user.role,
     isActive: user.isActive,
     accountStatus: user.accountStatus,

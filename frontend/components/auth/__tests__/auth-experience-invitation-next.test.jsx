@@ -25,6 +25,8 @@ describe('AuthExperience employer registration / invitation "next" preservation'
       />
     );
 
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Riya' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Menon' } });
     fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'recruiter@company.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Str0ngPass!23' } });
     fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'Str0ngPass!23' } });
@@ -41,6 +43,8 @@ describe('AuthExperience employer registration / invitation "next" preservation'
   test('signup omits "next" entirely when there is no invitation context', async () => {
     render(<AuthExperience audience="employer" mode="register" initialSearchParams={{ employerType: 'COMPANY' }} />);
 
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Riya' } });
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Menon' } });
     fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'recruiter2@company.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Str0ngPass!23' } });
     fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'Str0ngPass!23' } });
