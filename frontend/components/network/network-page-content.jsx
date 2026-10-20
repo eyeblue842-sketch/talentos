@@ -71,7 +71,16 @@ export function NetworkPageContent({
   searchParams,
   redirectTo,
   messageBasePath = '/candidate/messages',
+  section = null,
 }) {
+  // Without a section (the candidate Network page) everything is shown; the
+  // recruiter Connections tabs each show only their own cards.
+  const sectionCards = {
+    discover: ['search', 'suggestions', 'privacy'],
+    'my-connections': ['network'],
+    invitations: ['received', 'sent'],
+  };
+  const show = (card) => !section || !sectionCards[section] || sectionCards[section].includes(card);
   const searchQuery = searchParams?.q || '';
   const designationQuery = searchParams?.designation || '';
   const skillsQuery = searchParams?.skills || '';
@@ -109,11 +118,13 @@ export function NetworkPageContent({
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className={section && sectionCards[section] ? 'grid gap-6' : 'grid gap-6 xl:grid-cols-[1.2fr_0.8fr]'}>
         <div className="space-y-6">
-          <Card className="rounded-[32px] p-6">
+          {show('search') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="Search People" copy="Search candidates and recruiters with connection-aware actions." />
             <form method="GET" className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {section ? <><input type="hidden" name="tab" value="connections" /><input type="hidden" name="section" value={section} /></> : null}
               <input name="q" defaultValue={searchQuery} placeholder="Name or keyword" className="rounded-2xl border border-[var(--color-border)] px-4 py-3 text-sm" />
               <input name="designation" defaultValue={designationQuery} placeholder="Designation" className="rounded-2xl border border-[var(--color-border)] px-4 py-3 text-sm" />
               <input name="skills" defaultValue={skillsQuery} placeholder="Skills" className="rounded-2xl border border-[var(--color-border)] px-4 py-3 text-sm" />
@@ -137,8 +148,10 @@ export function NetworkPageContent({
               )}
             </div>
           </Card>
+          ) : null}
 
-          <Card className="rounded-[32px] p-6">
+          {show('network') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="My Network" count={connections.meta.total} copy="Accepted two-way connections." />
             <div className="mt-5 grid gap-4">
               {connections.items.length ? connections.items.map((item) => (
@@ -155,8 +168,10 @@ export function NetworkPageContent({
               )}
             </div>
           </Card>
+          ) : null}
 
-          <Card className="rounded-[32px] p-6">
+          {show('suggestions') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="Suggested Connections" count={suggestions.meta.total} copy="Explainable recommendations based on mutuals, role fit, skills, and company context." />
             <div className="mt-5 grid gap-4">
               {suggestions.items.length ? suggestions.items.map((item) => (
@@ -174,10 +189,12 @@ export function NetworkPageContent({
               )}
             </div>
           </Card>
+          ) : null}
         </div>
 
         <div className="space-y-6">
-          <Card className="rounded-[32px] p-6">
+          {show('received') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="Received Requests" count={receivedRequests.meta.total} />
             <div className="mt-5 grid gap-4">
               {receivedRequests.items.length ? receivedRequests.items.map((item) => (
@@ -194,8 +211,10 @@ export function NetworkPageContent({
               )}
             </div>
           </Card>
+          ) : null}
 
-          <Card className="rounded-[32px] p-6">
+          {show('sent') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="Sent Requests" count={sentRequests.meta.total} />
             <div className="mt-5 grid gap-4">
               {sentRequests.items.length ? sentRequests.items.map((item) => (
@@ -212,13 +231,16 @@ export function NetworkPageContent({
               )}
             </div>
           </Card>
+          ) : null}
 
-          <Card className="rounded-[32px] p-6">
+          {show('privacy') ? (
+            <Card className="rounded-[32px] p-6">
             <SectionHeader title="Network Privacy" copy="These settings apply to people search, requests, and recruiter identity visibility." />
             <div className="mt-5">
               <NetworkPrivacyForm settings={privacy.settings} />
             </div>
           </Card>
+          ) : null}
         </div>
       </div>
     </div>
