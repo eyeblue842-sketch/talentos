@@ -7,6 +7,7 @@ import {
   logout,
   me,
   oauthExchange,
+  saveUserName,
   oauthCallback,
   passwordResetConfirm,
   passwordResetOtpResend,
@@ -27,6 +28,7 @@ import {
   passwordResetConfirmSchema,
   passwordResetOtpVerifySchema,
   passwordResetRequestSchema,
+  profileNameUpdateSchema,
   signupSchema,
   tokenConfirmationSchema,
 } from '@careeriz/shared';
@@ -120,4 +122,5 @@ authRouter.post(
   changePasswordHandler
 );
 authRouter.post('/logout', auth([], { allowPasswordChangeRequired: true }), logout);
+authRouter.patch('/me/name', auth(['RECRUITER']), validateSchema(profileNameUpdateSchema), saveUserName);
 authRouter.patch('/recruiter-profile', auth(['RECRUITER']), saveRecruiterProfile);

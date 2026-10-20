@@ -7,6 +7,7 @@ import {
   logoutUser,
   registerFromInvitation,
   registerUser,
+  updateUserName,
   requestEmailVerification,
   requestPasswordReset,
   resendPasswordResetOtp,
@@ -124,6 +125,15 @@ export async function emailVerificationConfirm(req, res, next) {
 export async function saveRecruiterProfile(req, res, next) {
   try {
     const result = await updateRecruiterProfile(req.user.id, req.body);
+    sendSuccess(res, 200, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function saveUserName(req, res, next) {
+  try {
+    const result = await updateUserName(req.user.id, req.body);
     sendSuccess(res, 200, result);
   } catch (error) {
     next(error);

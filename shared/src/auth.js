@@ -18,6 +18,11 @@ export const oauthProviderSchema = z.enum(['google', 'linkedin']);
 // rejected by the domain check rather than trusted.
 export const employerTypeSchema = z.enum(['CONSULTANCY', 'COMPANY']);
 
+export const profileNameUpdateSchema = z.object({
+  firstName: z.string().trim().min(1).max(60),
+  lastName: z.string().trim().min(1).max(60),
+});
+
 export const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(72),
@@ -25,7 +30,7 @@ export const signupSchema = z.object({
   employerType: employerTypeSchema.optional(),
   companyName: z.string().trim().min(1).max(160).optional(),
   website: z.string().trim().url().optional().or(z.literal('')),
-  fullName: z.string().trim().min(1).optional(),
+  fullName: z.string().trim().min(1).max(120),
   location: z.string().trim().optional(),
   totalExperience: z.coerce.number().int().min(0).max(50).optional(),
   skills: z.array(z.string().trim().min(1)).optional(),

@@ -213,6 +213,14 @@ export async function registerFromInvitation({ token, name, password }, requestM
   return loginUser(email, password);
 }
 
+export async function updateUserName(userId, { firstName, lastName }) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { name: `${firstName.trim()} ${lastName.trim()}` },
+  });
+  return { name: user.name };
+}
+
 export async function updateRecruiterProfile(userId, payload) {
   const recruiter = await prisma.user.findUnique({
     where: { id: userId },

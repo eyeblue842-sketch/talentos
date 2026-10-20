@@ -3,12 +3,16 @@ import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation } from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
+import { ProfileNameForm } from '@/components/recruiter/profile-name-form';
 
 export default async function RecruiterSettingsPage() {
   let organisation = null;
+  let currentUser = null;
   let error = '';
 
   try {
+    currentUser = await getCurrentUser();
     organisation = await getCurrentOrganisation();
   } catch (caught) {
     error = caught.message;
@@ -22,6 +26,11 @@ export default async function RecruiterSettingsPage() {
         description="Review the currently active recruiter workspace identity and high-level workspace configuration."
         breadcrumb={[{ label: 'Recruiter' }, { label: 'Settings' }]}
       />
+        <Card className="mb-6">
+          <h2 className="font-[var(--font-display)] text-2xl font-semibold">Your profile</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">This name appears on your recruiter home page.</p>
+          <ProfileNameForm initialName={currentUser?.name} email={currentUser?.email} />
+        </Card>
         <Card>
           <h2 className="font-[var(--font-display)] text-2xl font-semibold">Workspace configuration</h2>
           {error ? <p className="mt-3 text-sm text-[var(--muted)]">{error}</p> : null}
