@@ -3,6 +3,7 @@ import { buildInvitationAcceptPath, INVITATION_TOKEN_PARAM } from '@careeriz/sha
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { InvitationSignupForm } from '@/components/auth/invitation-signup-form';
 import { InvitationSwitchAccount } from '@/components/auth/invitation-switch-account';
 import { acceptOrganisationInvitationAction } from '../actions';
 import { getInvitationTokenDetail } from '@/lib/api';
@@ -77,9 +78,11 @@ export default async function InvitationAcceptPage({ searchParams }) {
                 <InvitationSwitchAccount returnTo={buildInvitationAcceptPath(token)} />
               </div>
             ) : !user ? (
-              <div className="flex flex-wrap gap-3">
-                <Button href={employerEntryHref}>Employer Sign In</Button>
-                <Button href={employerEntryHref} variant="outline">Create Employer Account</Button>
+              <div className="space-y-5">
+                <InvitationSignupForm token={token} email={invitation.email} signInHref={employerEntryHref} />
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  Already have a Careeriz account? <a className="font-semibold text-[var(--color-primary)] underline" href={employerEntryHref}>Employer Sign In</a>
+                </p>
               </div>
             ) : (
               <form action={acceptOrganisationInvitationAction.bind(null, token)} className="flex flex-wrap gap-3">

@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
+import { signupFromInvitation } from '../controllers/authController.js';
 import { validateSchema } from '../middleware/schema.js';
+import { createRateLimiter } from '../middleware/rateLimit.js';
 import { requireVerifiedOrganisation } from '../middleware/organisationVerification.js';
 import { imageUpload } from '../middleware/imageUpload.js';
 import {
   organisationInvitationCreateSchema,
+  organisationInvitationSignupSchema,
   organisationInvitationTokenSchema,
   organisationPostCreateSchema,
   organisationCreateSchema,
@@ -62,6 +65,7 @@ organisationRouter.get('/invitations', auth(['RECRUITER']), getOrganisationInvit
 organisationRouter.post('/invitations', auth(['RECRUITER']), requireVerifiedOrganisation(), validateSchema(organisationInvitationCreateSchema), postOrganisationInvitation);
 organisationRouter.post('/invitations/:invitationId/resend', auth(['RECRUITER']), postOrganisationInvitationResend);
 organisationRouter.post('/invitations/:invitationId/revoke', auth(['RECRUITER']), postOrganisationInvitationRevoke);
+organisationRouter.post('/invitations/signup', createRateLimiter({ keyPrefix: 'auth:invitation-signup', limit: 10 }), validateSchema(organisationInvitationSignupSchema), signupFromInvitation);
 organisationRouter.get('/invitations/token/:token', getInvitationTokenDetail);
 organisationRouter.post('/invitations/accept', auth(['RECRUITER']), validateSchema(organisationInvitationTokenSchema), acceptInvitationToken);
 organisationRouter.get('/audit-logs', auth(['RECRUITER']), getOrganisationAuditLogs);

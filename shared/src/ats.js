@@ -672,6 +672,16 @@ export const organisationInvitationTokenSchema = z.object({
   token: z.string().min(32),
 });
 
+export const organisationInvitationSignupSchema = z.object({
+  token: z.string().min(32),
+  name: z.string().trim().min(1).max(120),
+  password: z.string().min(8).max(72),
+  confirmPassword: z.string().min(1),
+}).refine((value) => value.password === value.confirmPassword, {
+  message: 'Passwords do not match.',
+  path: ['confirmPassword'],
+});
+
 export const organisationPostCreateSchema = z.object({
   content: z.string().trim().min(2).max(4000),
   imageUrl: z.string().trim().url().optional().or(z.literal('')).nullable(),

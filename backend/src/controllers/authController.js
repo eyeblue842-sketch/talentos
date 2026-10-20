@@ -5,6 +5,7 @@ import {
   confirmPasswordReset,
   loginUser,
   logoutUser,
+  registerFromInvitation,
   registerUser,
   requestEmailVerification,
   requestPasswordReset,
@@ -25,6 +26,15 @@ import { sendSuccess } from '../utils/response.js';
 export async function signup(req, res, next) {
   try {
     const result = await registerUser(req.body);
+    sendSuccess(res, 201, result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function signupFromInvitation(req, res, next) {
+  try {
+    const result = await registerFromInvitation(req.body, { ipAddress: req.ip, userAgent: req.get('user-agent') });
     sendSuccess(res, 201, result);
   } catch (error) {
     next(error);

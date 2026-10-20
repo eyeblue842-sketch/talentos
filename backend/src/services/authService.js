@@ -19,7 +19,7 @@ import { resolveMembershipForRequest } from './organisationAccessService.js';
 import { assertInitialSetupCompleted } from './setupService.js';
 import { touchCandidateLastActive } from './candidateActivityService.js';
 import { assertEmailAllowedForEmployerType, buildRecruiterOrganisationCreateData, createRecruiterOrganisation } from './employerOnboardingService.js';
-import { getInvitationByToken } from './organisationInvitationService.js';
+import { acceptOrganisationInvitation, getInvitationByToken } from './organisationInvitationService.js';
 import { normalizeEmailDomain } from './domainPolicyService.js';
 
 function buildCandidateProfileData(payload) {
@@ -166,6 +166,50 @@ export async function registerUser(payload) {
     user: serializeUser(user, { includePrivate: true }),
     emailVerificationRequired: true,
   };
+}
+
+// Invitee sets a password straight from the invitation link: the emailed
+// single-use token proves they own the invited mailbox, so the account is
+// created already verified, joins the inviting organisation with the invited
+// role, and is signed in - no separate verification or accept step.
+export async function registerFromInvitation({ token, name, password }, requestMeta = {}) {
+  await assertInitialSetupCompleted();
+
+  const invitation = await getInvitationByToken(token);
+  if (invitation.organisation?.status !== 'ACTIVE') {
+    const error = new Error('This invitation cannot be used.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const email = invitation.email.toLowerCase().trim();
+  if (await getUserByEmail(email)) {
+    const error = new Error('An account already exists for this email. Please sign in to accept the invitation.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const createdUser = await prisma.user.create({
+    data: {
+      email,
+      name: name.trim(),
+      passwordHash,
+      role: 'RECRUITER',
+      emailVerifiedAt: new Date(),
+      recruiterProfile: {
+        create: {
+          organisationId: invitation.organisationId,
+          companyEmailDomain: normalizeEmailDomain(email),
+          officeLocations: [],
+          profileCompleted: false,
+        },
+      },
+    },
+  });
+
+  await acceptOrganisationInvitation(createdUser, token, requestMeta);
+  return loginUser(email, password);
 }
 
 export async function updateRecruiterProfile(userId, payload) {
