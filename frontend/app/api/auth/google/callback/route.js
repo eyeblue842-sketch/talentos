@@ -2,9 +2,10 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getBackendApiBaseUrl, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
 import { safeInternalPath } from '@/lib/roles';
+import { resolveRequestOrigin } from '@/lib/request-origin';
 
 function buildErrorRedirect(request, message) {
-  const redirectUrl = new URL('/auth/candidate/login', request.nextUrl.origin);
+  const redirectUrl = new URL('/auth/candidate/login', resolveRequestOrigin(request));
   redirectUrl.searchParams.set('oauthError', message);
   return NextResponse.redirect(redirectUrl);
 }
@@ -40,7 +41,7 @@ export async function GET(request) {
     cookieStore.set(SESSION_COOKIE, payload.data.token, sessionCookieOptions());
 
     const target = safeInternalPath(payload.data.nextPath, '/candidate/dashboard');
-    return NextResponse.redirect(new URL(target, request.nextUrl.origin));
+    return NextResponse.redirect(new URL(target, resolveRequestOrigin(request)));
   } catch {
     return buildErrorRedirect(request, 'Google sign-in failed.');
   }

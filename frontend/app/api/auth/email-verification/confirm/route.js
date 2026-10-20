@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import { requestBackend } from '@/lib/auth';
 import { safeInternalPath } from '@/lib/roles';
+import { resolveRequestOrigin } from '@/lib/request-origin';
 
 export async function GET(request) {
   const token = request.nextUrl.searchParams.get('token');
-  const fallbackUrl = new URL('/auth', request.nextUrl.origin);
+  const origin = resolveRequestOrigin(request);
+  const resultUrl = new URL('/auth/verify-email', origin);
 
   if (!token) {
-    fallbackUrl.searchParams.set('oauthError', 'Invalid verification link.');
-    return NextResponse.redirect(fallbackUrl);
+    resultUrl.searchParams.set('status', 'error');
+    return NextResponse.redirect(resultUrl);
   }
 
   try {
@@ -18,16 +20,23 @@ export async function GET(request) {
     });
 
     // Sends the user back to where they started (e.g. an organisation
-    // invitation) once verified, instead of always landing on the generic
-    // /auth page - re-validated here even though registerUser/
+    // invitation) once verified - re-validated here even though registerUser/
     // confirmEmailVerification already validate it, since this is the
     // point a redirect Location header actually gets built.
     const next = safeInternalPath(result?.data?.next, null);
-    const redirectUrl = next ? new URL(next, request.nextUrl.origin) : fallbackUrl;
-    redirectUrl.searchParams.set('authStatus', 'email-verified');
-    return NextResponse.redirect(redirectUrl);
-  } catch (error) {
-    fallbackUrl.searchParams.set('oauthError', error.message || 'Invalid verification link.');
-    return NextResponse.redirect(fallbackUrl);
+    if (next) {
+      const redirectUrl = new URL(next, origin);
+      redirectUrl.searchParams.set('authStatus', 'email-verified');
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    // Everyone else lands on a page that states plainly that the email is verified.
+    resultUrl.searchParams.set('status', 'success');
+    if (result?.data?.audience) resultUrl.searchParams.set('audience', result.data.audience);
+    return NextResponse.redirect(resultUrl);
+  } catch {
+    // Never echo the raw token or backend detail into the URL.
+    resultUrl.searchParams.set('status', 'error');
+    return NextResponse.redirect(resultUrl);
   }
 }

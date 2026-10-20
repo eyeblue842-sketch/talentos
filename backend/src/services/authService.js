@@ -488,7 +488,11 @@ export async function confirmEmailVerification(token) {
   // mirrors confirmPasswordReset's identical `next` handling.
   const next = isSafeInternalPath(consumedToken.context?.next) ? consumedToken.context.next : null;
 
-  return { verified: true, next };
+  return {
+    verified: true,
+    next,
+    audience: consumedToken.user.role === 'RECRUITER' ? 'employer' : 'candidate',
+  };
 }
 
 export async function changePassword(userId, currentPassword, newPassword) {

@@ -6,6 +6,7 @@ import { ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, FileText, LogIn
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog } from '@/components/ui/dialog';
 import { FormActions, FormSection, InlineValidationMessage, PasswordField } from '@/components/ui/form-layout';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -201,6 +202,8 @@ export function AuthExperience({
     password: '',
   });
   const [pendingAction, setPendingAction] = useState('');
+  // Shown as a modal the user must acknowledge (OK) after creating an account.
+  const [signupNotice, setSignupNotice] = useState('');
   const [statusMessage, setStatusMessage] = useState(
     initialSearchParams.authStatus === 'email-verified'
       ? 'Email verified. You can now sign in.'
@@ -274,13 +277,13 @@ export function AuthExperience({
       const pendingDomainReview = audience === 'employer'
         && employerType === 'COMPANY'
         && response.data.user?.recruiterProfile?.organisation?.domainVerificationStatus === 'PENDING';
-      setStatusMessage(
-        pendingDomainReview
-          ? 'Account created. Check your email to verify the account. Your company domain is pending platform review before it is fully verified.'
-          : response.data.emailVerificationRequired
-            ? 'Account created. Check your email to verify the account before signing in.'
-            : 'Account created.'
-      );
+      if (pendingDomainReview) {
+        setSignupNotice('Account created. Check your email to verify the account. Your company domain is pending platform review before it is fully verified.');
+      } else if (response.data.emailVerificationRequired) {
+        setSignupNotice('Account created. Check your email to verify the account before signing in.');
+      } else {
+        setStatusMessage('Account created.');
+      }
       setLoginForm({ email: registerForm.email, password: '' });
     } catch (error) {
       setErrorMessage(error.message);
@@ -532,6 +535,12 @@ export function AuthExperience({
           </Card>
         </div>
       </div>
+      <Dialog open={Boolean(signupNotice)} onClose={() => setSignupNotice('')} title="Account created" className="max-w-md">
+        <p className="text-sm text-[var(--color-text-secondary)]">{signupNotice}</p>
+        <div className="mt-6 flex justify-end">
+          <Button type="button" onClick={() => setSignupNotice('')}>OK</Button>
+        </div>
+      </Dialog>
     </main>
   );
 }
