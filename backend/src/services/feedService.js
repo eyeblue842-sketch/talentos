@@ -1,5 +1,5 @@
 import { prisma } from '../config/db.js';
-import { collectNetworkFeedItems } from './networkFeedService.js';
+import { attachJobCards, collectNetworkFeedItems } from './networkFeedService.js';
 import { assertRecruiterPostAllowed, isRecruiterRole } from './recruiterPostPolicy.js';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -130,6 +130,7 @@ export async function createFeedPost(user, payload = {}) {
     viewerLiked: false,
     viewerShared: false,
     activity: null,
+    jobs: (await attachJobCards([{ content: post.content }]))[0].jobs,
     author: {
       name: candidateDisplayName(user),
       subtitle: recruiter

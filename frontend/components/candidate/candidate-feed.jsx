@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Building2, Loader2, Repeat2, Send, ThumbsUp, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { PostBody } from '@/components/feed/post-body';
 
 function initials(name) {
   return String(name || 'C')
@@ -186,15 +187,15 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
                     </button>
                   ) : null}
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--color-text)]">{item.content}</p>
+                <PostBody className="mt-3" content={item.content} jobs={item.jobs || []} />
                 {item.imageUrl ? <img src={item.imageUrl} alt="" className="mt-3 max-h-96 w-full rounded-xl object-cover" /> : null}
                 {item.type !== 'ORGANISATION' ? (
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
                     <Button type="button" variant="ghost" size="sm" disabled={reactingId === item.postId} aria-pressed={Boolean(item.viewerLiked)} onClick={() => react(item, 'LIKE')} className={item.viewerLiked ? 'text-[var(--color-primary)]' : ''} leadingIcon={ThumbsUp}>
-                      {item.viewerLiked ? 'Liked' : 'Like'}{item.likeCount ? ` · ${item.likeCount}` : ''}
+                      {item.viewerLiked ? 'Liked' : 'Like'}{item.likeCount ? ` Â· ${item.likeCount}` : ''}
                     </Button>
                     <Button type="button" variant="ghost" size="sm" disabled={reactingId === item.postId} aria-pressed={Boolean(item.viewerShared)} onClick={() => react(item, 'SHARE')} className={item.viewerShared ? 'text-[var(--color-primary)]' : ''} leadingIcon={Repeat2}>
-                      {item.viewerShared ? 'Shared' : 'Share'}{item.shareCount ? ` · ${item.shareCount}` : ''}
+                      {item.viewerShared ? 'Shared' : 'Share'}{item.shareCount ? ` Â· ${item.shareCount}` : ''}
                     </Button>
                   </div>
                 ) : null}

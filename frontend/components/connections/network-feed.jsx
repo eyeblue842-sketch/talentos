@@ -6,6 +6,7 @@ import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { PostBody } from '@/components/feed/post-body';
 import { cn } from '@/lib/utils';
 
 function timeAgo(value) {
@@ -23,14 +24,6 @@ function timeAgo(value) {
 
 function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-}
-
-// Renders plain post text with http(s) links made clickable.
-function LinkedText({ text }) {
-  const parts = String(text || '').split(/(https?:\/\/[^\s<>"')]+)/g);
-  return parts.map((part, index) => (/^https?:\/\//.test(part)
-    ? <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--color-primary)] underline break-all">{part}</a>
-    : <span key={index}>{part}</span>));
 }
 
 function FeedItem({ item, onReact, onDelete, pending }) {
@@ -54,7 +47,7 @@ function FeedItem({ item, onReact, onDelete, pending }) {
           <p className="text-xs text-[var(--color-text-muted)]">{timeAgo(item.createdAt)}</p>
         </div>
       </div>
-      <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--color-text)]"><LinkedText text={item.content} /></p>
+      <PostBody className="mt-4" content={item.content} jobs={item.jobs || []} />
       {item.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.imageUrl} alt="" className="mt-4 max-h-96 w-full rounded-xl object-cover" />

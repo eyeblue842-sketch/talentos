@@ -50,10 +50,10 @@ export function isRecruiterRole(role) {
   return role === 'RECRUITER' || role === 'RECRUITER_ADMIN';
 }
 
-export async function assertRecruiterPostAllowed(user, content) {
+// Splits the http(s) links in a post into Careeriz job slugs and "other" links.
+export function extractPostLinks(content) {
   const hosts = careerizHosts();
-  const urls = content.match(URL_PATTERN) || [];
-
+  const urls = String(content || '').match(URL_PATTERN) || [];
   const jobSlugs = [];
   let hasOtherLink = false;
   urls.forEach((raw) => {
@@ -66,13 +66,21 @@ export async function assertRecruiterPostAllowed(user, content) {
       hasOtherLink = true;
     }
   });
+  return { jobSlugs, hasOtherLink };
+}
+
+// Open, public, non-archived jobs (any company) addressed by these slugs.
+export const OPEN_PUBLIC_JOB_WHERE = { status: 'OPEN', isPublic: true, archivedAt: null };
+
+export async function assertRecruiterPostAllowed(user, content) {
+  const { jobSlugs, hasOtherLink } = extractPostLinks(content);
 
   // Every Careeriz job link must be an open job of the recruiter's own company.
   if (jobSlugs.length) {
     const organisationId = user.activeMembership?.organisationId || user.recruiterProfile?.organisationId || null;
     const jobs = organisationId
       ? await prisma.job.findMany({
-        where: { slug: { in: jobSlugs }, organisationId, status: 'OPEN' },
+        where: { slug: { in: jobSlugs }, organisationId, ...OPEN_PUBLIC_JOB_WHERE },
         select: { slug: true },
       })
       : [];

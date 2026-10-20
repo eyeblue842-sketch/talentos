@@ -1,4 +1,6 @@
 import { prisma } from '../config/db.js';
+import { createNotification } from './notificationService.js';
+import { extractPostLinks, OPEN_PUBLIC_JOB_WHERE } from './recruiterPostPolicy.js';
 
 // Network feed (recruiters and candidates): posts written by the viewer's
 // accepted connections, plus posts those connections liked or shared, with
@@ -67,6 +69,30 @@ const postInclude = {
     },
   },
 };
+
+// Job cards for the Careeriz job links in a set of serialized posts, so the UI can
+// show title / company / location with an Apply button instead of a bare link.
+export async function attachJobCards(items) {
+  const slugsByItem = items.map((item) => extractPostLinks(item.content).jobSlugs);
+  const allSlugs = [...new Set(slugsByItem.flat())];
+  if (!allSlugs.length) return items.map((item) => ({ ...item, jobs: [] }));
+
+  const jobs = await prisma.job.findMany({
+    where: { slug: { in: allSlugs }, ...OPEN_PUBLIC_JOB_WHERE },
+    select: { slug: true, title: true, location: true, organisation: { select: { name: true } } },
+  });
+  const bySlug = new Map(jobs.map((job) => [job.slug, {
+    slug: job.slug,
+    title: job.title,
+    location: job.location,
+    companyName: job.organisation?.name || null,
+    path: `/jobs/${job.slug}`,
+  }]));
+  return items.map((item, index) => ({
+    ...item,
+    jobs: [...new Set(slugsByItem[index])].map((slug) => bySlug.get(slug)).filter(Boolean),
+  }));
+}
 
 function serializePost(post, viewerId, connectionIds, sortAt) {
   const likes = post.reactions.filter((reaction) => reaction.type === 'LIKE');
@@ -138,12 +164,11 @@ export async function collectNetworkFeedItems(user, windowSize) {
   reacted.forEach((row) => remember(row.post, row.createdAt));
   ownShares.forEach((row) => remember(row.post, row.createdAt));
 
-  return {
-    connectionCount: connectionList.length,
-    items: [...byPost.values()]
-      .sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime())
-      .map(({ post, sortAt }) => serializePost(post, user.id, connectionIds, sortAt)),
-  };
+  const items = [...byPost.values()]
+    .sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime())
+    .map(({ post, sortAt }) => serializePost(post, user.id, connectionIds, sortAt));
+
+  return { connectionCount: connectionList.length, items: await attachJobCards(items) };
 }
 
 export async function getNetworkFeed(user, { page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
@@ -195,5 +220,37 @@ export async function toggleFeedReaction(user, postId, type) {
     prisma.feedPostReaction.count({ where: { postId, type: 'LIKE' } }),
     prisma.feedPostReaction.count({ where: { postId, type: 'SHARE' } }),
   ]);
+  // Tell the author (anonymously - counts only) when their post gets a new like or share.
+  if (!existing && post.authorUserId !== user.id) {
+    await notifyAuthorOfReaction(post, type, type === 'LIKE' ? likeCount : shareCount).catch(() => {});
+  }
+
   return { postId, type, active: !existing, likeCount, shareCount };
+}
+
+// One rolling unread notification per post and reaction type, so a busy post does
+// not flood the author's inbox. The message carries the running count only.
+async function notifyAuthorOfReaction(post, type, count) {
+  const isLike = type === 'LIKE';
+  const title = isLike ? 'Your post got a new like' : 'Your post was shared';
+  const message = isLike
+    ? `Your post has ${count} like${count === 1 ? '' : 's'}.`
+    : `Your post has been shared ${count} time${count === 1 ? '' : 's'}.`;
+
+  const existing = await prisma.notification.findFirst({
+    where: { recipientUserId: post.authorUserId, entityType: 'FeedPost', entityId: post.id, readAt: null, title },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.notification.update({ where: { id: existing.id }, data: { message, createdAt: new Date() } });
+    return;
+  }
+  await createNotification({
+    recipientUserId: post.authorUserId,
+    type: 'NETWORK',
+    title,
+    message,
+    entityType: 'FeedPost',
+    entityId: post.id,
+  });
 }
