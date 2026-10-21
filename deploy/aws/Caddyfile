@@ -19,8 +19,9 @@ www.careeriz.com {
 	}
 	encode gzip
 	route {
-		# Setup API + callbacks LinkedIn/Google hit directly go to the API.
-		@api path /api/setup /api/setup/* /api/auth/oauth/* /api/social/linkedin/callback
+		# Setup API + the provider start/callback endpoints Google/LinkedIn hit directly go to the API.
+		# (/api/auth/oauth/callback and /exchange are the frontend's own routes - keep them on the frontend.)
+		@api path /api/setup /api/setup/* /api/auth/oauth/google/* /api/social/linkedin/callback
 		reverse_proxy @api backend:5000
 
 		reverse_proxy frontend:3000
