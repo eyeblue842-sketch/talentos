@@ -6,6 +6,20 @@ import { getCandidateResumeAssets, getPublicJobApplyContext } from '@/lib/api';
 import { JobApplicationFlow } from '@/components/sections/job-application-flow';
 import { getHomeRouteForRole } from '@/lib/roles';
 
+// Plain-language explanations for the eligibility reason codes (never show the raw code).
+const APPLY_BLOCK_MESSAGES = {
+  ALREADY_APPLIED: 'You have already applied to this job. You can follow it under Applications in your account.',
+  APPLICATION_CLOSED: 'This job is no longer accepting applications.',
+  APPLICATION_NOT_OPEN: 'Applications for this job have not opened yet.',
+  JOB_CLOSED: 'This job is no longer accepting applications.',
+  LOGIN_REQUIRED: 'Please sign in to apply to this job.',
+  MAX_APPLICATIONS_REACHED: 'This job has reached its maximum number of applications.',
+};
+
+function describeApplyBlock(reasonCode) {
+  return APPLY_BLOCK_MESSAGES[reasonCode] || 'You cannot apply to this job right now.';
+}
+
 export default async function JobApplyPage({ params }) {
   const { slug } = await params;
   const [user, applyContext] = await Promise.all([
@@ -29,7 +43,7 @@ export default async function JobApplyPage({ params }) {
       <main className="mx-auto min-h-screen max-w-4xl px-6 py-8 lg:px-10">
         <Card className="rounded-[32px] p-6">
           <h1 className="font-[var(--font-display)] text-3xl font-semibold">Applications unavailable</h1>
-          <p className="mt-3 text-sm text-[var(--muted)]">Reason: {eligibility.reasonCode || 'Unable to apply right now.'}</p>
+          <p className="mt-3 text-sm text-[var(--muted)]">{describeApplyBlock(eligibility.reasonCode)}</p>
           <Link href={`/jobs/${slug}`} className="mt-6 inline-flex rounded-2xl border border-[var(--line)] px-5 py-3 font-semibold">Back to job</Link>
         </Card>
       </main>

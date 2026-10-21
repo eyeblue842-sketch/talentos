@@ -1174,7 +1174,10 @@ export async function submitJobApplication(candidateUser, payload, requestMeta =
         ? new URL(applicationPath, frontendBaseUrl).toString()
         : applicationPath;
 
-      await Promise.all(notificationRecipients.map((to) => sendRecruiterApplicationNotificationEmail({
+      // Not awaited: SMTP can take several seconds and must not hold up the
+      // candidate's "Submit application" response (each send already catches and
+      // logs its own failure).
+      void Promise.all(notificationRecipients.map((to) => sendRecruiterApplicationNotificationEmail({
         to,
         recruiterName,
         candidateName: submission.candidate?.fullName || candidateProfile.fullName || 'A candidate',
