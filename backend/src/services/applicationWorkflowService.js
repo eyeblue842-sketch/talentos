@@ -920,6 +920,33 @@ export async function listCandidateResumeAssets(candidateUser) {
   return rows.map(serializeResumeAsset);
 }
 
+// Rejects empty files and files whose content does not match their extension
+// (e.g. a text file renamed to .pdf), so they never become the primary resume.
+function assertUploadLooksLikeItsExtension(file, rawExtension) {
+  const extension = String(rawExtension || '').replace(/^\./, '').toLowerCase();
+  const buffer = file.buffer;
+  if (!buffer) return;
+  if (buffer.length === 0) {
+    const error = new Error('The selected file is empty. Please choose your resume file.');
+    error.statusCode = 422;
+    throw error;
+  }
+  const startsWith = (...bytes) => bytes.every((byte, index) => buffer[index] === byte);
+  const isPdf = startsWith(0x25, 0x50, 0x44, 0x46, 0x2d); // %PDF-
+  const isZip = startsWith(0x50, 0x4b, 0x03, 0x04); // docx is a zip container
+  const isOle = startsWith(0xd0, 0xcf, 0x11, 0xe0); // legacy .doc
+  const isRtf = buffer.subarray(0, 5).toString() === '{\\rtf';
+  const valid = (extension === 'pdf' && isPdf)
+    || (extension === 'docx' && isZip)
+    || (extension === 'doc' && (isOle || isZip || isRtf))
+    || !['pdf', 'docx', 'doc'].includes(extension);
+  if (!valid) {
+    const error = new Error(`This file is not a valid ${extension.toUpperCase()} document. Please upload your resume as a real PDF or Word file.`);
+    error.statusCode = 422;
+    throw error;
+  }
+}
+
 export async function uploadCandidateResumeAsset(candidateUser, file, { kind = 'RESUME' } = {}) {
   if (!file) {
     const error = new Error('File is required.');
@@ -934,6 +961,7 @@ export async function uploadCandidateResumeAsset(candidateUser, file, { kind = '
     throw error;
   }
   const maxBytes = kind === 'SCREENING_FILE' ? ANSWER_FILE_MAX_BYTES : DEFAULT_MAX_FILE_BYTES;
+  assertUploadLooksLikeItsExtension(file, extension);
   if ((file.size || file.buffer?.length || 0) > maxBytes) {
     const error = new Error(`File exceeds the ${Math.round(maxBytes / (1024 * 1024))}MB limit.`);
     error.statusCode = 422;
@@ -1819,7 +1847,7 @@ export async function getOwnedResumeDownload(candidateUser, assetId) {
   }
   return {
     asset,
-    file: readPrivateFileNodeStream(asset.storageProvider, asset.storageKey),
+    file: await readPrivateFileNodeStream(asset.storageProvider, asset.storageKey),
   };
 }
 
@@ -1833,7 +1861,7 @@ export async function getRecruiterApplicationResumeDownload(actorUser, jobApplic
   }
   return {
     snapshot,
-    file: readPrivateFileNodeStream(snapshot.storageProvider, snapshot.storageKey),
+    file: await readPrivateFileNodeStream(snapshot.storageProvider, snapshot.storageKey),
   };
 }
 
@@ -1847,6 +1875,6 @@ export async function getRecruiterAnswerFileDownload(actorUser, assetId, jobAppl
   }
   return {
     asset: answer.fileAsset,
-    file: readPrivateFileNodeStream(answer.fileAsset.storageProvider, answer.fileAsset.storageKey),
+    file: await readPrivateFileNodeStream(answer.fileAsset.storageProvider, answer.fileAsset.storageKey),
   };
 }

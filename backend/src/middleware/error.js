@@ -1,3 +1,5 @@
+import { env } from '../config/env.js';
+
 export function errorHandler(error, req, res, next) {
   void next;
   const status = error.statusCode
@@ -20,7 +22,9 @@ export function errorHandler(error, req, res, next) {
 
   const safeMessage = status >= 500
     ? 'Internal server error'
-    : (error.message
+    : ((error.code === 'LIMIT_FILE_SIZE'
+        ? `File too large. The maximum allowed size is ${env.fileUploadMaxMb} MB.`
+        : error.message)
         || (error.code === 'LIMIT_FILE_SIZE'
           ? 'Uploaded file exceeds the allowed size.'
           : 'Request failed'));

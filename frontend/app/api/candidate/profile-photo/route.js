@@ -14,6 +14,13 @@ export async function GET() {
     cache: 'no-store',
   });
 
+  // No photo uploaded yet is a normal state, not an error: answer 204 so the browser
+  // console (and monitoring) is not flooded with a 404 on every page load. The <img>
+  // onError fallback still shows the default avatar.
+  if (response.status === 404) {
+    return new Response(null, { status: 204, headers: { 'cache-control': 'private, max-age=60' } });
+  }
+
   if (!response.ok || !response.body) {
     return new Response('Profile photo not found.', { status: response.status || 404 });
   }

@@ -304,6 +304,14 @@ Re-run these after every deployment – each one was a real bug.
 | REG-08 | Google sign-in "not configured" | Click Continue with Google on production | Reaches Google's sign-in page, returns signed in | P1 |
 | REG-09 | Recruiter heading "Recruiter home" | Open recruiter home | Shows the name | P2 |
 | REG-10 | SSH locked after home IP change | Check access after an IP change | Know how to re-allow (AWS login + security-group update) | P3 |
+| REG-11 | Saving one profile section wiped other fields (headline, title, employer, location, phone) | Set a headline, then save Key skills / Profile summary | Headline and other fields stay unchanged | P1 |
+| REG-12 | Failed resume parses re-ran every 30 s forever | Upload an unreadable resume; watch worker logs for 10 min | At most one parse task per upload or per manual Retry | P1 |
+| REG-13 | Empty / fake / oversized resume accepted or hung | Upload an empty .pdf, a text file renamed .pdf, a .exe and a 15 MB PDF | Each rejected at once with a clear message; the existing primary resume is untouched | P1 |
+| REG-14 | Resume Download returned 404 / 500 | Click Download on a resume (candidate) and on an applicant's resume (recruiter) | File downloads with its original name | P1 |
+| REG-15 | Resume parser dropped end dates, merged jobs, left dates in company names and missed location | Upload a resume with "Title - Company (Jan 2022 - Present)" jobs, "Degree - University (years)" and a piped header line | Separate jobs with clean company names, start/end dates, institution split from degree, location filled | P2 |
+| REG-16 | Candidate top bar overflowed on phones; account menu / Logout unreachable | Open candidate pages at 360-390 px and use the Me menu | No horizontal scroll; Me menu and Logout work | P1 |
+| REG-17 | 404 on /api/candidate/profile-photo on every page | Open any candidate page with no photo; check browser console | No red errors | P3 |
+| REG-18 | Hydration error (React #418) on the feed page from time formatting | Open the candidate feed with a post; check console | No hydration error | P3 |
 
 ---
 

@@ -179,7 +179,7 @@ export function CandidateFeed({ initialItems = [], initialMeta = {} }) {
                         <Link href={`/companies/${item.author.organisationSlug}`} className="hover:text-[var(--color-primary)]">{item.author.name}</Link>
                       ) : item.author?.name}
                     </p>
-                    <p className="truncate text-xs text-[var(--color-text-secondary)]">{item.author?.subtitle} · {formatWhen(item.createdAt)}</p>
+                    <p suppressHydrationWarning className="truncate text-xs text-[var(--color-text-secondary)]">{item.author?.subtitle} · {formatWhen(item.createdAt)}</p>
                   </div>
                   {item.canDelete ? (
                     <button type="button" onClick={() => removePost(item)} aria-label="Delete post" className="shrink-0 rounded-full p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-danger)]">

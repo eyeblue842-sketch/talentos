@@ -71,7 +71,11 @@ const stringArrayField = (maxItems = 20, maxLength = 80) =>
   }, z.array(z.string().trim().min(1).max(maxLength)).max(maxItems));
 
 const emptyStringToNull = (value) => {
-  if (value == null) return null;
+  // Omitted (undefined) must stay omitted: partial profile updates (e.g. saving only
+  // Key skills) were turning every missing field into null and wiping the
+  // headline, current title/employer, location and phone.
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   if (typeof value !== 'string') return value;
   const normalized = value.trim();
   return normalized ? normalized : null;

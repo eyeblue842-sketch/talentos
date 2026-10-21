@@ -1245,7 +1245,14 @@ function isIgnoredResumeLine(line) {
 }
 
 function isDateRangeLine(line) {
-  return /((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\b\d{4}\b)\s*[-â€“]\s*((Present|Current)|((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\b\d{4}\b))/i.test(String(line || ''));
+  return /((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b)\s*(?:-|–|—|\bto\b)\s*((Present|Current|Now)|((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}|\b\d{4}\b))/i.test(String(line || ''));
+}
+
+// "Senior Engineer - Acme Corp (Jan 2022 - Present)" -> "Senior Engineer - Acme Corp"
+function stripTrailingDateRange(line) {
+  return String(line || '')
+    .replace(/\s*[(\[]?\s*(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\d{4}\s*(?:-|–|—|\bto\b)\s*(?:Present|Current|Now|(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?\d{4})\s*[)\]]?\s*$/i, '')
+    .trim();
 }
 
 function stripLeadingLabel(line, labels = []) {
@@ -1289,7 +1296,11 @@ function splitStructuredEntries(lines = [], { isEntryStart } = {}) {
 }
 
 function inferLocation(lines = []) {
-  const candidate = lines.find((line) => (
+  const segments = lines
+    .flatMap((line) => String(line || '').split(/\s*[|•·]\s*/))
+    .map((segment) => segment.replace(/^(?:location|address|city|based in)\s*:\s*/i, '').trim())
+    .filter(Boolean);
+  const candidate = segments.find((line) => (
     line
     && !/@/.test(line)
     && !/^https?:\/\//i.test(line)
@@ -1407,12 +1418,14 @@ function inferTotalExperience(text, experienceEntries = []) {
 }
 
 function extractDateRange(text) {
-  const match = String(text || '').match(/((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)?\s*\d{4})\s*[-–]\s*((Present|Current)|((Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)?\s*\d{4}))/i);
+  const month = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?';
+  const match = String(text || '').match(new RegExp(`((?:${month}\\s*)?\\d{4})\\s*(?:-|–|—|\\bto\\b)\\s*(Present|Current|Now|(?:${month}\\s*)?\\d{4})`, 'i'));
   if (!match) return { startDate: null, endDate: null, currentlyWorking: false };
+  const isCurrent = /^(present|current|now)$/i.test(match[2].trim());
   return {
     startDate: match[1]?.trim() || null,
-    endDate: /present|current/i.test(match[4] || '') ? null : (match[4]?.trim() || null),
-    currentlyWorking: /present|current/i.test(match[4] || ''),
+    endDate: isCurrent ? null : (match[2]?.trim() || null),
+    currentlyWorking: isCurrent,
   };
 }
 
@@ -1424,14 +1437,16 @@ function splitBySeparators(line) {
 }
 
 function looksLikeExperienceHeader(line) {
-  const value = String(line || '').trim();
+  const raw = String(line || '').trim();
+  const value = stripTrailingDateRange(raw);
+  // A line that is only dates (nothing left once the range is removed) is not a header.
   if (!value || isHeadingLine(value) || isDateRangeLine(value)) return false;
   if (/^(responsibilities|summary|technologies|technology|environment|tools|project|domain|client|location)\s*:/i.test(value)) return false;
   return /\bat\b/i.test(value) || splitBySeparators(value).length >= 2;
 }
 
 function parseHeaderTitleCompany(line) {
-  const value = String(line || '').trim();
+  const value = stripTrailingDateRange(String(line || '').trim());
   if (!value) return { title: null, company: null };
 
   // A date/date-range is never a title or company name.
@@ -1538,16 +1553,27 @@ function parseEducationEntries(lines = []) {
     const years = [...joined.matchAll(/\b(19|20)\d{2}\b/g)].map((match) => match[0]);
     const degreeLine = chunk.find((line) => /\b(B\.?Tech|M\.?Tech|B\.?E|M\.?E|Bachelor|Master|MBA|BCA|MCA|Diploma|Higher Secondary|Secondary School|Class\s*(X|XII|10|12))\b/i.test(line)) || '';
     const institutionLine = chunk.find((line) => line !== degreeLine && /\b(University|College|Institute|School)\b/i.test(line)) || chunk[1] || null;
-    const fieldMatch = degreeLine.match(/\b(in|of)\s+([A-Za-z&/ .-]{2,})$/i);
+    const yearsAtEnd = /\s*[(\[]?\s*(?:19|20)\d{2}\s*(?:-|–|—|\bto\b)\s*(?:(?:19|20)\d{2}|Present|Current)\s*[)\]]?\s*$/i;
+    let degreeText = degreeLine.replace(yearsAtEnd, '').trim();
+    let inlineInstitution = null;
+    const inlineSplit = degreeText.match(/^(.*?)\s+(?:-|–|—|\|)\s+(.*\b(?:University|College|Institute|School|Academy)\b.*)$/i);
+    if (inlineSplit) {
+      degreeText = inlineSplit[1].trim();
+      inlineInstitution = inlineSplit[2].replace(yearsAtEnd, '').trim();
+    }
+    const fieldMatch = degreeText.match(/\b(in|of)\s+([A-Za-z&/ .-]{2,})$/i)
+      || degreeText.match(/^(?:B\.?\s?E\.?|B\.?\s?Tech\.?|M\.?\s?Tech\.?|M\.?\s?E\.?|BCA|MCA|MBA|B\.?\s?Sc\.?|M\.?\s?Sc\.?)\s+()([A-Za-z&/ .-]{3,})$/i);
     const locationLine = chunk.find((line) => /,/.test(line) && !isDateRangeLine(line) && !/@/.test(line)) || null;
-    const degree = sanitizeCandidateScalar(degreeLine);
+    const degree = sanitizeCandidateScalar(degreeText);
     if (!degree || /^details$/i.test(degree)) {
       return null;
     }
 
     return {
       degree,
-      institution: institutionLine ? sanitizeCandidateScalar(institutionLine) : null,
+      institution: inlineInstitution
+        ? sanitizeCandidateScalar(inlineInstitution)
+        : (institutionLine ? sanitizeCandidateScalar(institutionLine) : null),
       specialization: fieldMatch?.[2] ? normalizeWhitespace(fieldMatch[2]) : null,
       fieldOfStudy: fieldMatch?.[2] ? normalizeWhitespace(fieldMatch[2]) : null,
       startYear: years[0] || null,

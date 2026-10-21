@@ -52,7 +52,15 @@ export async function scheduleResumeParsingTasks() {
     where: {
       kind: 'RESUME',
       status: { not: 'DELETED' },
-      parsingStatus: { in: ['PENDING', 'PROCESSING', 'PARTIAL', 'FAILED'] },
+      // FAILED / PARTIAL / COMPLETED are final: re-queuing them here made every
+      // unparseable resume re-run every scheduler tick forever (each failure bumps
+      // updatedAt, which changed the idempotency key). The candidate's "Retry
+      // parsing" button is the way to re-run those. PROCESSING is only picked up
+      // when stale (a worker died mid-parse).
+      OR: [
+        { parsingStatus: 'PENDING' },
+        { parsingStatus: 'PROCESSING', updatedAt: { lt: new Date(Date.now() - 15 * 60 * 1000) } },
+      ],
     },
     orderBy: { createdAt: 'asc' },
     take: 50,

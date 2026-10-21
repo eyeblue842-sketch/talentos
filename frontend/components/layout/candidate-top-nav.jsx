@@ -52,7 +52,7 @@ export function CandidateTopNav({ brand = 'Careeriz', brandLogoUrl = null }) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
         {/* Brand */}
         <Link href="/candidate/dashboard" className="flex shrink-0 items-center gap-2" aria-label="Careeriz home">
           {brandLogoUrl ? (
@@ -74,7 +74,7 @@ export function CandidateTopNav({ brand = 'Careeriz', brandLogoUrl = null }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'group relative flex min-w-[3.5rem] flex-col items-center justify-center rounded-lg px-2 py-1.5 text-[11px] font-medium transition sm:px-3',
+                  'group relative flex min-w-0 flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-[11px] font-medium transition sm:min-w-[3.5rem] sm:px-3',
                   active ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]',
                 )}
               >
@@ -104,7 +104,7 @@ export function CandidateTopNav({ brand = 'Careeriz', brandLogoUrl = null }) {
               <button
                 type="button"
                 aria-label="Open your account menu"
-                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:text-[var(--color-text)]"
+                className="flex items-center gap-1.5 rounded-lg px-1 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition hover:text-[var(--color-text)] sm:px-2"
               >
                 <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--color-primary-soft)]">
                   {!photoLoaded ? (

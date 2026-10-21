@@ -8,6 +8,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CandidateResumeSuggestionBanner } from '@/components/sections/candidate-resume-suggestion-banner';
 import { formatCareerizDate } from '@/lib/date-format';
+
+// Mirrors the server's FILE_UPLOAD_MAX_MB default.
+const MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024;
 import {
   updateResumeAssetStateAction,
 } from '@/app/candidate/actions';
@@ -53,6 +56,23 @@ export function CandidateResumeCenter({ resumes, resumeBuilderState }) {
   async function handleUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Fail fast in the browser instead of uploading a file the server will refuse.
+    if (!/\.(pdf|docx?)$/i.test(file.name)) {
+      setUploadState({ status: 'error', message: 'Please choose a PDF or Word (.doc, .docx) file.' });
+      if (uploadRef.current) uploadRef.current.value = '';
+      return;
+    }
+    if (file.size === 0) {
+      setUploadState({ status: 'error', message: 'The selected file is empty. Please choose your resume file.' });
+      if (uploadRef.current) uploadRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_RESUME_UPLOAD_BYTES) {
+      setUploadState({ status: 'error', message: `This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Resumes must be ${MAX_RESUME_UPLOAD_BYTES / (1024 * 1024)} MB or smaller.` });
+      if (uploadRef.current) uploadRef.current.value = '';
+      return;
+    }
 
     const formData = new FormData();
     formData.set('resume', file);

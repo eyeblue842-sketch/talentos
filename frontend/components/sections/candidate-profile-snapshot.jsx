@@ -85,7 +85,7 @@ export function CandidateProfileSnapshot({ snapshot, onEdit }) {
               </div>
               <p className="mt-2 text-lg font-medium text-[var(--color-text)]">{snapshot.currentTitle || 'Not added'}</p>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                at {snapshot.currentEmployer || 'Not added'}
+                {snapshot.currentEmployer ? `at ${snapshot.currentEmployer}` : 'Current company not added'}
               </p>
             </div>
           </div>
@@ -138,7 +138,7 @@ export function CandidateResumeSummaryCard({ snapshot }) {
             </div>
           </div>
           <div className="mt-3 flex flex-col gap-2 text-sm text-[var(--color-text-muted)] md:flex-row md:flex-wrap md:items-center md:gap-x-6">
-            <p>Uploaded on {formatCareerizDate(resumeStatus.uploadedAt)}</p>
+            {resumeStatus.uploadedAt ? <p>Uploaded on {formatCareerizDate(resumeStatus.uploadedAt)}</p> : <p>Upload your resume to fill in your profile faster.</p>}
             {resumeStatus.updatedAt ? <p>Updated {formatCareerizDate(resumeStatus.updatedAt)}</p> : null}
           </div>
         </div>

@@ -44,7 +44,7 @@ function FeedItem({ item, onReact, onDelete, pending }) {
             <Badge tone={item.author.role === 'RECRUITER' ? 'brand' : 'neutral'}>{item.author.role === 'RECRUITER' ? 'Recruiter' : 'Candidate'}</Badge>
           </div>
           <p className="truncate text-sm text-[var(--color-text-secondary)]">{item.author.subtitle}</p>
-          <p className="text-xs text-[var(--color-text-muted)]">{timeAgo(item.createdAt)}</p>
+          <p suppressHydrationWarning className="text-xs text-[var(--color-text-muted)]">{timeAgo(item.createdAt)}</p>
         </div>
       </div>
       <PostBody className="mt-4" content={item.content} jobs={item.jobs || []} />

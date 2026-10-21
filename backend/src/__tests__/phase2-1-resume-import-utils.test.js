@@ -860,3 +860,34 @@ test('candidate profile repair data clears polluted parser values while preservi
   assert.equal(repair.languageEntries.length, 1);
   assert.equal(repair.skills, undefined);
 });
+
+test('deterministic parser handles "Title - Company (Mon YYYY - Present)" jobs, inline-institution education and a piped contact line', () => {
+  const text = `Kunal Shetty
+Senior Software Engineer
+Email: kunal@example.com | Phone: +91 98765 43210 | Mumbai, India
+
+SKILLS
+Node.js, Python, AWS
+
+EXPERIENCE
+Senior Software Engineer - Acme Technologies (Jan 2022 - Present)
+Led a team of 5 building payment APIs.
+Software Engineer - Globex Systems (Jun 2018 - Dec 2021)
+Built REST services.
+
+EDUCATION
+B.E. Computer Engineering - Mumbai University (2014 - 2018)`;
+  const { candidate } = buildDeterministicResumeParse(text, 'resume.pdf');
+
+  assert.equal(candidate.location.value, 'Mumbai, India');
+  assert.equal(candidate.currentEmployer.value, 'Acme Technologies');
+  assert.equal(candidate.experienceEntries.value.length, 2);
+  assert.equal(candidate.experienceEntries.value[0].company, 'Acme Technologies');
+  assert.equal(candidate.experienceEntries.value[0].currentlyWorking, true);
+  assert.equal(candidate.experienceEntries.value[1].company, 'Globex Systems');
+  assert.equal(candidate.experienceEntries.value[1].startDate, 'Jun 2018');
+  assert.equal(candidate.experienceEntries.value[1].endDate, 'Dec 2021');
+  assert.equal(candidate.educationEntries.value.length, 1);
+  assert.equal(candidate.educationEntries.value[0].degree, 'B.E. Computer Engineering');
+  assert.equal(candidate.educationEntries.value[0].institution, 'Mumbai University');
+});
