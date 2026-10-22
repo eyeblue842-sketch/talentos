@@ -49,6 +49,8 @@ export function RecruiterApplicationDetailView({
     submitInterviewFeedbackAction: actions?.submitInterviewFeedbackAction || (async () => {}),
   };
   const legacyApplicationId = application?.applicationId || application?.id;
+  // Pipeline stage (SHORTLISTED, INTERVIEW_SCHEDULED, ...) - not the candidate-facing status label.
+  const currentStage = application?.pipelineStage || application?.stage;
   const interviewProcesses = application?.interviewProcesses || [];
   const interviewRounds = buildInterviewRounds(application);
   const primaryRound = interviewRounds[0] || null;
@@ -62,8 +64,8 @@ export function RecruiterApplicationDetailView({
       <Card className="bg-[var(--surface)]">
         <div className="flex flex-wrap items-center gap-2">
           {stages.map((stage, index) => {
-            const isCurrent = application.stage === stage;
-            const isPast = stages.indexOf(application.stage) > index && application.stage !== 'REJECTED';
+            const isCurrent = currentStage === stage;
+            const isPast = stages.indexOf(currentStage) > index && currentStage !== 'REJECTED';
             return (
               <div key={stage} className="flex items-center gap-2">
                 <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${isCurrent ? 'bg-[var(--brand)] text-white' : isPast ? 'bg-[var(--soft)] text-[var(--text)]' : 'border border-[var(--line)] text-[var(--muted)]'}`}>
@@ -91,12 +93,12 @@ export function RecruiterApplicationDetailView({
             <p className="mt-2 text-sm text-[var(--muted)]">{application.candidate.headline || 'Candidate profile'} • {application.job.title}</p>
             <p className="mt-1 text-sm text-[var(--muted)]">Submitted {new Date(application.submittedAt).toLocaleString()} • Reference {application.publicReference}</p>
           </div>
-          <Badge tone="brand">{application.stage}</Badge>
+          <Badge tone="brand">{formatLabel(currentStage)}</Badge>
         </div>
         <form action={safeActions.moveApplicationStageAction.bind(null, legacyApplicationId)} className="mt-5 flex flex-wrap gap-3">
           <label className="text-sm">
             <span className="mb-1 block font-medium">Application stage</span>
-            <select name="stage" defaultValue={application.stage} className="rounded-2xl border border-[var(--line)] px-4 py-3">
+            <select name="stage" defaultValue={currentStage} className="rounded-2xl border border-[var(--line)] px-4 py-3">
               {stages.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
             </select>
           </label>

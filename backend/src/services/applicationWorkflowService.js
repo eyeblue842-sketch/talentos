@@ -1230,6 +1230,8 @@ function serializeJobApplicationDetail(application) {
     screeningSummary: application.screeningSummary || {},
     status: candidateStatus.candidateStatusLabel,
     stage: candidateStatus.candidateStatus,
+    // The real ATS pipeline stage (recruiter views); `stage` above is the candidate-facing status.
+    pipelineStage: application.application?.currentStage || 'APPLIED',
     statusGroup: candidateStatus.candidateStatusGroup,
     canWithdraw: candidateWithdrawalAllowedStages.includes(application.application?.currentStage)
       && !application.withdrawnAt,

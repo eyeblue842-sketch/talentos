@@ -163,7 +163,7 @@ export function JobResponsesTriage({ jobId, jobTitle, responses }) {
                   ) : null}
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                     {candidate.email || 'No email on file'}
-                    {response.appliedAt ? ` · Applied ${new Date(response.appliedAt).toLocaleDateString()}` : ''}
+                    {response.appliedAt ? ` · Applied ${new Date(response.appliedAt).toLocaleDateString('en-GB', { timeZone: 'UTC' })}` : ''}
                   </p>
                 </div>
               </div>
@@ -171,7 +171,8 @@ export function JobResponsesTriage({ jobId, jobTitle, responses }) {
                 <button
                   type="button"
                   onClick={() => moveStage(response.id, 'SHORTLISTED')}
-                  disabled={rowBusy || response.currentStage === 'SHORTLISTED'}
+                  disabled={rowBusy || response.currentStage === 'SHORTLISTED' || response.currentStage === 'WITHDRAWN'}
+                  title={response.currentStage === 'WITHDRAWN' ? 'The candidate withdrew this application' : undefined}
                   className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary-soft)] px-4 text-sm font-semibold text-[var(--color-primary)] disabled:opacity-50"
                 >
                   <CheckCircle2 size={15} aria-hidden="true" />
@@ -180,7 +181,8 @@ export function JobResponsesTriage({ jobId, jobTitle, responses }) {
                 <button
                   type="button"
                   onClick={() => moveStage(response.id, 'REJECTED')}
-                  disabled={rowBusy || response.currentStage === 'REJECTED'}
+                  disabled={rowBusy || response.currentStage === 'REJECTED' || response.currentStage === 'WITHDRAWN'}
+                  title={response.currentStage === 'WITHDRAWN' ? 'The candidate withdrew this application' : undefined}
                   className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-strong)] px-4 text-sm font-semibold text-[var(--color-text)] disabled:opacity-50"
                 >
                   <XCircle size={15} aria-hidden="true" />

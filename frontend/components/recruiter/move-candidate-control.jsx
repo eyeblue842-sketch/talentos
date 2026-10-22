@@ -82,7 +82,8 @@ export function MoveCandidateControl({
           <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">Candidate</label>
           <select value={applicationId} onChange={(event) => onSelectCandidate(event.target.value)} className={selectClass} disabled={!candidates.length}>
             <option value="">{candidates.length ? 'Select a candidate…' : 'No candidates yet'}</option>
-            {candidates.map((candidate) => (
+            {/* A withdrawn application can no longer be moved through the pipeline. */}
+            {candidates.filter((candidate) => candidate.currentStage !== 'WITHDRAWN').map((candidate) => (
               <option key={candidate.applicationId} value={candidate.applicationId}>
                 {candidate.name} — {labelOf(candidate.currentStage)}
               </option>
