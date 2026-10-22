@@ -30,13 +30,7 @@ function buildTabHref(basePath, tab) {
   return tab === 'home' ? basePath : `${basePath}?tab=${tab}`;
 }
 
-export function CompanyHeaderCard({
-  organisation,
-  basePath,
-  activeTab,
-  mode = 'public',
-  canEdit = false,
-}) {
+export function CompanyTabsNav({ basePath, activeTab, mode = 'public', className = '' }) {
   const tabs = [
     { id: 'home', label: 'Home' },
     { id: 'about', label: 'About' },
@@ -47,6 +41,35 @@ export function CompanyHeaderCard({
       : []),
   ];
 
+  return (
+    <nav aria-label="Company navigation" className={`flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white p-1.5 text-sm shadow-sm ${className}`.trim()}>
+      {tabs.map((tab) => {
+        const active = activeTab === tab.id;
+        return (
+          <Link
+            key={tab.id}
+            href={buildTabHref(basePath, tab.id)}
+            aria-current={active ? 'page' : undefined}
+            className={active
+              ? 'rounded-xl bg-[var(--color-primary)] px-4 py-2 font-semibold text-white'
+              : 'rounded-xl px-4 py-2 font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function CompanyHeaderCard({
+  organisation,
+  basePath,
+  activeTab,
+  mode = 'public',
+  canEdit = false,
+  showTabs = true,
+}) {
   return (
     <div className="grid gap-4">
       <Card className="overflow-hidden rounded-2xl border-[var(--color-border)] p-0">
@@ -92,23 +115,7 @@ export function CompanyHeaderCard({
         </div>
       </Card>
 
-      <nav aria-label="Company navigation" className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] pb-2 text-sm">
-        {tabs.map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <Link
-              key={tab.id}
-              href={buildTabHref(basePath, tab.id)}
-              aria-current={active ? 'page' : undefined}
-              className={active
-                ? 'rounded-lg bg-[var(--color-primary-soft)] px-3 py-2 font-medium text-[var(--color-primary)] outline-none ring-2 ring-[var(--color-primary)] ring-offset-2'
-                : 'rounded-lg px-3 py-2 text-[var(--color-text-secondary)] transition hover:bg-white hover:text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2'}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {showTabs ? <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode={mode} /> : null}
     </div>
   );
 }

@@ -20,13 +20,15 @@ export function NetworkProfileActions({
   messageLabel = 'Message',
   messageHref = '',
   className = '',
+  layout = 'stack',
 }) {
   if (!profile) return null;
+  const row = layout === 'row';
 
   const actionLabelName = profile.fullName || 'this user';
 
   return (
-    <div className={`flex shrink-0 flex-col gap-2 ${className}`.trim()}>
+    <div className={`${row ? 'flex flex-wrap items-center gap-2' : 'flex shrink-0 flex-col gap-2'} ${className}`.trim()}>
       {allowViewProfile ? (
         <Link
           href={`/network/people/${profile.userId}`}
@@ -76,7 +78,9 @@ export function NetworkProfileActions({
               href={messageHref || '#'}
               data-testid={`network-message-${profile.userId}`}
               aria-label={`${messageLabel} ${actionLabelName}`}
-              className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-[var(--color-primary)] px-4 text-sm font-semibold text-[var(--color-primary)]"
+              className={row
+                ? 'inline-flex min-h-10 items-center justify-center rounded-full bg-[var(--color-primary)] px-6 text-sm font-semibold text-white shadow-sm transition hover:opacity-90'
+                : 'inline-flex min-h-10 items-center justify-center rounded-2xl border border-[var(--color-primary)] px-4 text-sm font-semibold text-[var(--color-primary)]'}
             >
               {messageLabel}
             </Link>
@@ -84,16 +88,16 @@ export function NetworkProfileActions({
           <form action={removeConnectionAction}>
             <input type="hidden" name="connectionId" value={profile.connectionId} />
             <input type="hidden" name="redirectTo" value={redirectTo} />
-            <Button type="submit" data-testid={`network-remove-${profile.userId}`} aria-label={`Remove connection with ${actionLabelName}`} variant="outline" className="w-full">Remove</Button>
+            <Button type="submit" data-testid={`network-remove-${profile.userId}`} aria-label={`Remove connection with ${actionLabelName}`} variant="outline" className={row ? 'rounded-full px-5' : 'w-full'}>Remove</Button>
           </form>
         </>
       ) : null}
 
       {allowBlock && !profile.isSelf && profile.connectionStatus !== 'BLOCKED' ? (
-        <form action={blockUserAction}>
+        <form action={blockUserAction} className={row ? 'ml-auto' : undefined}>
           <input type="hidden" name="userId" value={profile.userId} />
           <input type="hidden" name="redirectTo" value={redirectTo} />
-          <Button type="submit" data-testid={`network-block-${profile.userId}`} aria-label={`Block ${actionLabelName}`} variant="ghost" className="w-full text-rose-700">Block</Button>
+          <Button type="submit" data-testid={`network-block-${profile.userId}`} aria-label={`Block ${actionLabelName}`} variant="ghost" className={row ? 'rounded-full px-4 text-rose-700 hover:bg-rose-50' : 'w-full text-rose-700'}>Block</Button>
         </form>
       ) : null}
     </div>

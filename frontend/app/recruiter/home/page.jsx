@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getNotifications, getPublicOrganisation, getRecruiterDashboard } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
-import { CompanyAboutSection, CompanyHeaderCard, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
+import { CompanyAboutSection, CompanyHeaderCard, CompanyTabsNav, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
 import { createOrganisationPostAction, deleteOrganisationPostAction, updateOrganisationPostAction } from '@/app/recruiter/actions';
 import {
   getConversationMessages,
@@ -154,9 +154,12 @@ export default async function RecruiterHomePage({ searchParams }) {
           </Alert>
         ) : null}
 
+        {!error && companyData ? <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode="recruiter" /> : null}
+
         {!error && companyData ? (
           <>
             <CompanyHeaderCard
+              showTabs={false}
               organisation={organisation}
               basePath={basePath}
               activeTab={activeTab}

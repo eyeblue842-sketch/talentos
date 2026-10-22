@@ -119,7 +119,7 @@ export default async function ProfessionalProfilePage({ params }) {
                 redirectTo={redirectTo}
                 source="PROFILE"
                 allowViewProfile={false}
-                className="max-w-xs"
+                layout="row"
                 messageHref={`${isRecruiterViewer ? '/recruiter/messages' : '/candidate/messages'}?user=${profile.userId}`}
               />
             </div>
