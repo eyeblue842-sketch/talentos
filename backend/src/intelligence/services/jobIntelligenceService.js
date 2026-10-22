@@ -1,4 +1,5 @@
 import { prisma } from '../../config/db.js';
+import { env } from '../../config/env.js';
 import { requireIntelligenceFeature } from './featureAccessService.js';
 import { createIntelligenceExecution, completeIntelligenceExecution, createFingerprint, getFreshCachedResult, recordIntelligenceFailure, storeIntelligenceResult, supersedeCachedResults } from './governanceService.js';
 import { executeStructuredPrompt } from './intelligenceRuntimeService.js';
@@ -92,7 +93,8 @@ export async function getJobIntelligence(actorUser, payload) {
     feature: 'JOB_DESCRIPTION',
     promptKey,
     promptVersion: '1.0.0',
-    provider: context.enabled ? undefined : 'DISABLED',
+    provider: context.enabled ? env.intelligenceProvider : 'DISABLED',
+    model: context.enabled ? env.intelligenceModel : undefined,
     inputPayload: { mode: payload.mode, jobId: payload.jobId || null, requisitionId: payload.requisitionId || null },
   });
 

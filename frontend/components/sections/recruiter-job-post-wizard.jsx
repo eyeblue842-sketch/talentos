@@ -197,7 +197,11 @@ function normalizeGeneratedJobDescription(result, essentials, skills, locations,
     ? aiKeyResponsibilities.map(String).filter(Boolean)
     : [
       `Own day-to-day delivery for the ${title || 'role'} in collaboration with the hiring team.`,
-      'Apply the required skills to solve role-relevant business and technical problems.',
+      safeRequiredSkills.length
+        ? `Apply ${safeRequiredSkills.slice(0, 4).join(', ')} to design, build and improve the work assigned to the team.`
+        : 'Apply the required skills to solve role-relevant business and technical problems.',
+      'Plan and estimate tasks, and deliver them to the agreed quality and timelines.',
+      'Review work with peers, share knowledge and help maintain good engineering and process standards.',
       'Communicate progress, risks, and decisions clearly with stakeholders.',
     ];
   const salaryLine = salaryVisible
@@ -217,7 +221,13 @@ function normalizeGeneratedJobDescription(result, essentials, skills, locations,
   return {
     title,
     openingSummary: String(payload.openingSummary || `${title} role for candidates with ${essentials.experienceMin || 0}-${essentials.experienceMax || 0} years of relevant experience.`).trim(),
-    roleOverview: String(payload.roleOverview || payload.aboutTheRole || `${title || essentials.title} is a ${labelFor(WORKPLACE_OPTIONS, essentials.workplaceType).toLowerCase()} role for someone with ${essentials.experienceMin || 0}-${essentials.experienceMax || 0} years of experience. You will use ${safeRequiredSkills.slice(0, 4).join(', ') || 'the confirmed role skills'} to contribute to the work described in this posting. The role is based in ${locations.join(', ') || 'a location agreed with the recruiter'} and follows the stated ${essentials.shiftTiming === 'OTHER' ? essentials.shiftTimingOther : labelFor(SHIFT_OPTIONS, essentials.shiftTiming)} shift.`).trim(),
+    roleOverview: String(payload.roleOverview || payload.aboutTheRole || [
+      `${title || essentials.title} is a ${labelFor(WORKPLACE_OPTIONS, essentials.workplaceType).toLowerCase()} ${labelFor(EMPLOYMENT_OPTIONS, essentials.employmentType).toLowerCase()} role for someone with ${essentials.experienceMin || 0}-${essentials.experienceMax || 0} years of experience.`,
+      `You will use ${safeRequiredSkills.slice(0, 4).join(', ') || 'the confirmed role skills'} to contribute to the work described in this posting.`,
+      `The role is based in ${locations.join(', ') || 'a location agreed with the recruiter'} and follows the stated ${essentials.shiftTiming === 'OTHER' ? essentials.shiftTimingOther : labelFor(SHIFT_OPTIONS, essentials.shiftTiming)} shift.`,
+      `You will work closely with the hiring team${essentials.industry ? ` in the ${essentials.industry} space` : ''} to deliver dependable results.`,
+      'The responsibilities and qualifications below describe what the team expects from this role.',
+    ].join(' ')).trim(),
     keyResponsibilities,
     requiredQualifications,
     preferredQualifications: Array.isArray(aiPreferred) ? aiPreferred.map(String).filter(Boolean) : [],

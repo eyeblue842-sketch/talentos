@@ -28,7 +28,9 @@ async function ensureOrganisationFeatureFlags(organisationId) {
         organisationId,
         key,
         description: `Milestone 7 intelligence capability: ${key}`,
-        enabled: false,
+        // AI job descriptions are on by default (daily per-user/org caps still apply);
+        // every other intelligence capability stays opt-in.
+        enabled: key === 'intelligence.job_description',
       })),
     ).catch(() => {});
   }
