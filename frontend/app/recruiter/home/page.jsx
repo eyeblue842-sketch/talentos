@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { recruiterNav } from '@/lib/navigation';
 import { getCurrentOrganisation, getNotifications, getPublicOrganisation, getRecruiterDashboard } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
-import { CompanyAboutSection, CompanyHeaderCard, CompanyTabsNav, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
+import { CompanyAboutSection, RecruiterCompanyHeader, CompanyTabsNav, CompanyInsightsSection, CompanyJobsSection, CompanyPeopleInsightsSection, CompanyPeoplePreview, CompanyPostsSection } from '@/components/sections/company-profile-sections';
 import { createOrganisationPostAction, deleteOrganisationPostAction, updateOrganisationPostAction } from '@/app/recruiter/actions';
 import {
   getConversationMessages,
@@ -37,7 +37,7 @@ function NotificationBell({ unreadCount }) {
     <Link
       href="/recruiter/notifications"
       aria-label={ariaLabel}
-      className="relative inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white text-[var(--color-text)] shadow-sm transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+      className="relative inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white text-[var(--color-text)] shadow-sm transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
     >
       <Bell size={18} aria-hidden="true" />
       {unreadCount > 0 ? (
@@ -122,39 +122,23 @@ export default async function RecruiterHomePage({ searchParams }) {
 
         {!error && companyData ? (
           <>
-            <div className="grid gap-3">
-              <CompanyHeaderCard
-                showTabs={false}
+            <div className="grid gap-5">
+              <RecruiterCompanyHeader
                 organisation={organisation}
-                basePath={basePath}
-                activeTab={activeTab}
-                mode="recruiter"
                 canEdit={canEditOrganisation}
                 actions={(
                   <>
                     <NotificationBell unreadCount={unreadNotificationsCount} />
-                    <Button as="a" href="/recruiter/jobs" className="gap-2">
-                      <Plus size={16} aria-hidden="true" />
-                      Post a Job
-                    </Button>
-                    <Button as="a" href="/recruiter/database" variant="outline" className="gap-2">
-                      <Search size={16} aria-hidden="true" />
-                      Search Resumes
-                    </Button>
-                    <Button as="a" href="/recruiter/ats" variant="outline" className="gap-2">
-                      <BriefcaseBusiness size={16} aria-hidden="true" />
-                      View Pipeline
-                    </Button>
+                    <Link href="/recruiter/database" className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-3.5 text-sm font-semibold transition-colors border border-[var(--color-border-strong)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"><Search size={16} aria-hidden="true" />Search resumes</Link>
+                    <Link href="/recruiter/ats" className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-3.5 text-sm font-semibold transition-colors border border-[var(--color-border-strong)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"><BriefcaseBusiness size={16} aria-hidden="true" />Pipeline</Link>
                     {currentUser?.role === 'RECRUITER_ADMIN' ? (
-                      <Button as="a" href="/admin" variant="outline" className="gap-2">
-                        <ShieldCheck size={16} aria-hidden="true" />
-                        Admin Console
-                      </Button>
+                      <Link href="/admin" className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-3.5 text-sm font-semibold transition-colors text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]"><ShieldCheck size={16} aria-hidden="true" />Admin</Link>
                     ) : null}
+                    <Link href="/recruiter/jobs" className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-3.5 text-sm font-semibold transition-colors bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"><Plus size={16} aria-hidden="true" />Post a job</Link>
                   </>
                 )}
               />
-              <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode="recruiter" />
+              <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode="recruiter" variant="underline" />
             </div>
 
             {activeTab === 'home' ? (

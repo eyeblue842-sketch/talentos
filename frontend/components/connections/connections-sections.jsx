@@ -43,9 +43,8 @@ function CompanyPeople({ organisation, members = [], invitations = [] }) {
 
 export function ConnectionsSections({ section, organisation, data, redirectTo }) {
   const tabs = (
-    <nav aria-label="Connections sections" className="flex max-w-full items-center gap-2 overflow-x-auto rounded-xl bg-[var(--color-bg-muted)] p-1">
-      <span className="shrink-0 pl-3 pr-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Connections</span>
-      {sections.map(([id, label]) => <Link key={id} href={sectionHref(id)} aria-current={section === id ? 'page' : undefined} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium ${section === id ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]'}`}>{label}</Link>)}
+    <nav aria-label="Connections sections" className="flex max-w-full items-center gap-2 overflow-x-auto">
+      {sections.map(([id, label]) => <Link key={id} href={sectionHref(id)} aria-current={section === id ? 'page' : undefined} className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium ${section === id ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]'}`}>{label}</Link>)}
     </nav>
   );
 

@@ -30,7 +30,7 @@ function buildTabHref(basePath, tab) {
   return tab === 'home' ? basePath : `${basePath}?tab=${tab}`;
 }
 
-export function CompanyTabsNav({ basePath, activeTab, mode = 'public', className = '' }) {
+export function CompanyTabsNav({ basePath, activeTab, mode = 'public', className = '', variant = 'pill' }) {
   const tabs = [
     { id: 'home', label: 'Home' },
     { id: 'about', label: 'About' },
@@ -40,6 +40,28 @@ export function CompanyTabsNav({ basePath, activeTab, mode = 'public', className
       ? [{ id: 'connections', label: 'Connections' }, { id: 'insights', label: 'Insights' }]
       : []),
   ];
+
+  if (variant === 'underline') {
+    return (
+      <nav aria-label="Company navigation" className={`flex items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] ${className}`.trim()}>
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <Link
+              key={tab.id}
+              href={buildTabHref(basePath, tab.id)}
+              aria-current={active ? 'page' : undefined}
+              className={`-mb-px shrink-0 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${active
+                ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+                : 'border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]'}`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
 
   return (
     <nav aria-label="Company navigation" className={`flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white p-1.5 text-sm shadow-sm ${className}`.trim()}>
@@ -355,5 +377,41 @@ export function CompanyInsightsSection({ publicInsights }) {
         <DistributionList title="Common skills" items={publicInsights?.commonSkills || []} />
       </div>
     </Card>
+  );
+}
+
+
+// Flat, quiet page header for the recruiter's own company home: identity on the left, one primary
+// action and two secondary ones on the right. Navigation tabs sit directly beneath it.
+export function RecruiterCompanyHeader({ organisation, canEdit = false, actions = null }) {
+  const meta = [organisation?.industry, organisation?.headquarters, organisation?.organisationSize].filter(Boolean);
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+      <div className="flex min-w-0 items-center gap-4">
+        <CompanyLogoUploader organisation={organisation} canEdit={canEdit} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight text-[var(--color-text)]">{organisation?.name || 'Organisation'}</h1>
+            {canEdit ? (
+              <Link href="/recruiter/company/edit" aria-label="Edit company profile" title="Edit company profile" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[var(--color-bg-muted)] hover:text-[var(--color-text)]">
+                <Pencil size={15} aria-hidden="true" />
+              </Link>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
+            {meta.length ? meta.map((item, index) => (
+              <span key={item}>{index ? '  ·  ' : ''}<span>{item}</span></span>
+            )) : 'Add your industry and location from Edit company profile'}
+            {organisation?.website ? (
+              <>
+                {'  ·  '}
+                <a href={organisation.website} target="_blank" rel="noreferrer" className="font-medium text-[var(--color-primary)] hover:underline">Company website</a>
+              </>
+            ) : null}
+          </p>
+        </div>
+      </div>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </header>
   );
 }
