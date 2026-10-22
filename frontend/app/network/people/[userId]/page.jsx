@@ -1,16 +1,37 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { MutualConnectionsPanel } from '@/components/network/mutual-connections-panel';
+import { Building2, GraduationCap } from 'lucide-react';
 import { NetworkProfileActions } from '@/components/network/network-profile-actions';
 import { WorkspaceShell } from '@/components/layout/workspace-shell';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { PageHeader } from '@/components/ui/page-header';
+import { CandidateAvatar } from '@/components/ui/candidate-avatar';
 import { getCurrentUser } from '@/lib/auth';
-import { getNetworkMutualConnections, getProfessionalProfile } from '@/lib/api';
+import { getProfessionalProfile } from '@/lib/api';
+import { formatLocationLabel } from '@/lib/location-format';
 import { candidateNav, recruiterNav } from '@/lib/navigation';
 
-export default async function ProfessionalProfilePage({ params, searchParams }) {
+const SKILLS_PREVIEW = 12;
+
+function periodLabel(item) {
+  const from = item.startDate || '';
+  const to = item.currentlyWorking ? 'Present' : (item.endDate || '');
+  const range = [from, to].filter(Boolean).join(' - ');
+  return [range, item.tenure].filter(Boolean).join(' · ');
+}
+
+function Section({ title, children }) {
+  return (
+    <Card className="rounded-[24px] p-6">
+      <h2 className="font-[var(--font-display)] text-2xl font-semibold">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </Card>
+  );
+}
+
+// What a person looks like to someone who wants to connect (LinkedIn style). Recruiters and
+// candidates see exactly the same thing: no resume, salary or preferences here - recruiters get
+// those through resume search. Contact details only appear when the candidate's profile is Public.
+export default async function ProfessionalProfilePage({ params }) {
   const user = await getCurrentUser();
   if (!user) {
     redirect('/auth');
@@ -21,8 +42,6 @@ export default async function ProfessionalProfilePage({ params, searchParams }) 
   }
 
   const { userId } = await params;
-  const query = await searchParams;
-  const mutualPage = Math.max(1, Number(query?.mutualPage) || 1);
 
   let data;
   try {
@@ -32,83 +51,168 @@ export default async function ProfessionalProfilePage({ params, searchParams }) 
     throw error;
   }
 
-  const mutual = await getNetworkMutualConnections(userId, { page: mutualPage, pageSize: 6 }).catch(() => ({
-    items: [],
-    meta: { total: 0, page: 1, pageSize: 6, pageCount: 1 },
-  }));
-  const nav = user.role.startsWith('RECRUITER') ? recruiterNav : candidateNav;
-  const brand = user.role.startsWith('RECRUITER') ? 'Careeriz Hire' : 'Careeriz';
+  const isRecruiterViewer = user.role.startsWith('RECRUITER');
+  const nav = isRecruiterViewer ? recruiterNav : candidateNav;
+  const brand = isRecruiterViewer ? 'Careeriz Hire' : 'Careeriz';
   const profile = data.profile;
+  const detail = data.detail || {};
   const redirectTo = `/network/people/${profile.userId}`;
+  const isRecruiterProfile = profile.role.startsWith('RECRUITER');
+  const experience = detail.experience || [];
+  const education = detail.education || [];
+  const skills = detail.skills || [];
+  const headline = profile.designation || profile.headline || 'Careeriz professional';
+  const topEducation = education[0] || null;
+  const mutualCount = profile.mutualConnections?.count || 0;
 
   return (
     <WorkspaceShell brand={brand} items={nav}>
-      <PageHeader
-        eyebrow="Professional profile"
-        title={profile.fullName}
-        description={profile.headline || 'Careeriz professional'}
-        breadcrumb={[{ label: user.role === 'RECRUITER' ? 'Recruiter' : 'Candidate' }, { label: 'Network' }, { label: profile.fullName }]}
-      />
+      <div className="mx-auto grid w-full max-w-4xl gap-4">
+        <Card className="overflow-hidden rounded-[24px] p-0">
+          <div className="h-28 bg-[linear-gradient(135deg,var(--color-primary-soft),var(--color-bg-muted))] sm:h-36" aria-hidden="true" />
+          <div className="px-6 pb-6">
+            <div className="-mt-14 flex items-end justify-between gap-4 sm:-mt-16">
+              <CandidateAvatar
+                src={detail.hasPhoto ? `/api/network/people/${profile.userId}/photo` : null}
+                name={profile.fullName}
+                alt={`${profile.fullName} profile photo`}
+                sizeClassName="h-28 w-28 sm:h-32 sm:w-32"
+                className="rounded-full border-4 border-white bg-white shadow"
+              />
+            </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="rounded-[32px] p-7">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="font-[var(--font-display)] text-4xl font-semibold">{profile.fullName}</h1>
-                <Badge tone={profile.role.startsWith('RECRUITER') ? 'brand' : 'neutral'}>
-                  {profile.role.startsWith('RECRUITER') ? 'Recruiter' : 'Candidate'}
-                </Badge>
-                {profile.connectionStatus === 'ACCEPTED' ? <Badge tone="success">Connected</Badge> : null}
-                {profile.connectionStatus === 'PENDING' ? <Badge tone="warning">Pending</Badge> : null}
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-6">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-[var(--font-display)] text-3xl font-semibold">{profile.fullName}</h1>
+                  {detail.degree ? <span className="text-sm text-[var(--color-text-muted)]">· {detail.degree}</span> : null}
+                </div>
+                <p className="mt-1 text-lg text-[var(--color-text)]">{headline}</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  {profile.location ? formatLocationLabel(profile.location) : null}
+                  {detail.contact ? (
+                    <>
+                      {profile.location ? ' · ' : null}
+                      <a href="#contact-info" className="font-semibold text-[var(--color-primary)]">Contact info</a>
+                    </>
+                  ) : null}
+                </p>
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  {detail.connectionsCount ?? 0} {detail.connectionsCount === 1 ? 'connection' : 'connections'}
+                  {mutualCount ? ` · ${mutualCount} mutual` : ''}
+                </p>
               </div>
-              <p className="mt-3 text-lg text-[var(--color-text-secondary)]">
-                {profile.designation || profile.headline || 'Careeriz professional'}
-                {profile.company ? ` • ${profile.company}` : ''}
-              </p>
-              {profile.location ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{profile.location}</p> : null}
+
+              <div className="grid gap-2 text-sm font-semibold text-[var(--color-text)]">
+                {profile.company ? (
+                  <p className="flex items-center gap-2"><Building2 size={18} aria-hidden="true" className="text-[var(--color-text-muted)]" />{profile.company}</p>
+                ) : null}
+                {topEducation?.institution ? (
+                  <p className="flex items-center gap-2"><GraduationCap size={18} aria-hidden="true" className="text-[var(--color-text-muted)]" />{topEducation.institution}</p>
+                ) : null}
+              </div>
             </div>
 
-            <NetworkProfileActions
-              profile={profile}
-              redirectTo={redirectTo}
-              source="PROFILE"
-              allowViewProfile={false}
-              className="min-w-[12rem]"
-              messageHref={`${user.role.startsWith('RECRUITER') ? '/recruiter/messages' : '/candidate/messages'}?user=${profile.userId}`}
-            />
+            <div className="mt-5">
+              <NetworkProfileActions
+                profile={profile}
+                redirectTo={redirectTo}
+                source="PROFILE"
+                allowViewProfile={false}
+                className="max-w-xs"
+                messageHref={`${isRecruiterViewer ? '/recruiter/messages' : '/candidate/messages'}?user=${profile.userId}`}
+              />
+            </div>
+
+            {detail.contact && (detail.contact.email || detail.contact.phone) ? (
+              <div id="contact-info" className="mt-5 rounded-2xl border border-[var(--line)] p-4 text-sm">
+                <p className="font-semibold text-[var(--color-text)]">Contact info</p>
+                <dl className="mt-2 grid gap-1 text-[var(--color-text-secondary)]">
+                  {detail.contact.email ? <div className="flex gap-2"><dt className="w-14 text-[var(--color-text-muted)]">Email</dt><dd><a className="text-[var(--color-primary)]" href={`mailto:${detail.contact.email}`}>{detail.contact.email}</a></dd></div> : null}
+                  {detail.contact.phone ? <div className="flex gap-2"><dt className="w-14 text-[var(--color-text-muted)]">Phone</dt><dd>{detail.contact.phone}</dd></div> : null}
+                </dl>
+              </div>
+            ) : null}
           </div>
-
-          {profile.skills?.length ? (
-            <div className="mt-6 flex flex-wrap gap-2">
-              {profile.skills.map((skill) => (
-                <span key={skill} className="rounded-full bg-[var(--color-bg-muted)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">{skill}</span>
-              ))}
-            </div>
-          ) : null}
-
-          {data.about ? (
-            <div className="mt-8">
-              <h2 className="font-[var(--font-display)] text-2xl font-semibold">About</h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--color-text-secondary)]">{data.about}</p>
-            </div>
-          ) : null}
         </Card>
 
-        <div className="space-y-6">
-          <MutualConnectionsPanel mutual={mutual} basePath={redirectTo} params={query || {}} />
+        {detail.about ? (
+          <Section title="About">
+            <p className="whitespace-pre-line text-sm leading-7 text-[var(--color-text-secondary)]">{detail.about}</p>
+          </Section>
+        ) : null}
 
-          <Card className="rounded-[32px] p-6">
-            <h2 className="font-[var(--font-display)] text-2xl font-semibold">Visibility</h2>
-            <dl className="mt-4 grid gap-3 text-sm">
-              <div><dt className="font-semibold text-[var(--color-text)]">People search</dt><dd className="text-[var(--color-text-secondary)]">{data.visibility.showInPeopleSearch ? 'Visible where allowed' : 'Hidden from people search'}</dd></div>
-              <div><dt className="font-semibold text-[var(--color-text)]">Connections</dt><dd className="text-[var(--color-text-secondary)]">{data.visibility.connectionVisibility.replaceAll('_', ' ')}</dd></div>
-              <div><dt className="font-semibold text-[var(--color-text)]">Requests</dt><dd className="text-[var(--color-text-secondary)]">{data.visibility.allowConnectionRequestsFrom.replaceAll('_', ' ')}</dd></div>
-            </dl>
-            <Link href={user.role === 'RECRUITER' ? '/recruiter/network' : '/candidate/network'} className="mt-5 inline-flex text-sm font-semibold text-[var(--color-primary)]">
-              Back to network
-            </Link>
-          </Card>
+        {experience.length ? (
+          <Section title="Experience">
+            <ul className="grid gap-5">
+              {experience.map((item, index) => (
+                <li key={`${item.company}-${item.title}-${index}`} className="flex gap-4">
+                  <div className="mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[var(--color-bg-muted)] text-[var(--color-text-muted)]" aria-hidden="true">
+                    <Building2 size={22} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--color-text)]">{item.title || item.company}</p>
+                    {item.title && item.company ? (
+                      <p className="text-sm text-[var(--color-text)]">{item.company}{item.employmentType ? ` · ${item.employmentType}` : ''}</p>
+                    ) : null}
+                    {periodLabel(item) ? <p className="text-sm text-[var(--color-text-muted)]">{periodLabel(item)}</p> : null}
+                    {item.location ? <p className="text-sm text-[var(--color-text-muted)]">{formatLocationLabel(item.location)}</p> : null}
+                    {item.summary ? <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{item.summary}</p> : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        ) : null}
+
+        {education.length ? (
+          <Section title="Education">
+            <ul className="grid gap-4">
+              {education.map((item, index) => (
+                <li key={`${item.institution}-${index}`} className="flex gap-4">
+                  <div className="mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[var(--color-bg-muted)] text-[var(--color-text-muted)]" aria-hidden="true">
+                    <GraduationCap size={22} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--color-text)]">{item.institution || item.degree}</p>
+                    {item.institution && (item.degree || item.fieldOfStudy) ? (
+                      <p className="text-sm text-[var(--color-text-secondary)]">{[item.degree, item.fieldOfStudy].filter(Boolean).join(', ')}</p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        ) : null}
+
+        {skills.length ? (
+          <Section title={`Skills (${skills.length})`}>
+            <ul className="flex flex-wrap gap-2">
+              {skills.slice(0, SKILLS_PREVIEW).map((skill) => (
+                <li key={skill} className="rounded-full bg-[var(--color-bg-muted)] px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">{skill}</li>
+              ))}
+            </ul>
+            {skills.length > SKILLS_PREVIEW ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text-muted)]">Show all</summary>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {skills.slice(SKILLS_PREVIEW).map((skill) => (
+                    <li key={skill} className="rounded-full bg-[var(--color-bg-muted)] px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">{skill}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </Section>
+        ) : null}
+
+        {!detail.about && !experience.length && !education.length && !skills.length && !isRecruiterProfile ? (
+          <Card className="rounded-[24px] p-6 text-sm text-[var(--color-text-muted)]">This person has not added more to their profile yet.</Card>
+        ) : null}
+
+        <div>
+          <Link href={isRecruiterViewer ? '/recruiter/network' : '/candidate/network'} className="inline-flex text-sm font-semibold text-[var(--color-primary)]">
+            Back to network
+          </Link>
         </div>
       </div>
     </WorkspaceShell>

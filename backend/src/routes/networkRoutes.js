@@ -22,6 +22,7 @@ import {
   deleteRequest,
   getCompanyFollow,
   getPeopleProfile,
+  getPeopleProfilePhoto,
   getPrivacy,
   listConnections,
   listMutualConnections,
@@ -55,6 +56,7 @@ networkRouter.post('/users/:userId/block', createBlock);
 networkRouter.delete('/users/:userId/block', deleteBlock);
 networkRouter.get('/users/:userId/mutual', validateSchema(networkPaginationQuerySchema, 'query'), listMutualConnections);
 networkRouter.get('/people/:userId', getPeopleProfile);
+networkRouter.get('/people/:userId/photo', getPeopleProfilePhoto);
 networkRouter.get('/suggestions', validateSchema(networkSuggestionQuerySchema, 'query'), listSuggestions);
 networkRouter.get('/search', validateSchema(peopleSearchQuerySchema, 'query'), searchPeopleController);
 networkRouter.get('/privacy', getPrivacy);

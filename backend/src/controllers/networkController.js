@@ -9,6 +9,7 @@ import {
   getNetworkPrivacy,
   getNetworkSuggestions,
   getProfessionalProfile,
+  getProfessionalProfilePhoto,
   getReceivedConnectionRequests,
   getSentConnectionRequests,
   searchPeople,
@@ -133,6 +134,20 @@ export async function searchPeopleController(req, res, next) {
   try {
     const result = await searchPeople(req.user, req.query);
     sendSuccess(res, 200, result.items, result.meta);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPeopleProfilePhoto(req, res, next) {
+  try {
+    const file = await getProfessionalProfilePhoto(req.user, req.params.userId);
+    res.setHeader('content-type', file.contentType || 'application/octet-stream');
+    if (file.contentLength) {
+      res.setHeader('content-length', String(file.contentLength));
+    }
+    res.setHeader('cache-control', 'private, max-age=60');
+    file.stream.pipe(res);
   } catch (error) {
     next(error);
   }

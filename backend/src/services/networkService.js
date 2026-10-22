@@ -1,6 +1,7 @@
 import { prisma } from '../config/db.js';
 import { createNotification } from './notificationService.js';
 import { serializeOrganisation } from '../serializers/index.js';
+import { computeExperienceMonths } from './resumeImportUtils.js';
 
 const DEFAULT_PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 50;
@@ -1122,7 +1123,7 @@ export async function getNetworkSuggestions(actor, filters = {}) {
   };
 }
 
-export async function getProfessionalProfile(actor, targetUserId) {
+async function loadViewableProfileTarget(actor, targetUserId) {
   const target = await findUserOrThrow(targetUserId);
   const status = await getConnectionStatusDetails(actor.id, target.id);
   if (status.status === 'BLOCKED') {
@@ -1133,19 +1134,121 @@ export async function getProfessionalProfile(actor, targetUserId) {
   if (!canView) {
     throw createHttpError('Profile unavailable.', 404);
   }
+  return { target, status };
+}
+
+function textOrNull(value, max = 200) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, max) : null;
+}
+
+// "1 yr 7 mos" style label for a role, from its from/to dates.
+function formatTenure(months) {
+  if (!months || months <= 0) return null;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return [years ? `${years} ${years === 1 ? 'yr' : 'yrs'}` : null, rest ? `${rest} ${rest === 1 ? 'mo' : 'mos'}` : null]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function buildExperienceItems(entries) {
+  return (Array.isArray(entries) ? entries : []).slice(0, 30).map((entry) => {
+    const currentlyWorking = Boolean(entry?.currentlyWorking || entry?.isCurrent);
+    const startDate = textOrNull(entry?.startDate, 40);
+    const endDate = currentlyWorking ? null : textOrNull(entry?.endDate, 40);
+    return {
+      company: textOrNull(entry?.company || entry?.employer, 160),
+      title: textOrNull(entry?.title || entry?.jobTitle || entry?.designation, 160),
+      employmentType: textOrNull(entry?.employmentType, 60),
+      location: textOrNull(entry?.location, 160),
+      startDate,
+      endDate,
+      currentlyWorking,
+      tenure: formatTenure(computeExperienceMonths([{ startDate, endDate, currentlyWorking }])),
+      summary: textOrNull(entry?.summary || entry?.description, 600),
+    };
+  }).filter((item) => item.company || item.title);
+}
+
+function buildEducationItems(entries) {
+  return (Array.isArray(entries) ? entries : []).slice(0, 10).map((entry) => ({
+    institution: textOrNull(entry?.institution || entry?.school, 160),
+    degree: textOrNull(entry?.degree, 160),
+    fieldOfStudy: textOrNull(entry?.fieldOfStudy || entry?.specialization, 160),
+  })).filter((item) => item.institution || item.degree);
+}
+
+// What anyone can see of a person when looking at them to connect, LinkedIn style: headline,
+// about, experience, education and skills. Resume, salary, preferences and the like are never
+// part of it (recruiters get those only through resume search). Phone and email are shown only
+// when the candidate has set the profile visibility to Public.
+async function buildConnectionProfileDetail(actor, target, { status, mutualCount }) {
+  const connectionsCount = await prisma.userConnection.count({
+    where: {
+      status: 'ACCEPTED',
+      OR: [{ requesterUserId: target.id }, { receiverUserId: target.id }],
+    },
+  });
+  const degree = status.status === 'ACCEPTED' ? '1st' : (mutualCount > 0 ? '2nd' : null);
+
+  if (target.role === 'CANDIDATE' || target.role === 'CANDIDATE_ADMIN') {
+    const profile = target.candidateProfile || {};
+    const isPublic = profile.profileVisibility === 'PUBLIC';
+    return {
+      about: textOrNull(profile.summary, 2600),
+      experience: buildExperienceItems(profile.experienceEntries),
+      education: buildEducationItems(profile.educationEntries),
+      skills: uniq([...(profile.skills || []), ...(profile.functionalSkills || [])]).slice(0, 50),
+      connectionsCount,
+      degree,
+      hasPhoto: Boolean(profile.profileImageUrl),
+      contact: isPublic
+        ? { email: textOrNull(target.email, 200), phone: textOrNull(profile.phoneNumber, 40) }
+        : null,
+    };
+  }
+
+  return {
+    about: textOrNull(target.recruiterProfile?.aboutCompany, 2600),
+    experience: [],
+    education: [],
+    skills: [],
+    connectionsCount,
+    degree,
+    hasPhoto: false,
+    contact: null,
+  };
+}
+
+export async function getProfessionalProfile(actor, targetUserId) {
+  const { target, status } = await loadViewableProfileTarget(actor, targetUserId);
 
   const mutualIds = await getMutualConnectionIds(actor.id, target.id);
   const profile = await serializeProfessionalCard(actor, target, {
     connectionStatus: status,
     mutualConnectionIds: mutualIds,
   });
+  const detail = await buildConnectionProfileDetail(actor, target, { status, mutualCount: mutualIds.length });
 
   return {
     profile,
-    about: target.candidateProfile?.summary || target.recruiterProfile?.aboutCompany || null,
+    about: detail.about,
+    detail,
     visibility: getEffectivePrivacy(target),
     messaging: buildMessageCapability(status.status),
   };
+}
+
+// The profile photo of someone the viewer is allowed to see the profile of.
+export async function getProfessionalProfilePhoto(actor, targetUserId) {
+  const { target } = await loadViewableProfileTarget(actor, targetUserId);
+  const candidateProfile = target.candidateProfile;
+  if (!candidateProfile?.id || !candidateProfile.profileImageUrl) {
+    throw createHttpError('Profile photo not found.', 404);
+  }
+  const { getCandidateProfilePhotoFile } = await import('./candidateService.js');
+  return getCandidateProfilePhotoFile(candidateProfile.id);
 }
 
 export async function followCompany(actor, organisationId) {
