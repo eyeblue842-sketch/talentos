@@ -142,7 +142,6 @@ describe('RecruiterHomePage', () => {
     render(await RecruiterHomePage({ searchParams: Promise.resolve({}) }));
 
     expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-brand', 'Northstar Talent Labs');
-    expect(screen.getByRole('heading', { name: 'Recruiter home' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Northstar Talent Labs' })).toBeInTheDocument();
     expect(screen.getByText('Staffing & Recruiting')).toBeInTheDocument();
     expect(screen.getByText('Bengaluru, Karnataka')).toBeInTheDocument();

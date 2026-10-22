@@ -114,58 +114,48 @@ export default async function RecruiterHomePage({ searchParams }) {
   return (
     <WorkspaceShell brand={organisation?.name || 'Careeriz Hire'} brandLogoUrl={organisation?.logoUrl} items={recruiterNav} sidebarCollapsible>
       <div className="grid gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="grid gap-2">
-            <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
-              <span>Recruiter</span>
-              <span aria-hidden="true">/</span>
-              <span>Home</span>
-            </nav>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text)]">{currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter home'}</h1>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <NotificationBell unreadCount={unreadNotificationsCount} />
-            <Button as="a" href="/recruiter/jobs" className="gap-2">
-              <Plus size={16} aria-hidden="true" />
-              Post a Job
-            </Button>
-            <Button as="a" href="/recruiter/database" variant="outline" className="gap-2">
-              <Search size={16} aria-hidden="true" />
-              Search Resumes
-            </Button>
-            <Button as="a" href="/recruiter/ats" variant="outline" className="gap-2">
-              <BriefcaseBusiness size={16} aria-hidden="true" />
-              View Pipeline
-            </Button>
-            {currentUser?.role === 'RECRUITER_ADMIN' ? (
-              <Button as="a" href="/admin" variant="outline" className="gap-2">
-                <ShieldCheck size={16} aria-hidden="true" />
-                Admin Console
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
         {error ? (
           <Alert tone="danger" title="Home unavailable">
             {error}
           </Alert>
         ) : null}
 
-        {!error && companyData ? <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode="recruiter" /> : null}
-
         {!error && companyData ? (
           <>
-            <CompanyHeaderCard
-              showTabs={false}
-              organisation={organisation}
-              basePath={basePath}
-              activeTab={activeTab}
-              mode="recruiter"
-              canEdit={canEditOrganisation}
-            />
+            <div className="grid gap-3">
+              <CompanyHeaderCard
+                showTabs={false}
+                organisation={organisation}
+                basePath={basePath}
+                activeTab={activeTab}
+                mode="recruiter"
+                canEdit={canEditOrganisation}
+                actions={(
+                  <>
+                    <NotificationBell unreadCount={unreadNotificationsCount} />
+                    <Button as="a" href="/recruiter/jobs" className="gap-2">
+                      <Plus size={16} aria-hidden="true" />
+                      Post a Job
+                    </Button>
+                    <Button as="a" href="/recruiter/database" variant="outline" className="gap-2">
+                      <Search size={16} aria-hidden="true" />
+                      Search Resumes
+                    </Button>
+                    <Button as="a" href="/recruiter/ats" variant="outline" className="gap-2">
+                      <BriefcaseBusiness size={16} aria-hidden="true" />
+                      View Pipeline
+                    </Button>
+                    {currentUser?.role === 'RECRUITER_ADMIN' ? (
+                      <Button as="a" href="/admin" variant="outline" className="gap-2">
+                        <ShieldCheck size={16} aria-hidden="true" />
+                        Admin Console
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+              />
+              <CompanyTabsNav basePath={basePath} activeTab={activeTab} mode="recruiter" />
+            </div>
 
             {activeTab === 'home' ? (
               <div className="grid gap-6">

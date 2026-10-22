@@ -69,6 +69,7 @@ export function CompanyHeaderCard({
   mode = 'public',
   canEdit = false,
   showTabs = true,
+  actions = null,
 }) {
   return (
     <div className="grid gap-4">
@@ -105,7 +106,9 @@ export function CompanyHeaderCard({
                 </div>
               </div>
             </div>
-            {mode === 'recruiter' ? (
+            {actions ? (
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div>
+            ) : mode === 'recruiter' ? (
               <div className="text-sm text-[var(--color-text-secondary)]">
                 <p className="font-medium text-[var(--color-text)]">Profile updated</p>
                 <p className="mt-1">{formatDate(organisation?.updatedAt)}</p>
