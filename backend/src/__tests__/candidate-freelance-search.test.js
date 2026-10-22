@@ -32,3 +32,12 @@ test('the candidate profile accepts the freelance preference and a salary-negoti
   assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
   assert.equal(parsed.data.salaryNegotiable, true);
 });
+
+test('searching for a city (or its state) finds candidates whose preferred location is saved as "City, State"', async () => {
+  const { locationMatches } = await import('../services/search/searchUtils.js');
+  assert.equal(locationMatches('Pune, Maharashtra', 'Pune'), true);
+  assert.equal(locationMatches('Chennai, Tamil Nadu', 'chennai'), true);
+  assert.equal(locationMatches('Hyderabad, Telangana', 'Hyderabad'), true);
+  assert.equal(locationMatches('Pune, Maharashtra', 'Maharashtra'), true);
+  assert.equal(locationMatches('Pune, Maharashtra', 'Chennai'), false);
+});

@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Globe2, MapPin, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { INDIA_STATES, INDIA_DISTRICTS_BY_STATE, searchIndiaLocationTree } from '@/lib/india-location-master';
 import { filterCountries } from '@/lib/country-master';
+import { formatLocationLabel } from '@/lib/location-format';
 
 function formatDistrict(state, district) {
   return `${district}, ${state}`;
@@ -31,7 +32,7 @@ function groupSelections(values) {
   }
   for (const value of values) {
     if (remaining.has(value)) {
-      chips.push({ type: 'item', label: value.includes(', ') ? value.split(', ')[0] : value, values: [value] });
+      chips.push({ type: 'item', label: formatLocationLabel(value), values: [value] });
       remaining.delete(value);
     }
   }

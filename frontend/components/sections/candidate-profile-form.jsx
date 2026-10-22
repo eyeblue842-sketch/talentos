@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/select';
 import { OptionMultiSelect } from '@/components/ui/option-multi-select';
 import { LocationMultiSelect } from '@/components/sections/resume-search/location-multi-select';
 import { INDUSTRY_GROUPS } from '@/lib/industry-taxonomy';
+import { formatLocationList } from '@/lib/location-format';
 import { Textarea } from '@/components/ui/textarea';
 import {
   PROFILE_PHOTO_ACCEPT,
@@ -938,7 +939,7 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {[
             ['Preferred roles', readOnlyValue(values.preferredRoles)],
-            ['Preferred locations', readOnlyValue(values.preferredLocations.join(', '))],
+            ['Preferred locations', readOnlyValue(formatLocationList(values.preferredLocations))],
             ['Preferred industries', readOnlyValue(values.preferredIndustries.join(', '))],
             ['Preferred company size', readOnlyValue(values.preferredCompanySizes.join(', '))],
             ['Expected annual CTC', `${formatCandidateAnnualCtc(normalizedExpectedCtcLpa)}${values.salaryNegotiable ? (values.salaryNegotiable === 'YES' ? ' · Negotiable' : ' · Not negotiable') : ''}`],

@@ -177,7 +177,10 @@ export function locationSearchVariants(value) {
 export function locationMatches(value, requested) {
   const candidate = normalizeLocation(value);
   const query = normalizeLocation(requested);
-  return Boolean(candidate && query && (candidate === query || candidate.startsWith(query) || query.startsWith(candidate)));
+  if (!candidate || !query) return false;
+  if (candidate === query || candidate.startsWith(query) || query.startsWith(candidate)) return true;
+  // "Maharashtra" should also find "Pune, Maharashtra" (whole words only).
+  return ` ${candidate} `.includes(` ${query} `);
 }
 
 export function normalizeCountry(value) {

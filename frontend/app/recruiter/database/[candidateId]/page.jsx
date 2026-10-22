@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { Tabs } from '@/components/ui/tabs';
 import { CandidateAvatar } from '@/components/ui/candidate-avatar';
+import { formatLocationList } from '@/lib/location-format';
 import { recruiterNav } from '@/lib/navigation';
 import {
   getCandidateJobMatch,
@@ -135,7 +136,7 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
     ['Current role', candidate.currentDesignation || candidate.currentTitle || 'Not added'],
     ['Current company', candidate.currentEmployer || candidate.currentCompany || 'Not added'],
     ['Location', candidate.location || 'Not added'],
-    ['Preferred locations', candidate.preferredLocations?.length ? candidate.preferredLocations.join(', ') : 'Not added'],
+    ['Preferred locations', candidate.preferredLocations?.length ? formatLocationList(candidate.preferredLocations) : 'Not added'],
     ['Highest education', highestEducation ? `${highestEducation.degree || highestEducation.course || 'Qualification'}${highestEducation.institution ? ` — ${highestEducation.institution}` : ''}` : 'Not added'],
     ['Certifications', candidate.certificationEntries?.length ? `${candidate.certificationEntries.length}` : 'None'],
     ['Total employers', `${employerCount}`],
@@ -168,7 +169,7 @@ export default async function RecruiterCandidateDetailPage({ params, searchParam
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-[var(--color-text-secondary)]">
                   <span>{candidate.currentDesignation || candidate.currentTitle || 'Designation not added'}</span>
                   <span>{candidate.currentEmployer || candidate.currentCompany || 'Company not added'}</span>
-                  {candidate.preferredLocations?.length ? <span>Preferred: {candidate.preferredLocations.join(', ')}</span> : null}
+                  {candidate.preferredLocations?.length ? <span>Preferred: {formatLocationList(candidate.preferredLocations)}</span> : null}
                   {currentCtc ? <span>Current CTC: {currentCtc}</span> : null}
                   {expectedCtc ? <span>Expected CTC: {expectedCtc}</span> : null}
                 </div>
