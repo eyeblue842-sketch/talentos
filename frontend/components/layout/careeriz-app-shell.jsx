@@ -2,6 +2,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Sidebar } from '@/components/layout/sidebar';
 import { cn } from '@/lib/utils';
 import { HeaderLogoutButton } from '@/components/layout/header-logout-button';
+import { RecruiterAccountMenu } from '@/components/layout/recruiter-account-menu';
 import { GlobalMessageLink } from '@/components/messaging/global-message-link';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { CandidateTopNav } from '@/components/layout/candidate-top-nav';
@@ -40,7 +41,7 @@ export function CareerizAppShell({
   const recruiterWorkspace = items?.some((item) => item.children?.some((child) => child.href === '/recruiter/candidates/import'));
   const candidateWorkspace = items?.some((item) => item.href === '/candidate/dashboard');
   const topRightBar = recruiterWorkspace ? (
-    <div className="flex items-center justify-end gap-3"><GlobalMessageLink /><HeaderLogoutButton /></div>
+    <div className="flex items-center justify-end gap-3"><GlobalMessageLink /><RecruiterAccountMenu brand={brand} brandLogoUrl={brandLogoUrl} /></div>
   ) : candidateWorkspace ? (
     <div className="flex justify-end"><NotificationBell href="/candidate/notifications" /></div>
   ) : (
