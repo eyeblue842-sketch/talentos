@@ -292,7 +292,7 @@ function buildOfferPayload(formData, options = {}) {
     otherCompensation: numberOrNull(formData.get('otherCompensation')),
     benefitsSummary: asNullableString(formData.get('benefitsSummary')),
     compensationNotes: asNullableString(formData.get('compensationNotes')),
-    proposedJoiningDate: asNullableString(formData.get('proposedJoiningDate')),
+    proposedJoiningDate: asNullableDateTime(formData.get('proposedJoiningDate')),
     probationPeriodMonths: numberOrNull(formData.get('probationPeriodMonths')),
     noticeOrBuyoutNote: asNullableString(formData.get('noticeOrBuyoutNote')),
     workMode: asNullableString(formData.get('workMode')),
@@ -833,7 +833,7 @@ export async function updateOfferJoiningAction(applicationId, offerId, formData)
     body: JSON.stringify({
       status: String(formData.get('status') || '').trim(),
       actualJoiningDate: asNullableString(formData.get('actualJoiningDate')),
-      proposedJoiningDate: asNullableString(formData.get('proposedJoiningDate')),
+      proposedJoiningDate: asNullableDateTime(formData.get('proposedJoiningDate')),
       reason: asNullableString(formData.get('reason')),
     }),
   });
