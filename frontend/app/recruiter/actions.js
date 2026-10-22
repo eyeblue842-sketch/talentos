@@ -612,7 +612,12 @@ export async function deleteNoteAction(applicationId, noteId) {
 }
 
 export async function scheduleInterviewAction(applicationId, formData) {
-  const panelMembers = splitCommaList(formData.get('panelUserIds')).map((userId, index) => ({
+  // Checkbox group (several `panelUserIds` values); a single comma-separated value is still accepted.
+  const panelIds = formData.getAll('panelUserIds').flatMap((value) => splitCommaList(value));
+  if (!panelIds.length) {
+    throw new Error('Select at least one panel member for the interview.');
+  }
+  const panelMembers = panelIds.map((userId, index) => ({
     userId,
     isLead: index === 0,
     isObserver: false,

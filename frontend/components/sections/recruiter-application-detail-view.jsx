@@ -295,10 +295,22 @@ export function RecruiterApplicationDetailView({
                   <span className="mb-1 block font-medium">Duration (minutes)</span>
                   <input name="durationMinutes" type="number" min="15" max="480" defaultValue={primaryRound.durationMinutes || 60} className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" />
                 </label>
-                <label className="text-sm md:col-span-2">
-                  <span className="mb-1 block font-medium">Panel members</span>
-                  <input name="panelUserIds" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Comma separated user IDs" defaultValue={(primaryRound.panelMembers || []).map((member) => member.userId).join(', ')} />
-                </label>
+                <fieldset className="text-sm md:col-span-2">
+                  <legend className="mb-1 block font-medium">Panel members (at least one)</legend>
+                  <div className="flex flex-wrap gap-3 rounded-2xl border border-[var(--line)] px-4 py-3">
+                    {members.map((member, index) => {
+                      const existingPanel = (primaryRound.panelMembers || []).map((entry) => entry.userId);
+                      const checked = existingPanel.length ? existingPanel.includes(member.userId) : index === 0;
+                      return (
+                        <label key={member.userId} className="inline-flex items-center gap-2">
+                          <input type="checkbox" name="panelUserIds" value={member.userId} defaultChecked={checked} />
+                          <span>{member.user?.email || member.email || member.userId}</span>
+                        </label>
+                      );
+                    })}
+                    {!members.length ? <span className="text-[var(--muted)]">No team members found.</span> : null}
+                  </div>
+                </fieldset>
                 <label className="text-sm">
                   <span className="mb-1 block font-medium">Meeting location</span>
                   <input name="meetingLocation" className="w-full rounded-2xl border border-[var(--line)] px-4 py-3" placeholder="Meeting location" defaultValue={primaryRound.meetingLocation || ''} />

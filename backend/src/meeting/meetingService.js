@@ -460,6 +460,25 @@ export async function scheduleInterviewMeeting(applicationId, actorUser, payload
       },
     );
 
+    // The candidate is not part of the panel/participant list, so tell them separately
+    // (they previously got no in-app notice when an interview was scheduled).
+    const interviewApplication = round.interviewProcess.application;
+    const candidateUserId = interviewApplication.candidate?.userId || null;
+    if (candidateUserId && !participants.some((participant) => participant.userId === candidateUserId)) {
+      await createMeetingNotifications(
+        interviewApplication,
+        existingMeeting?.status === 'SCHEDULED' ? 'Interview rescheduled' : 'Interview scheduled',
+        `${round.roundName} is scheduled for ${meetingInput.scheduledStartUtc.toLocaleString('en-US', { timeZone: meetingInput.timezone })}.`,
+        [{ userId: candidateUserId }],
+        {
+          roundId: round.id,
+          meetingId: updatedMeeting.id,
+          provider: meetingInput.provider,
+          applicationId: interviewApplication.submittedApplication?.id || interviewApplication.id,
+        },
+      );
+    }
+
     await recordAuditLog({
       organisationId: context.organisationId,
       actorUserId: actorUser.id,
