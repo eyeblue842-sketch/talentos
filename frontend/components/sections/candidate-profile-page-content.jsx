@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CandidateProfileForm } from '@/components/sections/candidate-profile-form';
 import { CandidateProfileSnapshot, CandidateResumeSummaryCard } from '@/components/sections/candidate-profile-snapshot';
@@ -12,9 +12,19 @@ const EDITABLE_SECTIONS = new Set([
   'profile-summary', 'certifications', 'career-profile', 'personal-details', 'privacy',
 ]);
 
+function subscribeNever() {
+  return () => {};
+}
+
 export function CandidateProfilePageContent({ profile, snapshot, resumeSuggestions }) {
   const requestedSection = useSearchParams().get('edit');
-  const [activeSection, setActiveSection] = useState(() => (EDITABLE_SECTIONS.has(requestedSection) ? requestedSection : null));
+  // false while rendering on the server and hydrating, true afterwards: the requested editor
+  // must only open once hydration is done, otherwise server and client disagree about the dialog.
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+  const [chosenSection, setActiveSection] = useState(undefined);
+  const activeSection = chosenSection !== undefined
+    ? chosenSection
+    : (hydrated && EDITABLE_SECTIONS.has(requestedSection) ? requestedSection : null);
 
   return (
     <>
