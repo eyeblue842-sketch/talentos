@@ -45,3 +45,21 @@ describe('location picker with a cap', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/up to 3/i);
   });
 });
+
+describe('single-select location picker (current location)', () => {
+  test('picking a district sets exactly one value, replacing the previous one, and closes the list', () => {
+    const onChange = vi.fn();
+    render(
+      <LocationMultiSelect label="Current location" values={['Pune, Maharashtra']} onChange={onChange} single />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /current location/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search city, district or state/i), { target: { value: 'Chennai' } });
+    // no whole-state checkbox in single mode
+    const boxes = screen.getAllByRole('checkbox');
+    fireEvent.click(boxes.find((box) => !box.checked));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toHaveLength(1);
+    expect(onChange.mock.calls[0][0][0]).toMatch(/chennai/i);
+    expect(screen.queryByPlaceholderText(/search city, district or state/i)).not.toBeInTheDocument();
+  });
+});

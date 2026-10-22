@@ -39,7 +39,7 @@ function groupSelections(values) {
   return chips;
 }
 
-function StateNode({ state, districts, values, onChange, expanded, onToggleExpand }) {
+function StateNode({ state, districts, values, onChange, expanded, onToggleExpand, single = false }) {
   const formatted = districts.map((district) => formatDistrict(state, district));
   const selectedCount = formatted.filter((value) => values.includes(value)).length;
   const allSelected = selectedCount === formatted.length;
@@ -74,11 +74,17 @@ function StateNode({ state, districts, values, onChange, expanded, onToggleExpan
         >
           {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
         </button>
-        <label className="flex flex-1 cursor-pointer items-center gap-2 text-sm text-[var(--color-text)]">
-          <input ref={checkboxRef} type="checkbox" checked={allSelected} onChange={toggleState} className="h-4 w-4 accent-[var(--color-primary)]" />
-          <span className={cn('font-medium', allSelected && 'text-[var(--color-primary)]')}>{state}</span>
-          {selectedCount > 0 ? <span className="text-xs text-[var(--color-text-muted)]">({selectedCount}/{formatted.length})</span> : null}
-        </label>
+        {single ? (
+          <button type="button" onClick={() => onToggleExpand(state)} className="flex-1 text-left text-sm font-medium text-[var(--color-text)]">
+            {state}
+          </button>
+        ) : (
+          <label className="flex flex-1 cursor-pointer items-center gap-2 text-sm text-[var(--color-text)]">
+            <input ref={checkboxRef} type="checkbox" checked={allSelected} onChange={toggleState} className="h-4 w-4 accent-[var(--color-primary)]" />
+            <span className={cn('font-medium', allSelected && 'text-[var(--color-primary)]')}>{state}</span>
+            {selectedCount > 0 ? <span className="text-xs text-[var(--color-text-muted)]">({selectedCount}/{formatted.length})</span> : null}
+          </label>
+        )}
       </div>
       {expanded ? (
         <div role="group" aria-label={`${state} districts`} className="ml-6 grid grid-cols-2 gap-x-3 border-l border-[var(--color-border)] pl-3">
@@ -104,12 +110,24 @@ export function LocationMultiSelect({
   onChange: onChangeProp,
   includeCountries = false,
   maxItems = null,
+  single = false,
 }) {
   const [open, setOpen] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
 
   // With a maxItems cap, a change that would exceed it is rejected and a notice is shown.
   function onChange(next) {
+    if (single) {
+      // One value only: picking another replaces the current one and closes the list.
+      const added = next.filter((value) => !values.includes(value));
+      if (added.length) {
+        onChangeProp([added[added.length - 1]]);
+        setOpen(false);
+      } else {
+        onChangeProp(next);
+      }
+      return;
+    }
     if (maxItems && next.length > maxItems) {
       setLimitReached(true);
       return;
@@ -229,6 +247,7 @@ export function LocationMultiSelect({
                   onChange={onChange}
                   expanded={isSearching || expandedStates.has(group.state)}
                   onToggleExpand={toggleExpand}
+                  single={single}
                 />
               ))}
 

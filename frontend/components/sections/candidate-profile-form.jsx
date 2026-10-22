@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { OptionMultiSelect } from '@/components/ui/option-multi-select';
 import { LocationMultiSelect } from '@/components/sections/resume-search/location-multi-select';
 import { INDUSTRY_GROUPS } from '@/lib/industry-taxonomy';
-import { formatLocationList } from '@/lib/location-format';
+import { formatLocationLabel, formatLocationList } from '@/lib/location-format';
 import { Textarea } from '@/components/ui/textarea';
 import {
   PROFILE_PHOTO_ACCEPT,
@@ -590,7 +590,17 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
             <Input label="Full name" value={values.fullName} onChange={(event) => updateValue('fullName', event.target.value)} error={errors.fullName.error} />
             <Input label="Phone number" value={values.phoneNumber} onChange={(event) => updateValue('phoneNumber', event.target.value)} error={errors.phoneNumber.error} />
             <Input label="Current title / designation" value={values.currentTitle} onChange={(event) => updateValue('currentTitle', event.target.value)} error={errors.currentTitle.error} />
-            <Input label="Current location" value={values.location} onChange={(event) => updateValue('location', event.target.value)} error={errors.location.error} />
+            <div className="grid gap-1">
+              <LocationMultiSelect
+                label="Current location"
+                placeholder="Search and select your current location"
+                values={values.location ? [values.location] : []}
+                onChange={(next) => updateValue('location', next[0] || '')}
+                single
+                includeCountries
+              />
+              {errors.location.error ? <p className="text-sm text-red-600">{errors.location.error}</p> : null}
+            </div>
             <Input label="Current employer" value={values.currentEmployer} onChange={(event) => updateValue('currentEmployer', event.target.value)} error={errors.currentEmployer.error} />
             <Input label="Total experience (years)" type="number" min="0" value={values.totalExperience} onChange={(event) => updateValue('totalExperience', event.target.value)} error={errors.totalExperience.error} />
             <div className="md:col-span-2">
@@ -1068,7 +1078,7 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
           <div className="rounded-2xl border border-[var(--line)] p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Current contact snapshot</p>
             <p className="mt-3 text-sm text-[var(--color-text)]">Phone: {readOnlyValue(values.phoneNumber)}</p>
-            <p className="mt-2 text-sm text-[var(--color-text)]">Location: {readOnlyValue(values.location)}</p>
+            <p className="mt-2 text-sm text-[var(--color-text)]">Location: {readOnlyValue(formatLocationLabel(values.location))}</p>
           </div>
         </div>
       </SectionCard>

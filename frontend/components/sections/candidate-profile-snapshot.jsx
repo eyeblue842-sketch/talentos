@@ -5,6 +5,7 @@ import { CandidateAvatar } from '@/components/ui/candidate-avatar';
 import { resolveCandidateProfilePhotoSrc } from '@/lib/candidate-profile-photo';
 import { formatCandidateAnnualCtc } from '@/lib/ctc';
 import { formatCareerizDate, formatCareerizUpdatedLabel } from '@/lib/date-format';
+import { formatLocationLabel } from '@/lib/location-format';
 
 function formatNoticePeriod(value) {
   const days = Number(value);
@@ -112,7 +113,7 @@ export function CandidateProfileSnapshot({ snapshot, onEdit, editHref = '/candid
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)]">
           <div className="grid gap-5">
-            <InfoRow icon={MapPin} label="Location" value={snapshot.location || 'Not added'} />
+            <InfoRow icon={MapPin} label="Location" value={formatLocationLabel(snapshot.location) || 'Not added'} />
             <InfoRow icon={BriefcaseBusiness} label="Experience" value={formatExperience(snapshot.totalExperience)} />
             <InfoRow icon={IndianRupee} label="Current salary" value={formatCandidateAnnualCtc(snapshot.currentCtcLpa)} />
           </div>
