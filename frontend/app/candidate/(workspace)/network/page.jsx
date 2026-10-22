@@ -44,7 +44,11 @@ export default async function CandidateNetworkPage({ searchParams }) {
       : Promise.resolve({ items: [], meta: { nextCursor: null } }),
   ]);
 
-  const defaultTab = messagesRequested ? 'messages' : 'feed';
+  // A people search (GET form) or an action that returns here must land on the Network tab,
+  // not fall back to the Feed tab where the results are hidden.
+  const networkRequested = params?.tab === 'network'
+    || ['q', 'designation', 'skills', 'location'].some((key) => typeof params?.[key] === 'string' && params[key]);
+  const defaultTab = messagesRequested ? 'messages' : networkRequested ? 'network' : 'feed';
 
   return (
     <WorkspaceShell brand="Careeriz" items={candidateNav}>
@@ -74,7 +78,7 @@ export default async function CandidateNetworkPage({ searchParams }) {
                 searchResults={searchResults}
                 privacy={privacy}
                 searchParams={params || {}}
-                redirectTo="/candidate/network"
+                redirectTo="/candidate/network?tab=network"
                 messageBasePath="/candidate/network"
               />
             ),
