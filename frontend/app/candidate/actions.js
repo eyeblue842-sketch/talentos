@@ -170,6 +170,19 @@ function parseOptionalJsonStringArrayField(formData, field) {
   return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
 }
 
+// Values like "Pune, Maharashtra" contain a comma, so the list fields of the career profile are
+// posted as JSON arrays; the plain comma-separated field is still accepted as a fallback.
+function collectListField(formData, field) {
+  return parseOptionalJsonStringArrayField(formData, `${field}Json`) ?? collectNormalizedStringArray(formData, field);
+}
+
+function readSalaryNegotiable(formData) {
+  const value = String(formData.get('salaryNegotiable') || '').toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return null;
+}
+
 function buildCandidateProfileSectionPayload(formData) {
   const activeSection = String(formData.get('activeSection') || '').trim();
 
@@ -220,16 +233,16 @@ function buildCandidateProfileSectionPayload(formData) {
     case 'career-profile':
       return {
         preferredRoles: collectNormalizedStringArray(formData, 'preferredRoles'),
-        preferredIndustries: collectNormalizedStringArray(formData, 'preferredIndustries'),
-        preferredCompanySizes: collectNormalizedStringArray(formData, 'preferredCompanySizes'),
-        preferredLocations: collectNormalizedStringArray(formData, 'preferredLocations'),
+        preferredIndustries: collectListField(formData, 'preferredIndustries'),
+        preferredCompanySizes: collectListField(formData, 'preferredCompanySizes'),
+        preferredLocations: collectListField(formData, 'preferredLocations'),
         willingToRelocate: String(formData.get('willingToRelocate')) === 'true',
         workplacePreferences: parseOptionalJsonStringArrayField(formData, 'workplacePreferencesJson') ?? collectMultiValue(formData, 'workplacePreferences'),
         employmentPreferences: parseOptionalJsonStringArrayField(formData, 'employmentPreferencesJson') ?? collectMultiValue(formData, 'employmentPreferences'),
         availability: String(formData.get('availability') || '').trim() || undefined,
         employmentStatus: String(formData.get('employmentStatus') || '').trim() || null,
         noticePeriodDays: normalizeOptionalNumber(formData.get('noticePeriodDays')),
-        minExpectedSalary: normalizeOptionalNumber(formData.get('minExpectedSalary')),
+        salaryNegotiable: readSalaryNegotiable(formData),
         preferredCurrency: normalizeOptionalText(formData.get('preferredCurrency')),
         workAuthorization: normalizeOptionalText(formData.get('workAuthorization')),
         travelWillingness: normalizeOptionalText(formData.get('travelWillingness')),

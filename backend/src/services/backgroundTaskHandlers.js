@@ -22,6 +22,7 @@ import {
 import { readPrivateFileNodeStream } from '../config/storage.js';
 import {
   assessResumeTextQuality,
+  computeExperienceMonths,
   extractResumeText,
   getExtension,
   normalizeEmail,
@@ -180,6 +181,14 @@ function buildCandidateProfilePatch(profile, parsedData, rawResumeText) {
     appliedFields.push(field);
   }
 
+  // Current title and current designation are one concept; keep them in step.
+  if (updateData.currentTitle && !hasMeaningfulValue(profile.currentDesignation) && !updateData.currentDesignation) {
+    updateData.currentDesignation = updateData.currentTitle;
+  }
+  if (updateData.currentDesignation && !hasMeaningfulValue(profile.currentTitle) && !updateData.currentTitle) {
+    updateData.currentTitle = updateData.currentDesignation;
+  }
+
   if (updateData.linkedInUrl && !hasMeaningfulValue(profile.linkedInUrlNormalized)) {
     updateData.linkedInUrlNormalized = normalizeLinkedInUrl(updateData.linkedInUrl);
     appliedFields.push('linkedInUrlNormalized');
@@ -190,7 +199,10 @@ function buildCandidateProfilePatch(profile, parsedData, rawResumeText) {
     appliedFields.push('normalizedPhoneNumber');
   }
 
-  const parsedTotalExperience = fieldValue(safeParsedData, 'totalExperience');
+  // Total experience is counted from the from/to dates of every parsed role (overlaps counted once);
+  // the parser's own figure is only used when the roles carry no usable dates.
+  const datedExperienceYears = Math.round(computeExperienceMonths(fieldValue(safeParsedData, 'experienceEntries') || []) / 12);
+  const parsedTotalExperience = datedExperienceYears > 0 ? datedExperienceYears : fieldValue(safeParsedData, 'totalExperience');
   if (Number.isFinite(parsedTotalExperience) && parsedTotalExperience > 0) {
     if (!Number.isFinite(profile.totalExperience) || profile.totalExperience <= 0) {
       updateData.totalExperience = parsedTotalExperience;

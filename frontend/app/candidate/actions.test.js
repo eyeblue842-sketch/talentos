@@ -80,7 +80,7 @@ describe('candidate profile actions', () => {
     await updateCandidateProfileAction(formData);
 
     expect(updateCandidateProfileMock).toHaveBeenCalledTimes(1);
-    expect(updateCandidateProfileMock).toHaveBeenCalledWith({
+    expect(updateCandidateProfileMock).toHaveBeenCalledWith(expect.objectContaining({
       preferredRoles: ['Frontend Engineer', 'UI Engineer'],
       preferredLocations: ['Bengaluru', 'Remote'],
       workplacePreferences: ['REMOTE', 'HYBRID'],
@@ -89,8 +89,32 @@ describe('candidate profile actions', () => {
       employmentStatus: 'EMPLOYED',
       noticePeriodDays: 30,
       expectedCtcLpa: 25.5,
+      salaryNegotiable: null,
       profileVisibility: 'RECRUITERS_ONLY',
-    });
+    }));
+    // The removed "minimum expected salary" field is no longer sent.
+    expect(updateCandidateProfileMock.mock.calls[0][0]).not.toHaveProperty('minExpectedSalary');
+  });
+
+  test('career profile list fields keep "City, State" locations intact and carry the salary-negotiable answer', async () => {
+    const formData = buildBaseFormData();
+    formData.set('preferredLocationsJson', JSON.stringify(['Pune, Maharashtra', 'Chennai, Tamil Nadu']));
+    formData.set('preferredIndustriesJson', JSON.stringify(['Fintech', 'Software Product']));
+    formData.set('preferredCompanySizesJson', JSON.stringify(['Startup (1-50 employees)']));
+    formData.set('salaryNegotiable', 'true');
+    formData.set('workAuthorization', 'NOT_REQUIRED');
+    formData.set('employmentPreferencesJson', JSON.stringify(['FULL_TIME', 'FREELANCE']));
+
+    await updateCandidateProfileAction(formData);
+
+    expect(updateCandidateProfileMock).toHaveBeenCalledWith(expect.objectContaining({
+      preferredLocations: ['Pune, Maharashtra', 'Chennai, Tamil Nadu'],
+      preferredIndustries: ['Fintech', 'Software Product'],
+      preferredCompanySizes: ['Startup (1-50 employees)'],
+      salaryNegotiable: true,
+      workAuthorization: 'NOT_REQUIRED',
+      employmentPreferences: ['FULL_TIME', 'FREELANCE'],
+    }));
   });
 
   test('profile summary save converts empty optional strings to null', async () => {

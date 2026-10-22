@@ -32,6 +32,33 @@ export const INDUSTRY_TAXONOMY = [
   'Chemicals',
   'Semiconductors & Electronics',
   'Gaming',
+  'Internet & Web Services',
+  'Fintech',
+  'Cybersecurity',
+  'Artificial Intelligence & Data',
+  'Biotechnology',
+  'Medical Devices',
+  'Renewable Energy',
+  'Oil & Gas',
+  'Mining & Metals',
+  'Aerospace & Defence',
+  'Food & Beverage',
+  'Marketing, Advertising & PR',
+  'Staffing & Recruitment',
+  'Accounting & Audit',
+  'Architecture & Design',
+  'Shipping & Maritime',
+  'Event Management',
+  'Sports & Fitness',
+  'Security Services',
+  'Facility Management',
+  'Packaging',
+  'Printing & Publishing',
+  'Furniture & Home Goods',
+  'Jewellery & Luxury',
+  'Research & Development',
+  'Environment & Waste Management',
+  'Other',
 ];
 
 export function filterIndustries(query) {
@@ -47,15 +74,15 @@ export function filterIndustries(query) {
 // later by turning a leaf into a branch (keep a "<name> (General)" child with
 // the original value to stay back-compatible).
 export const INDUSTRY_GROUPS = [
-  { group: 'Technology', industries: ['IT Services & Consulting', 'Software Product', 'BPO / ITES', 'Semiconductors & Electronics', 'Gaming', 'Telecommunications'] },
+  { group: 'Technology', industries: ['IT Services & Consulting', 'Software Product', 'BPO / ITES', 'Semiconductors & Electronics', 'Gaming', 'Telecommunications', 'Internet & Web Services', 'Fintech', 'Cybersecurity', 'Artificial Intelligence & Data'] },
   { group: 'Banking, Financial Services & Insurance', industries: ['Banking & Financial Services', 'Insurance'] },
-  { group: 'Consumer, Retail & Hospitality', industries: ['E-commerce', 'FMCG', 'Retail', 'Hospitality & Travel'] },
-  { group: 'Healthcare & Life Sciences', industries: ['Healthcare & Hospitals', 'Pharmaceuticals & Life Sciences'] },
-  { group: 'Manufacturing & Industrial', industries: ['Manufacturing', 'Automotive', 'Chemicals', 'Textiles & Apparel', 'Energy & Utilities'] },
-  { group: 'Infrastructure, Real Estate & Logistics', industries: ['Real Estate', 'Construction & Engineering', 'Logistics & Supply Chain', 'Aviation'] },
-  { group: 'Professional Services', industries: ['Consulting', 'Legal Services'] },
-  { group: 'Media & Education', industries: ['Education & EdTech', 'Media & Entertainment'] },
-  { group: 'Government, Social & Agriculture', industries: ['Government / Public Sector', 'NGO / Non-Profit', 'Agriculture'] },
+  { group: 'Consumer, Retail & Hospitality', industries: ['E-commerce', 'FMCG', 'Retail', 'Hospitality & Travel', 'Food & Beverage', 'Jewellery & Luxury', 'Sports & Fitness', 'Event Management'] },
+  { group: 'Healthcare & Life Sciences', industries: ['Healthcare & Hospitals', 'Pharmaceuticals & Life Sciences', 'Biotechnology', 'Medical Devices'] },
+  { group: 'Manufacturing & Industrial', industries: ['Manufacturing', 'Automotive', 'Chemicals', 'Textiles & Apparel', 'Energy & Utilities', 'Renewable Energy', 'Oil & Gas', 'Mining & Metals', 'Aerospace & Defence', 'Packaging', 'Furniture & Home Goods'] },
+  { group: 'Infrastructure, Real Estate & Logistics', industries: ['Real Estate', 'Construction & Engineering', 'Logistics & Supply Chain', 'Aviation', 'Shipping & Maritime', 'Facility Management'] },
+  { group: 'Professional Services', industries: ['Consulting', 'Legal Services', 'Accounting & Audit', 'Architecture & Design', 'Marketing, Advertising & PR', 'Staffing & Recruitment', 'Security Services', 'Research & Development'] },
+  { group: 'Media & Education', industries: ['Education & EdTech', 'Media & Entertainment', 'Printing & Publishing'] },
+  { group: 'Government, Social & Agriculture', industries: ['Government / Public Sector', 'NGO / Non-Profit', 'Agriculture', 'Environment & Waste Management', 'Other'] },
 ];
 
 export const INDUSTRY_TREE = INDUSTRY_GROUPS.map((entry) => ({

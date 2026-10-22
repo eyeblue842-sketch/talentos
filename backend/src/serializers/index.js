@@ -581,6 +581,7 @@ export function serializeCandidateProfile(profile, options = {}) {
     currentCtcLpa: includePrivate ? safeProfile.currentCtcLpa : undefined,
     expectedCtcLpa: includePrivate ? safeProfile.expectedCtcLpa : undefined,
     minExpectedSalary: includePrivate ? safeProfile.minExpectedSalary : undefined,
+    salaryNegotiable: includePrivate ? safeProfile.salaryNegotiable : undefined,
     preferredCurrency: includePrivate ? safeProfile.preferredCurrency : undefined,
     workAuthorization: includePrivate ? safeProfile.workAuthorization : undefined,
     requiresVisaSponsorship: includePrivate ? safeProfile.requiresVisaSponsorship : undefined,

@@ -200,6 +200,10 @@ function enrichNaturalLanguageFilters(filters, query) {
   } else if (/\bcontract\b/i.test(text)) {
     filters.jobTypes = ['CONTRACT'];
     filters.employmentTypes = ['CONTRACT'];
+  } else if (/\bfree[- ]?lanc(?:e|er|ers|ing)\b/i.test(text)) {
+    filters.employmentTypes = ['FREELANCE'];
+  } else if (/\bintern(?:s|ship|ships)?\b/i.test(text)) {
+    filters.employmentTypes = ['INTERN'];
   }
 
   const active = text.match(/active\s+(?:in|within|last)\s+(?:the\s+last\s+)?(\d+)\s+(day|days|month|months|year|years)/i);

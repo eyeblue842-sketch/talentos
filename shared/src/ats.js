@@ -29,6 +29,7 @@ export const employmentTypeSchema = z.enum([
   'PART_TIME',
   'CONTRACT',
   'INTERN',
+  'FREELANCE',
 ]);
 
 export const workplaceTypeSchema = z.enum([

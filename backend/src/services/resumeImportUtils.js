@@ -1394,7 +1394,77 @@ function inferCurrentTitleFromText(text, fullName, location) {
   return tokens.join(' ').trim() || null;
 }
 
+const MONTH_INDEX = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+// "Jan 2020", "January 2020", "03/2020", "2020-03" and a bare "2020" -> absolute month number.
+// A bare year counts from January for a start date and December for an end date.
+function toAbsoluteMonth(value, { isEnd = false } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let match = raw.match(/([A-Za-z]{3})[a-z]*\.?,?\s*(\d{4})/);
+  if (match && MONTH_INDEX[match[1].toLowerCase()] !== undefined) {
+    return Number(match[2]) * 12 + MONTH_INDEX[match[1].toLowerCase()];
+  }
+  match = raw.match(/^(\d{1,2})[/-](\d{4})$/) || raw.match(/^(\d{4})[/-](\d{1,2})$/);
+  if (match) {
+    const [first, second] = match.slice(1).map(Number);
+    const year = first > 31 ? first : second;
+    const month = first > 31 ? second : first;
+    if (month >= 1 && month <= 12) return year * 12 + (month - 1);
+  }
+  match = raw.match(/\b(19|20)\d{2}\b/);
+  if (match) return Number(match[0]) * 12 + (isEnd ? 11 : 0);
+  return null;
+}
+
+function currentAbsoluteMonth(now = new Date()) {
+  return now.getUTCFullYear() * 12 + now.getUTCMonth();
+}
+
+// Sums the months worked across all dated roles; overlapping roles are only counted once.
+export function computeExperienceMonths(experienceEntries = [], now = new Date()) {
+  const intervals = [];
+  for (const entry of experienceEntries) {
+    const start = toAbsoluteMonth(entry?.startDate);
+    if (start == null) continue;
+    const end = entry?.currentlyWorking ? currentAbsoluteMonth(now) : toAbsoluteMonth(entry?.endDate, { isEnd: true });
+    if (end == null || end < start) continue;
+    intervals.push([start, Math.min(end, currentAbsoluteMonth(now))]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let cursor = null;
+  for (const [start, end] of intervals) {
+    const from = cursor == null ? start : Math.max(start, cursor);
+    if (end >= from) total += end - from + 1;
+    cursor = cursor == null ? end + 1 : Math.max(cursor, end + 1);
+  }
+  return total;
+}
+
+// The role the candidate holds now: a "present" role, otherwise the one that ended last.
+export function pickCurrentExperienceEntry(experienceEntries = []) {
+  const entries = experienceEntries.filter(Boolean);
+  const ongoing = entries.find((entry) => entry.currentlyWorking);
+  if (ongoing) return ongoing;
+  let best = null;
+  let bestEnd = -1;
+  for (const entry of entries) {
+    const end = toAbsoluteMonth(entry.endDate, { isEnd: true });
+    if (end != null && end > bestEnd) {
+      best = entry;
+      bestEnd = end;
+    }
+  }
+  return best || entries[0] || null;
+}
+
 function inferTotalExperience(text, experienceEntries = []) {
+  const months = computeExperienceMonths(experienceEntries);
+  if (months > 0) return Math.round(months / 12);
+
   const explicit = String(text || '').match(/(\d{1,2})\+?\s+years?/i);
   if (explicit) return Number(explicit[1]);
 
@@ -1839,9 +1909,12 @@ export function buildDeterministicResumeParse(text, originalFilename) {
   const totalExperience = inferTotalExperience(text, fallbackExperienceEntries);
   const safeFullName = sanitizeParsedCandidateField('fullName', fullName);
   const safeHeadline = sanitizeParsedCandidateField('headline', currentTitle);
-  const safeCurrentTitle = sanitizeParsedCandidateField('currentTitle', currentTitle);
-  const safeEmployer = sanitizeParsedCandidateField('currentEmployer', fallbackExperienceEntries[0]?.company);
-  const safeDesignation = sanitizeParsedCandidateField('currentDesignation', fallbackExperienceEntries[0]?.title);
+  const currentRole = pickCurrentExperienceEntry(fallbackExperienceEntries);
+  const safeEmployer = sanitizeParsedCandidateField('currentEmployer', currentRole?.company);
+  const safeDesignation = sanitizeParsedCandidateField('currentDesignation', currentRole?.title);
+  // Current title and current designation are the same thing: prefer the designation of the
+  // current role and fall back to the resume header line.
+  const safeCurrentTitle = safeDesignation || sanitizeParsedCandidateField('currentTitle', currentTitle);
   const safeLocation = sanitizeParsedCandidateField('location', locationData.location);
 
   return sanitizeResumeData({

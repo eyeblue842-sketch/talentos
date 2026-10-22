@@ -11,6 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { OptionMultiSelect } from '@/components/ui/option-multi-select';
+import { LocationMultiSelect } from '@/components/sections/resume-search/location-multi-select';
+import { INDUSTRY_GROUPS } from '@/lib/industry-taxonomy';
 import { Textarea } from '@/components/ui/textarea';
 import {
   PROFILE_PHOTO_ACCEPT,
@@ -37,7 +40,33 @@ const languageOptions = [
 
 const proficiencyOptions = ['Beginner', 'Elementary', 'Conversational', 'Professional Working', 'Proficient', 'Fluent', 'Native / Bilingual'];
 const workplacePreferenceOptions = ['REMOTE', 'HYBRID', 'ONSITE'];
-const employmentPreferenceOptions = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'];
+const employmentPreferenceOptions = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN', 'FREELANCE'];
+const employmentPreferenceLabels = {
+  FULL_TIME: 'Full time',
+  PART_TIME: 'Part time',
+  CONTRACT: 'Contract',
+  INTERN: 'Intern',
+  FREELANCE: 'Freelancer',
+};
+const MAX_PREFERRED_LOCATIONS = 3;
+const industryGroups = INDUSTRY_GROUPS.map((entry) => ({ label: entry.group, options: entry.industries }));
+const companySizeGroups = [{
+  label: '',
+  options: [
+    'Startup (1-50 employees)',
+    'Small (51-200 employees)',
+    'Mid-size (201-1,000 employees)',
+    'Large (1,001-5,000 employees)',
+    'Enterprise (5,000+ employees)',
+  ],
+}];
+const workAuthorizationOptions = [
+  { value: 'REQUIRED', label: 'Required' },
+  { value: 'NOT_REQUIRED', label: 'Not required' },
+];
+function workAuthorizationLabel(value) {
+  return workAuthorizationOptions.find((option) => option.value === value)?.label || value || '';
+}
 const ctcUnitOptions = [
   { value: 'LAKH_PER_ANNUM', label: 'Lakh per annum' },
   { value: 'CRORE_PER_ANNUM', label: 'Crore per annum' },
@@ -220,11 +249,11 @@ function StructuredEditorCard({ title, children, onRemove, removeLabel = 'Remove
   );
 }
 
-function CtcInputGroup({ amountLabel, amountValue, unitValue, onAmountChange, onUnitChange, error, helperText }) {
+function CtcInputGroup({ amountLabel, amountValue, unitValue, onAmountChange, onUnitChange, error, helperText, compact = false, extra = null }) {
   return (
     <div className="grid gap-2">
       <p className="text-sm font-medium text-[var(--color-text)]">{amountLabel}</p>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+      <div className={compact ? 'grid gap-3 md:grid-cols-[150px_200px_170px]' : 'grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]'}>
         <Input
           label="Amount"
           type="number"
@@ -237,6 +266,7 @@ function CtcInputGroup({ amountLabel, amountValue, unitValue, onAmountChange, on
         <Select label="Unit" value={unitValue} onChange={onUnitChange}>
           {ctcUnitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </Select>
+        {extra}
       </div>
       <p className="text-sm text-[var(--color-text-muted)]">{helperText}</p>
     </div>
@@ -270,21 +300,21 @@ function buildValues(profile) {
   return {
     fullName: profile.fullName || '',
     phoneNumber: profile.phoneNumber || '',
-    currentTitle: profile.currentTitle || '',
+    // Title and designation are one field now; older profiles may only have the designation.
+    currentTitle: profile.currentTitle || profile.currentDesignation || '',
     headline: profile.headline || '',
     location: profile.location || '',
     currentEmployer: profile.currentEmployer || '',
-    currentDesignation: profile.currentDesignation || '',
     totalExperience: profile.totalExperience || 0,
     noticePeriodDays: profile.noticePeriodDays || '',
     employmentStatus: profile.employmentStatus || 'EMPLOYED',
     lastWorkingDate: profile.lastWorkingDate ? String(profile.lastWorkingDate).slice(0, 10) : '',
     preferredRoles: commaSeparatedValue(profile.preferredRoles),
-    preferredIndustries: commaSeparatedValue(profile.preferredIndustries),
-    preferredCompanySizes: commaSeparatedValue(profile.preferredCompanySizes),
-    preferredLocations: commaSeparatedValue(profile.preferredLocations),
+    preferredIndustries: normalizeStringArray(profile.preferredIndustries),
+    preferredCompanySizes: normalizeStringArray(profile.preferredCompanySizes),
+    preferredLocations: normalizeStringArray(profile.preferredLocations).slice(0, MAX_PREFERRED_LOCATIONS),
     willingToRelocate: Boolean(profile.willingToRelocate),
-    minExpectedSalary: profile.minExpectedSalary || '',
+    salaryNegotiable: profile.salaryNegotiable == null ? '' : (profile.salaryNegotiable ? 'YES' : 'NO'),
     preferredCurrency: profile.preferredCurrency || '',
     workAuthorization: profile.workAuthorization || '',
     travelWillingness: profile.travelWillingness || '',
@@ -558,10 +588,9 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
             </div>
             <Input label="Full name" value={values.fullName} onChange={(event) => updateValue('fullName', event.target.value)} error={errors.fullName.error} />
             <Input label="Phone number" value={values.phoneNumber} onChange={(event) => updateValue('phoneNumber', event.target.value)} error={errors.phoneNumber.error} />
-            <Input label="Current title" value={values.currentTitle} onChange={(event) => updateValue('currentTitle', event.target.value)} error={errors.currentTitle.error} />
+            <Input label="Current title / designation" value={values.currentTitle} onChange={(event) => updateValue('currentTitle', event.target.value)} error={errors.currentTitle.error} />
             <Input label="Current location" value={values.location} onChange={(event) => updateValue('location', event.target.value)} error={errors.location.error} />
             <Input label="Current employer" value={values.currentEmployer} onChange={(event) => updateValue('currentEmployer', event.target.value)} error={errors.currentEmployer.error} />
-            <Input label="Current designation" value={values.currentDesignation} onChange={(event) => updateValue('currentDesignation', event.target.value)} error={errors.currentDesignation.error} />
             <Input label="Total experience (years)" type="number" min="0" value={values.totalExperience} onChange={(event) => updateValue('totalExperience', event.target.value)} error={errors.totalExperience.error} />
             <div className="md:col-span-2">
               <CtcInputGroup
@@ -688,11 +717,36 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
           <div className="grid gap-4">
             <div className="grid gap-4 md:grid-cols-2">
               <Input label="Preferred roles" value={values.preferredRoles} onChange={(event) => updateValue('preferredRoles', event.target.value)} error={errors.preferredRoles.error} />
-              <Input label="Preferred locations" value={values.preferredLocations} onChange={(event) => updateValue('preferredLocations', event.target.value)} error={errors.preferredLocations.error} />
-              <Input label="Preferred industries" value={values.preferredIndustries} onChange={(event) => updateValue('preferredIndustries', event.target.value)} />
-              <Input label="Preferred company sizes" value={values.preferredCompanySizes} onChange={(event) => updateValue('preferredCompanySizes', event.target.value)} />
+              <div className="grid gap-1">
+                <LocationMultiSelect
+                  label="Preferred locations"
+                  placeholder="Search and select up to 3 locations"
+                  values={values.preferredLocations}
+                  onChange={(next) => updateValue('preferredLocations', next)}
+                  maxItems={MAX_PREFERRED_LOCATIONS}
+                  includeCountries
+                />
+                {errors.preferredLocations.error ? <p className="text-sm text-red-600">{errors.preferredLocations.error}</p> : null}
+              </div>
+              <OptionMultiSelect
+                label="Preferred industries"
+                placeholder="Select industries"
+                searchPlaceholder="Search industries"
+                groups={industryGroups}
+                values={values.preferredIndustries}
+                onChange={(next) => updateValue('preferredIndustries', next)}
+              />
+              <OptionMultiSelect
+                label="Preferred company size"
+                placeholder="Select company size"
+                searchPlaceholder="Search company size"
+                groups={companySizeGroups}
+                values={values.preferredCompanySizes}
+                onChange={(next) => updateValue('preferredCompanySizes', next)}
+              />
               <div className="md:col-span-2">
                 <CtcInputGroup
+                  compact
                   amountLabel="Expected annual CTC"
                   amountValue={ctcValues.expected.amount}
                   unitValue={ctcValues.expected.unit}
@@ -700,6 +754,13 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
                   onUnitChange={(event) => updateCtcValue('expected', 'unit', event.target.value)}
                   error={getCtcFieldErrorMessage(errors.expectedCtcLpa.error, 'expected annual CTC')}
                   helperText="Enter your expected annual package."
+                  extra={(
+                    <Select label="Salary negotiable" value={values.salaryNegotiable} onChange={(event) => updateValue('salaryNegotiable', event.target.value)}>
+                      <option value="">Select</option>
+                      <option value="YES">Yes</option>
+                      <option value="NO">No</option>
+                    </Select>
+                  )}
                 />
               </div>
               <Select label="Availability" value={values.availability} onChange={(event) => updateValue('availability', event.target.value)} error={errors.availability.error}>
@@ -722,9 +783,11 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
                 <option value="PUBLIC">Public</option>
               </Select>
               <Input label="Notice period (days)" type="number" min="0" value={values.noticePeriodDays} onChange={(event) => updateValue('noticePeriodDays', event.target.value)} error={errors.noticePeriodDays.error} />
-              <Input label="Minimum expected salary" type="number" min="0" value={values.minExpectedSalary} onChange={(event) => updateValue('minExpectedSalary', event.target.value)} />
               <Input label="Preferred currency" value={values.preferredCurrency} onChange={(event) => updateValue('preferredCurrency', event.target.value)} />
-              <Input label="Work authorization" value={values.workAuthorization} onChange={(event) => updateValue('workAuthorization', event.target.value)} />
+              <Select label="Work authorization" value={values.workAuthorization} onChange={(event) => updateValue('workAuthorization', event.target.value)}>
+                <option value="">Select</option>
+                {workAuthorizationOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </Select>
               <Input label="Travel willingness" value={values.travelWillingness} onChange={(event) => updateValue('travelWillingness', event.target.value)} />
             </div>
             <div className="flex flex-wrap gap-6">
@@ -743,7 +806,7 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
               <p className="text-sm font-semibold text-[var(--color-text)]">Employment preferences</p>
               <div className="flex flex-wrap gap-4">
                 {employmentPreferenceOptions.map((option) => (
-                  <Checkbox key={option} label={option.replaceAll('_', ' ')} checked={employmentPreferences.includes(option)} onChange={() => setEmploymentPreferences((current) => toggleSelection(current, option))} />
+                  <Checkbox key={option} label={employmentPreferenceLabels[option] || option.replaceAll('_', ' ')} checked={employmentPreferences.includes(option)} onChange={() => setEmploymentPreferences((current) => toggleSelection(current, option))} />
                 ))}
               </div>
             </div>
@@ -808,16 +871,16 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
       <input type="hidden" name="headline" value={values.headline} />
       <input type="hidden" name="currentTitle" value={values.currentTitle} />
       <input type="hidden" name="currentEmployer" value={values.currentEmployer} />
-      <input type="hidden" name="currentDesignation" value={values.currentDesignation} />
+      <input type="hidden" name="currentDesignation" value={values.currentTitle} />
       <input type="hidden" name="location" value={values.location} />
       <input type="hidden" name="totalExperience" value={values.totalExperience} />
       <input type="hidden" name="skills" value={skillInput} />
       <input type="hidden" name="preferredRoles" value={values.preferredRoles} />
-      <input type="hidden" name="preferredIndustries" value={values.preferredIndustries} />
-      <input type="hidden" name="preferredCompanySizes" value={values.preferredCompanySizes} />
-      <input type="hidden" name="preferredLocations" value={values.preferredLocations} />
+      <input type="hidden" name="preferredIndustriesJson" value={JSON.stringify(values.preferredIndustries)} />
+      <input type="hidden" name="preferredCompanySizesJson" value={JSON.stringify(values.preferredCompanySizes)} />
+      <input type="hidden" name="preferredLocationsJson" value={JSON.stringify(values.preferredLocations)} />
+      <input type="hidden" name="salaryNegotiable" value={values.salaryNegotiable === 'YES' ? 'true' : values.salaryNegotiable === 'NO' ? 'false' : ''} />
       <input type="hidden" name="willingToRelocate" value={String(values.willingToRelocate)} />
-      <input type="hidden" name="minExpectedSalary" value={values.minExpectedSalary} />
       <input type="hidden" name="preferredCurrency" value={values.preferredCurrency} />
       <input type="hidden" name="workAuthorization" value={values.workAuthorization} />
       <input type="hidden" name="travelWillingness" value={values.travelWillingness} />
@@ -875,8 +938,11 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {[
             ['Preferred roles', readOnlyValue(values.preferredRoles)],
-            ['Preferred locations', readOnlyValue(values.preferredLocations)],
-            ['Expected annual CTC', formatCandidateAnnualCtc(normalizedExpectedCtcLpa)],
+            ['Preferred locations', readOnlyValue(values.preferredLocations.join(', '))],
+            ['Preferred industries', readOnlyValue(values.preferredIndustries.join(', '))],
+            ['Preferred company size', readOnlyValue(values.preferredCompanySizes.join(', '))],
+            ['Expected annual CTC', `${formatCandidateAnnualCtc(normalizedExpectedCtcLpa)}${values.salaryNegotiable ? (values.salaryNegotiable === 'YES' ? ' · Negotiable' : ' · Not negotiable') : ''}`],
+            ['Work authorization', readOnlyValue(workAuthorizationLabel(values.workAuthorization))],
             ['Availability', readOnlyValue(values.availability.replaceAll('_', ' '))],
             ['Notice period', values.noticePeriodDays ? `${values.noticePeriodDays} days` : 'Not added'],
             ['Employment status', readOnlyValue(values.employmentStatus.replaceAll('_', ' '))],
@@ -892,7 +958,7 @@ export function CandidateProfileForm({ profile, activeSection: controlledActiveS
           </div>
           <div className="rounded-2xl border border-[var(--line)] p-4 md:col-span-2 xl:col-span-2">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">Employment preferences</p>
-            <div className="mt-3"><TagList items={employmentPreferences.map((item) => item.replaceAll('_', ' '))} /></div>
+            <div className="mt-3"><TagList items={employmentPreferences.map((item) => employmentPreferenceLabels[item] || item.replaceAll('_', ' '))} /></div>
           </div>
         </div>
       </SectionCard>

@@ -257,6 +257,7 @@ enum EmploymentType {
   PART_TIME
   CONTRACT
   INTERN
+  FREELANCE
 }
 
 enum WorkplaceType {
@@ -1503,6 +1504,7 @@ model CandidateProfile {
   notifyForMarketing             Boolean                      @default(false)
   willingToRelocate              Boolean                      @default(false)
   minExpectedSalary              Int?
+  salaryNegotiable               Boolean?
   preferredCurrency              String?
   workAuthorization              String?
   requiresVisaSponsorship        Boolean                      @default(false)

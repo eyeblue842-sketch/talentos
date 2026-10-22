@@ -129,6 +129,12 @@ describe('CandidateProfileForm', () => {
     expect(screen.getAllByText(/expected annual ctc/i).length).toBeGreaterThan(0);
     expect(screen.getAllByLabelText(/^amount$/i)[0]).toBeInTheDocument();
     expect(screen.getByLabelText(/availability/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/preferred industries/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/preferred company size/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/salary negotiable/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/work authorization/i).tagName).toBe('SELECT');
+    expect(screen.queryByLabelText(/minimum expected salary/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/freelancer/i)).toBeInTheDocument();
   });
 
   test('resume headline card contains only the headline and profile summary appears immediately after it', () => {
@@ -221,7 +227,8 @@ describe('CandidateProfileForm', () => {
     expect(screen.getByLabelText(/phone number/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/current title/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/current employer/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/current designation/i)).toBeInTheDocument();
+    // Current title and designation are one merged field now.
+    expect(screen.queryByLabelText(/^current designation$/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/current location/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/total experience/i)).toBeInTheDocument();
     expect(screen.getByText(/current annual ctc/i)).toBeInTheDocument();

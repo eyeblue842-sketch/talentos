@@ -100,10 +100,22 @@ export function LocationMultiSelect({
   label,
   placeholder = 'Search city, district or state',
   values = [],
-  onChange,
+  onChange: onChangeProp,
   includeCountries = false,
+  maxItems = null,
 }) {
   const [open, setOpen] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
+
+  // With a maxItems cap, a change that would exceed it is rejected and a notice is shown.
+  function onChange(next) {
+    if (maxItems && next.length > maxItems) {
+      setLimitReached(true);
+      return;
+    }
+    setLimitReached(false);
+    onChangeProp(next);
+  }
   const [query, setQuery] = useState('');
   const [expandedStates, setExpandedStates] = useState(() => new Set());
   const [internationalOpen, setInternationalOpen] = useState(false);
@@ -155,6 +167,7 @@ export function LocationMultiSelect({
         <button
           type="button"
           aria-haspopup="listbox"
+          aria-label={typeof label === 'string' ? label : undefined}
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
           className={cn(
@@ -197,6 +210,11 @@ export function LocationMultiSelect({
               placeholder="Search city, district or state"
               className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(79,156,249,0.22)]"
             />
+            {maxItems ? (
+              <p className={cn('mt-2 text-xs', limitReached ? 'font-semibold text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]')} role={limitReached ? 'alert' : undefined}>
+                {limitReached ? `You can select up to ${maxItems} locations. Remove one to add another.` : `Select up to ${maxItems} locations (${values.length}/${maxItems} selected).`}
+              </p>
+            ) : null}
             <div className="mt-2 max-h-80 overflow-y-auto">
               {treeGroups.length === 0 && countryMatches.length === 0 ? (
                 <p className="px-2 py-3 text-sm text-[var(--color-text-muted)]">No matching locations.</p>

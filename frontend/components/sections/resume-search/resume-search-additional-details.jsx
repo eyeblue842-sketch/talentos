@@ -31,7 +31,7 @@ export function ResumeSearchAdditionalDetails({ formState, onPatch }) {
             <div>
               <p className="mb-2 text-sm font-semibold text-[var(--color-text)]">Employment Type</p>
               <div className="grid gap-2 text-sm text-[var(--color-text-secondary)]">
-                {[['FULL_TIME', 'Full Time'], ['PART_TIME', 'Part Time'], ['INTERN', 'Intern']].map(([value, label]) => (
+                {[['FULL_TIME', 'Full Time'], ['PART_TIME', 'Part Time'], ['CONTRACT', 'Contract'], ['INTERN', 'Intern'], ['FREELANCE', 'Freelancer']].map(([value, label]) => (
                   <label key={value} className="flex items-center gap-2">
                     <input type="checkbox" checked={formState.employmentTypes?.includes(value)} onChange={(event) => onPatch({ employmentTypes: event.target.checked ? [...(formState.employmentTypes || []), value] : (formState.employmentTypes || []).filter((item) => item !== value) })} className="h-4 w-4 accent-[var(--color-primary)]" />
                     {label}

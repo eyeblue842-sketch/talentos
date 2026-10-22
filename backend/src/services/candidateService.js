@@ -91,6 +91,7 @@ function maybeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const MAX_PREFERRED_LOCATIONS = 3;
 const PROFILE_PHOTO_PREFIX = 'candidate-profile-photos';
 const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const PROFILE_PHOTO_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -594,6 +595,7 @@ function buildSettingsResponse(profile) {
     workplacePreferences: profile.workplacePreferences,
     employmentPreferences: profile.employmentPreferences,
     minExpectedSalary: profile.minExpectedSalary,
+    salaryNegotiable: profile.salaryNegotiable,
     preferredCurrency: profile.preferredCurrency,
     availability: profile.availability,
     noticePeriodDays: profile.noticePeriodDays,
@@ -658,7 +660,9 @@ function scoreRecommendedJob(profile, job) {
     score += skillOverlap * 18;
     reasons.push('Matches your skills');
   }
-  if (preferredLocations.includes(location)) {
+  // Preferred locations are saved as "City, State"; a job located just in "City" should still match.
+  const preferredCities = preferredLocations.map((item) => item.split(',')[0].trim());
+  if (preferredLocations.includes(location) || preferredCities.some((city) => city && location.includes(city))) {
     score += 16;
     reasons.push('Matches your preferred location');
   } else if (preferredLocations.includes('remote') && location.includes('remote')) {
@@ -730,9 +734,10 @@ export async function updateCandidateSelfProfile(candidateId, payload, requestMe
     preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
     preferredIndustries: payload.preferredIndustries ? normalizeStringArray(payload.preferredIndustries) : undefined,
     preferredCompanySizes: payload.preferredCompanySizes ? normalizeStringArray(payload.preferredCompanySizes) : undefined,
-    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations).slice(0, MAX_PREFERRED_LOCATIONS) : undefined,
     willingToRelocate: payload.willingToRelocate ?? undefined,
     minExpectedSalary: payload.minExpectedSalary ?? undefined,
+    salaryNegotiable: payload.salaryNegotiable === undefined ? undefined : payload.salaryNegotiable,
     preferredCurrency: payload.preferredCurrency === undefined ? undefined : (payload.preferredCurrency || null),
     workAuthorization: payload.workAuthorization === undefined ? undefined : (payload.workAuthorization || null),
     requiresVisaSponsorship: payload.requiresVisaSponsorship ?? undefined,
@@ -911,11 +916,12 @@ export async function updateCandidateSettings(candidateId, payload, requestMeta 
     preferredRoles: payload.preferredRoles ? normalizeStringArray(payload.preferredRoles) : undefined,
     preferredIndustries: payload.preferredIndustries ? normalizeStringArray(payload.preferredIndustries) : undefined,
     preferredCompanySizes: payload.preferredCompanySizes ? normalizeStringArray(payload.preferredCompanySizes) : undefined,
-    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations).slice(0, MAX_PREFERRED_LOCATIONS) : undefined,
     willingToRelocate: payload.willingToRelocate,
     workplacePreferences: payload.workplacePreferences,
     employmentPreferences: payload.employmentPreferences,
     minExpectedSalary: payload.minExpectedSalary ?? undefined,
+    salaryNegotiable: payload.salaryNegotiable === undefined ? undefined : payload.salaryNegotiable,
     preferredCurrency: payload.preferredCurrency || null,
     availability: payload.availability,
     noticePeriodDays: payload.noticePeriodDays ?? undefined,
@@ -1419,7 +1425,7 @@ export async function saveCandidateOnboarding(candidateId, payload, requestMeta 
     totalExperience: payload.totalExperience,
     skills: payload.primarySkills ? normalizeStringArray(payload.primarySkills) : undefined,
     employmentStatus: payload.employmentStatus || null,
-    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations) : undefined,
+    preferredLocations: payload.preferredLocations ? normalizeStringArray(payload.preferredLocations).slice(0, MAX_PREFERRED_LOCATIONS) : undefined,
     workplacePreferences: payload.workplacePreferences || undefined,
     noticePeriodDays: payload.noticePeriodDays ?? undefined,
     profileVisibility: payload.profileVisibility || undefined,

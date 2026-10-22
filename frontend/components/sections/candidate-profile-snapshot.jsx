@@ -39,7 +39,9 @@ function InfoRow({ icon: Icon, label, value, verified = false }) {
   );
 }
 
-export function CandidateProfileSnapshot({ snapshot, onEdit }) {
+// On the profile page the pencil opens the editor in place (onEdit); elsewhere, such as the
+// dashboard, it links to the profile page with the editor already open (editHref).
+export function CandidateProfileSnapshot({ snapshot, onEdit, editHref = '/candidate/profile?edit=profile-snapshot' }) {
   if (!snapshot) return null;
   const profilePhotoSrc = resolveCandidateProfilePhotoSrc(snapshot.profileImageUrl, snapshot.updatedAt);
 
@@ -74,14 +76,24 @@ export function CandidateProfileSnapshot({ snapshot, onEdit }) {
                 <h1 className="font-[var(--font-display)] text-3xl font-semibold text-[var(--color-text)]">
                   {snapshot.fullName || 'Not added'}
                 </h1>
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  aria-label="Edit profile snapshot"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--color-text-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]"
-                >
-                  <PencilLine size={16} aria-hidden="true" />
-                </button>
+                {onEdit ? (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    aria-label="Edit profile snapshot"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--color-text-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]"
+                  >
+                    <PencilLine size={16} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <Link
+                    href={editHref}
+                    aria-label="Edit profile snapshot"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--color-text-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]"
+                  >
+                    <PencilLine size={16} aria-hidden="true" />
+                  </Link>
+                )}
               </div>
               <p className="mt-2 text-lg font-medium text-[var(--color-text)]">{snapshot.currentTitle || 'Not added'}</p>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">

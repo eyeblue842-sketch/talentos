@@ -150,7 +150,7 @@ export const semanticSearchFilterSchema = z.object({
   workAuthorization: z.string().trim().min(1).max(120).nullable().optional(),
   workPermitCountries: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
   jobTypes: z.array(z.enum(['PERMANENT', 'TEMPORARY', 'CONTRACT'])).max(3).default([]),
-  employmentTypes: z.array(z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'])).max(4).default([]),
+  employmentTypes: z.array(z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN', 'FREELANCE'])).max(5).default([]),
   displayCandidateType: z.enum(['ALL', 'NEW_REGISTRATIONS', 'MODIFIED']).default('ALL'),
   activeWithin: z.coerce.number().int().min(1).max(366).nullable().optional(),
   sortBy: z.enum(['relevance', 'experience', 'resumeFreshness']).default('relevance'),
