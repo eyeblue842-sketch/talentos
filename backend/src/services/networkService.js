@@ -1037,8 +1037,13 @@ export async function searchPeople(actor, filters = {}) {
 export async function getNetworkSuggestions(actor, filters = {}) {
   const requestedPage = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(filters.pageSize) || DEFAULT_PAGE_SIZE));
-  const [acceptedConnectionIds, blockedRows, pool] = await Promise.all([
+  const [acceptedConnectionIds, pendingRows, blockedRows, pool] = await Promise.all([
     getAcceptedConnectionIds(actor.id),
+    // People with a request already pending in either direction are not "suggestions".
+    prisma.userConnection.findMany({
+      where: { status: 'PENDING', OR: [{ requesterUserId: actor.id }, { receiverUserId: actor.id }] },
+      select: { requesterUserId: true, receiverUserId: true },
+    }),
     prisma.userBlock.findMany({
       where: {
         OR: [
@@ -1070,9 +1075,11 @@ export async function getNetworkSuggestions(actor, filters = {}) {
   ]);
 
   const blockedIds = new Set(blockedRows.flatMap((row) => [row.blockerUserId, row.blockedUserId]));
+  const pendingIds = new Set(pendingRows.flatMap((row) => [row.requesterUserId, row.receiverUserId]));
   const candidates = pool.filter((user) => (
     user.id !== actor.id
     && !acceptedConnectionIds.has(user.id)
+    && !pendingIds.has(user.id)
     && !blockedIds.has(user.id)
     && canSearchTarget(actor, user)
     && canSendConnectionRequest(actor, user)

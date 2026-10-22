@@ -58,7 +58,9 @@ export default async function CandidateNetworkPage({ searchParams }) {
         description="See updates from companies you follow, share your own, grow your network, and message your connections — all in one place."
         breadcrumb={[{ label: 'Candidate' }, { label: 'Network' }]}
       />
+      {/* key: client-side navigation (e.g. the Message link) must re-apply the requested tab instead of keeping the old one */}
       <Tabs
+        key={`${defaultTab}:${activeConversationId}`}
         defaultValue={defaultTab}
         items={[
           {

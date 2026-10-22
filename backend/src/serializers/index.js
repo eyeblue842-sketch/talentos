@@ -1106,6 +1106,14 @@ function resolveCandidateNotificationLink(notification) {
     return jobSlug ? `/jobs/${jobSlug}` : '/candidate/saved-jobs';
   }
 
+  // Network activity: likes/shares on the candidate's post, and connection requests.
+  if (notification.entityType === 'FeedPost') {
+    return '/candidate/network';
+  }
+  if (notification.entityType === 'UserConnection') {
+    return '/candidate/network?tab=network';
+  }
+
   if (destination === 'SAVED_JOBS') {
     return '/candidate/saved-jobs';
   }
