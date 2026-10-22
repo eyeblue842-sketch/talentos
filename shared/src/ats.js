@@ -5,6 +5,9 @@ export const pipelineStageSchema = z.enum([
   'SHORTLISTED',
   'INTERVIEW_SCHEDULED',
   'SELECTED',
+  'OFFER',
+  'HIRED',
+  'OFFER_DECLINED',
   'REJECTED',
 ]);
 
