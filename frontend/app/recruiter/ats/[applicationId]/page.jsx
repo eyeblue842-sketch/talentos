@@ -14,6 +14,7 @@ import {
   getOrganisationMembers,
   getRecruiterApplicationV2,
   getRecruiterOffersByApplication,
+  getRecruiterOfferTemplates,
   getResumeIntelligence,
 } from '@/lib/api';
 import { RecruiterApplicationIntelligencePanel } from '@/components/sections/recruiter-application-intelligence-panel';
@@ -68,6 +69,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
   let organisation = null;
   let members = [];
   let offers = [];
+  let offerTemplates = [];
   let resumeIntelligence = null;
   let matchIntelligence = null;
   let interviewIntelligence = null;
@@ -82,6 +84,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
       getOrganisationMembers(),
     ]);
     offers = application?.applicationId ? await getRecruiterOffersByApplication(application.applicationId) : [];
+    offerTemplates = await getRecruiterOfferTemplates().catch(() => []);
     if (application) {
       screeningCalls = await getApplicationScreeningCalls(application.applicationId || application.id).catch(() => null);
     }
@@ -120,7 +123,7 @@ export default async function RecruiterApplicationDetailPage({ params }) {
             initialInterview={interviewIntelligence}
           />
         ) : null}
-        {application ? <OfferStatusCard offers={offers} applicationId={application.applicationId || application.id} /> : null}
+        {application ? <OfferStatusCard offers={offers} applicationId={application.applicationId || application.id} candidateName={application.candidate?.fullName} stage={application.pipelineStage || application.stage} templates={offerTemplates} /> : null}
         {application && screeningCalls ? (
           <AiScreeningPanel applicationId={application.applicationId || application.id} calls={screeningCalls} />
         ) : null}

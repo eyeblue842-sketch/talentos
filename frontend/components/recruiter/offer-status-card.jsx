@@ -1,10 +1,12 @@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { CreateOfferButton } from '@/components/recruiter/create-offer-button';
 
 // Compact offer summary shown on the application detail page. The full offer
 // form lives on the ATS "Offer" stage (move-to-offer popup), so this only
 // surfaces whether an offer exists, its status, amount, and a download link.
-export function OfferStatusCard({ offers = [], applicationId }) {
+export function OfferStatusCard({ offers = [], applicationId, candidateName = '', stage = '', templates = [] }) {
+  const canGenerate = ['SELECTED', 'OFFER'].includes(stage);
   const offer = offers[0] || null;
   return (
     <Card>
@@ -20,7 +22,14 @@ export function OfferStatusCard({ offers = [], applicationId }) {
           <a href={`/api/offers/${offer.id}/document`} className="mt-1 inline-flex font-semibold text-[var(--brand)]">Download offer letter</a>
         </div>
       ) : (
-        <p className="mt-4 text-sm text-[var(--muted)]">No offer has been created. Move this candidate to the <span className="font-semibold">Offer</span> stage in the ATS pipeline to generate one.</p>
+        canGenerate ? (
+          <div className="mt-4">
+            <p className="text-sm text-[var(--muted)]">No offer letter has been generated yet.</p>
+            <CreateOfferButton applicationId={applicationId} candidateName={candidateName} templates={templates} />
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-[var(--muted)]">No offer has been created. Move this candidate to the <span className="font-semibold">Selected</span> stage to generate an offer letter.</p>
+        )
       )}
     </Card>
   );
