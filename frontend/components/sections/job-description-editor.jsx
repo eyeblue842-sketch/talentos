@@ -55,7 +55,7 @@ export function JobDescriptionEditor({
         label="Role overview"
         value={value.roleOverview}
         onChange={(event) => onFieldChange('roleOverview', event.target.value)}
-        helpText="2-3 role-specific sentences describing the role."
+        helpText="5-8 role-specific sentences describing the role."
         error={errors.roleOverview}
         disabled={disabled}
         textareaClassName="min-h-32"

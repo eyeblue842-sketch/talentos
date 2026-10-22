@@ -105,8 +105,8 @@ Rules:
 - Return valid JSON only.
 - Return only the schema fields. Do not include jobId, title, department, location, seniority, employmentType, or other metadata fields.
 - openingSummary is a concise candidate-facing introduction written as prose (not a list), using only supplied facts.
-- roleOverview must be 2-3 meaningful, role-specific sentences.
-- keyResponsibilities must be useful role-specific statements, not generic filler.
+- roleOverview must be 5-8 meaningful, role-specific sentences (minimum 5) covering the purpose of the role, the team or business context, the main focus areas, the working setup (only if supplied) and the impact expected. Use only supplied facts; do not pad with generic filler.
+- keyResponsibilities must be useful role-specific statements, not generic filler. Provide at least 5 responsibilities when the supplied facts support them.
 - requiredQualifications and preferredQualifications are non-authoritative suggestions only; the application copies recruiter-confirmed structured skills directly from the job record. If you include suggestions, they must come only from recruiter input or clearly confirmed structured facts. Do not invent extra items to reach a count; return fewer and add a missingFields note when source facts are thin. When no preferred qualifications are supported by the facts, return an empty array - never a placeholder.
 - additionalSections is for genuinely supplied facts that do not fit the fixed sections; return [] when none and never invent a section to fill space.
 - Do not produce a closing invitation, "apply now" prose, or any call to action - the product renders its own Apply button.

@@ -101,11 +101,11 @@ export const canonicalJobDescriptionOutputShape = {
 
 export const canonicalJobDescriptionOutputSchema = z.object(canonicalJobDescriptionOutputShape).strict().superRefine((value, ctx) => {
   const sentences = countSentences(value.roleOverview);
-  if (sentences < 2 || sentences > 3 || !roleSpecificTerms.test(value.roleOverview)) {
+  if (sentences < 2 || sentences > 8 || !roleSpecificTerms.test(value.roleOverview)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['roleOverview'],
-      message: 'Role overview must be 2-3 meaningful, role-specific sentences.',
+      message: 'Role overview must be 2-8 meaningful, role-specific sentences.',
     });
   }
 
@@ -209,7 +209,7 @@ export const canonicalJobDescriptionJsonSchema = Object.freeze({
       JOB_DESCRIPTION_FIELD_LIMITS.openingSummary,
     ),
     roleOverview: textFieldSchema(
-      'Role overview. Write 2-3 meaningful, role-specific sentences using only supplied job or requisition facts.',
+      'Role overview. Write 5-8 meaningful, role-specific sentences using only supplied job or requisition facts.',
       JOB_DESCRIPTION_FIELD_LIMITS.roleOverview,
     ),
     keyResponsibilities: listFieldSchema(
