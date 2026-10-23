@@ -284,7 +284,7 @@ export function sanitizeSkillList(skills) {
     const key = skill.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    if (out.length < 40) out.push(skill);
+    if (out.length < 80) out.push(skill);
   };
   for (const raw of skills) {
     // A single entry may actually be several bullet-joined skills.

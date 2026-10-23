@@ -39,6 +39,21 @@ export function buildDbWhere(filters = {}) {
       { currentEmployer: { contains: keyword, mode: 'insensitive' } },
       { summary: { contains: keyword, mode: 'insensitive' } },
     );
+    // Skills live in array columns, so the keyword (a skill such as "Python", or several separated by
+    // commas) is matched against them too. Array matching is exact, so try the usual spellings.
+    const skillTerms = [...new Set([keyword, ...keyword.split(/[,;|\n]+/)].map((term) => term.trim()).filter((term) => term.length >= 2 && term.length <= 40))];
+    const skillVariants = [...new Set(skillTerms.flatMap((term) => [
+      term,
+      term.toLowerCase(),
+      term.toUpperCase(),
+      term.replace(/\b\w/g, (character) => character.toUpperCase()),
+      term.charAt(0).toUpperCase() + term.slice(1).toLowerCase(),
+    ]))];
+    if (skillVariants.length) {
+      for (const column of ['skills', 'frameworks', 'tools', 'databases', 'cloudPlatforms', 'functionalSkills']) {
+        or.push({ [column]: { hasSome: skillVariants } });
+      }
+    }
     // Name search is order- and separator-independent: match candidates whose
     // full name contains EVERY token of the keyword (e.g. "pillai, Vinoj" or
     // "Vinoj Pillai" both find "Vinoj Pillai New"). Covers multi-word names

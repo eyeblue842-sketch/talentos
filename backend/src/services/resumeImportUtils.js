@@ -1,3 +1,4 @@
+import { parseAnchoredExperience } from './resumeExperienceParser.js';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import yauzl from 'yauzl';
@@ -867,12 +868,25 @@ function prepareStructuredResumeText(text) {
   let normalized = String(text || '').split('\u0000').join(' ');
   const headings = [...new Set(Object.values(SECTION_ALIASES).flat())].sort((left, right) => right.length - left.length);
 
-  for (const heading of headings) {
-    for (const variant of headingVariants(heading)) {
-      const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-      normalized = normalized.replace(new RegExp(`\\s+(${escaped})\\s+(?=[A-Z])`, 'g'), `\n$1\n`);
+  // "S K I L L S" -> "SKILLS" (letter-spaced headings)
+  normalized = normalized
+    .split('\n')
+    .map((line) => (/^\s*(?:[A-Z] ){2,}[A-Z]{1,2}\s*$/.test(line) ? line.replace(/ /g, '') : line))
+    .join('\n');
+
+  // Headings are only split out of a line when the text was flattened onto one long line; on a normal
+  // multi-line resume a word such as "Portfolio" inside a contact line must not start a new section.
+  normalized = normalized.split('\n').map((line) => {
+    if (line.length < 220) return line;
+    let flattened = line;
+    for (const heading of headings) {
+      for (const variant of headingVariants(heading)) {
+        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        flattened = flattened.replace(new RegExp(`\\s+(${escaped})\\s+(?=[A-Z])`, 'g'), `\n$1\n`);
+      }
     }
-  }
+    return flattened;
+  }).join('\n');
 
   normalized = normalized
     .replace(/\s+(Project:|Domain:|Responsibilities:|Technologies:|Technology:|Environment:|Role:|Company:|Client:|Duration:|Description:|CGPA:|GPA:)\s*/g, '\n$1 ')
@@ -1297,15 +1311,23 @@ function splitStructuredEntries(lines = [], { isEntryStart } = {}) {
 
 function inferLocation(lines = []) {
   const segments = lines
-    .flatMap((line) => String(line || '').split(/\s*[|•·]\s*/))
-    .map((segment) => segment.replace(/^(?:location|address|city|based in)\s*:\s*/i, '').trim())
+    .flatMap((line) => String(line || '').split(/\s*[|•·\t]\s*|\s{2,}/))
+    // contact details glued to a place ("https://linkedin.com/in/x Mumbai, India") are cut away, not rejected
+    .map((segment) => segment
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/\b(?:www\.|linkedin\.com|github\.com)\S*/gi, ' ')
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ')
+      .replace(/\(?\+?\d[\d\s().-]{7,}\d/g, ' ')
+      .replace(/^(?:location|address|city|based in)\s*:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim())
     .filter(Boolean);
   const candidate = segments.find((line) => (
     line
-    && !/@/.test(line)
-    && !/^https?:\/\//i.test(line)
-    && !/\+?\d[\d\s().-]{7,}\d/.test(line)
     && /,/.test(line)
+    && !/\d/.test(line)
+    && line.split(/\s+/).length <= 8
+    && !/\b(engineer|developer|analyst|consultant|architect|manager|lead|designer|specialist|administrator|intern|recruiter|summary|experience|skills|education)\b/i.test(line)
     && !isHeadingLine(line)
   ));
 
@@ -1545,6 +1567,13 @@ function parseHeaderTitleCompany(line) {
 }
 
 function parseExperienceEntries(lines = []) {
+  const anchored = parseAnchoredExperience(lines);
+  if (anchored.length) {
+    return anchored.map((entry) => {
+      const summary = stripGibberishTokens(entry.summary);
+      return { ...entry, summary, description: summary, responsibilities: summary ? [summary] : [] };
+    });
+  }
   const entries = splitStructuredEntries(lines, {
     isEntryStart: (line) => looksLikeExperienceHeader(line),
   });
@@ -1589,7 +1618,10 @@ function parseExperienceEntries(lines = []) {
       summary,
       description: summary,
     };
-  }).filter((entry) => entry.title || entry.company), (entry) => JSON.stringify([entry.title, entry.company, entry.startDate, entry.endDate]));
+  }).filter((entry) => (entry.title || entry.company)
+    // the loose legacy header detection can mistake a sentence or bullet for a role header
+    && !(entry.title && (entry.title.length > 90 || entry.title.split(/\s+/).length > 12 || /^[•●➢▪·*-]/.test(entry.title)))),
+  (entry) => JSON.stringify([entry.title, entry.company, entry.startDate, entry.endDate]));
 }
 
 function parseExperienceEntriesFromText(text) {
@@ -1880,6 +1912,16 @@ function classifySkills(skills = []) {
   return categories;
 }
 
+function acceptAnchoredCompany(value) {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized || normalized.length > FIELD_MAX_LENGTHS.currentEmployer) return null;
+  if (/@|https?:\/\/|\d{6,}/i.test(normalized)) return null;
+  if (isDateLikeValue(normalized) || isRolePlaceholderValue(normalized) || hasCorruptedEncodingSignals(normalized)) return null;
+  if (looksLikeJobTitleValue(normalized)) return null;
+  if (normalized.split(/\s+/).length > 9) return null;
+  return normalized;
+}
+
 export function buildDeterministicResumeParse(text, originalFilename) {
   const fullName = inferFullName(text, originalFilename);
   const email = matchEmail(text);
@@ -1898,7 +1940,15 @@ export function buildDeterministicResumeParse(text, originalFilename) {
   const projectEntries = parseProjectEntries(sections.projects);
   const languageEntries = parseLanguageEntries(sections.languages);
   const headerLocation = inferLocation(sections.header);
-  const locationData = headerLocation.location ? headerLocation : inferLocationFromText(text);
+  let locationData = headerLocation.location ? headerLocation : inferLocationFromText(text);
+  if (!locationData.location) {
+    // no stated home location: the place of the current role is the best available signal
+    const roleLocation = sanitizeParsedCandidateField('location', pickCurrentExperienceEntry(fallbackExperienceEntries)?.location);
+    if (roleLocation) {
+      const parts = roleLocation.split(',').map((item) => item.trim()).filter(Boolean);
+      locationData = { location: roleLocation, currentCity: parts[0] || null, currentState: parts[1] || null, currentCountry: parts[2] || null };
+    }
+  }
   const skills = inferSkills(text, sections.skills);
   const classifiedSkills = classifySkills(skills);
   const currentTitle = inferCurrentTitle(sections.header.slice(1, 6), fallbackExperienceEntries)
@@ -1910,7 +1960,9 @@ export function buildDeterministicResumeParse(text, originalFilename) {
   const safeFullName = sanitizeParsedCandidateField('fullName', fullName);
   const safeHeadline = sanitizeParsedCandidateField('headline', currentTitle);
   const currentRole = pickCurrentExperienceEntry(fallbackExperienceEntries);
-  const safeEmployer = sanitizeParsedCandidateField('currentEmployer', currentRole?.company);
+  // The employer comes from the date-anchored role, so it is trusted unless it is clearly not a company name.
+  const safeEmployer = sanitizeParsedCandidateField('currentEmployer', currentRole?.company)
+    || acceptAnchoredCompany(currentRole?.company);
   const safeDesignation = sanitizeParsedCandidateField('currentDesignation', currentRole?.title);
   // Current title and current designation are the same thing: prefer the designation of the
   // current role and fall back to the resume header line.
