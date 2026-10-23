@@ -19,6 +19,7 @@ import {
 import { getSafeIntelligenceRuntimeConfiguration, getSafeResumeAiConfiguration } from './intelligence/services/runtimeConfigurationService.js';
 import { markWorkerStopped, recordHeartbeat } from './services/workerHeartbeatService.js';
 import { RESUME_PARSER_VERSION } from './services/ai/resume-parser.js';
+import { startAiCreditMonitor } from './services/aiCreditMonitor.js';
 
 const workerId = `worker-${crypto.randomBytes(4).toString('hex')}`;
 const workerStartedAt = new Date();
@@ -193,6 +194,8 @@ console.log(JSON.stringify({
 }));
 
 await heartbeat('IDLE');
+
+startAiCreditMonitor();
 
 await Promise.all([
   runSchedulerLoop(),

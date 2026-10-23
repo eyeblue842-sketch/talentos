@@ -1,3 +1,4 @@
+import { getIntelligenceProviderHealth } from '../intelligence/services/providerService.js';
 import { sendSuccess } from '../utils/response.js';
 import { getPlatformOverview, listOrganisations, getOrganisationDetail } from '../services/platformService.js';
 import {
@@ -45,9 +46,30 @@ export async function getPlatformSession(req, res, next) {
   }
 }
 
+// A 5-token probe, cached so reloading the dashboard never spends credits repeatedly.
+const AI_HEALTH_TTL_MS = 5 * 60 * 1000;
+let aiHealthCache = null;
+
+async function getAiProviderStatus() {
+  if (aiHealthCache && Date.now() - aiHealthCache.at < AI_HEALTH_TTL_MS) return aiHealthCache.value;
+  const health = await getIntelligenceProviderHealth();
+  const value = {
+    provider: health.provider || null,
+    model: health.model || null,
+    healthy: Boolean(health.healthy),
+    outOfCredits: !health.healthy && (health.code === 'credit_balance_exhausted' || health.code === 'insufficient_quota' || health.errorType === 'insufficient_quota'),
+    code: health.code || null,
+    message: health.healthy ? null : (health.message || health.reason || null),
+    checkedAt: new Date().toISOString(),
+  };
+  aiHealthCache = { at: Date.now(), value };
+  return value;
+}
+
 export async function getOverview(req, res, next) {
   try {
-    sendSuccess(res, 200, await getPlatformOverview());
+    const [overview, aiProvider] = await Promise.all([getPlatformOverview(), getAiProviderStatus().catch(() => null)]);
+    sendSuccess(res, 200, { ...overview, aiProvider });
   } catch (error) {
     next(error);
   }

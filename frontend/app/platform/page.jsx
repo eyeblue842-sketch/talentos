@@ -49,6 +49,22 @@ export default async function PlatformDashboardPage() {
         <Card><p className="text-sm text-[var(--color-text-secondary)]">{error}</p></Card>
       ) : data ? (
         <>
+          {data.aiProvider && !data.aiProvider.healthy ? (
+            <div role="alert" className="rounded-2xl border border-rose-300 bg-rose-50 p-4">
+              <p className="text-sm font-semibold text-rose-700">
+                {data.aiProvider.outOfCredits ? 'OpenAI credits have run out — recharge now' : 'AI provider is not responding'}
+              </p>
+              <p className="mt-1 text-sm text-rose-700/90">
+                {data.aiProvider.outOfCredits
+                  ? 'AI resume parsing and AI job descriptions are paused (resumes fall back to the basic parser) until credits are added.'
+                  : 'AI features may be falling back to the basic parser.'}
+                {' '}Last checked {new Date(data.aiProvider.checkedAt).toLocaleTimeString()}.
+              </p>
+              {data.aiProvider.outOfCredits ? (
+                <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-full bg-rose-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-rose-700">Open OpenAI billing</a>
+              ) : data.aiProvider.message ? <p className="mt-1 text-xs text-rose-700/80">{data.aiProvider.message}</p> : null}
+            </div>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Organisations" value={data.organisations.total} />
             <Stat label="Paid plans" value={data.organisations.paid} tone="text-emerald-600" />
