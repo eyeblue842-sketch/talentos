@@ -1,4 +1,4 @@
-import { parseAnchoredExperience } from './resumeExperienceParser.js';
+import { isKnownPlaceName, parseAnchoredExperience } from './resumeExperienceParser.js';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import yauzl from 'yauzl';
@@ -760,6 +760,11 @@ function cleanCandidateName(raw, { minTokens = 1 } = {}) {
   // Cut anything from a contact keyword or separator onward (name + "email:"/"|"/"(").
   name = name.split(/\s*(?:e-?mail|ph\.?\s*no|phone|mobile|mob|contact|tel|linkedin|github)\b/i)[0];
   name = name.split(/[|,(/]/)[0].trim();
+  // "Karthik K S Father's Name", "Saravanan Resume" -> the person's name only
+  name = name
+    .replace(/\s+(?:father|mother|husband|guardian)['’]?s?\s+name.*$/i, '')
+    .replace(/\s+(?:resume|cv|curriculum vitae)\s*$/i, '')
+    .trim();
   if (name.length < 2 || name.length > 60) return null;
   if (/@|https?:|\d{3,}/i.test(name)) return null;
   const letters = (name.match(/[A-Za-z]/g) || []).length;
@@ -1322,6 +1327,7 @@ function inferLocation(lines = []) {
       .replace(/\s+/g, ' ')
       .trim())
     .filter(Boolean);
+  const knownPlace = segments.find((line) => line && line.length <= 40 && !/\d/.test(line) && isKnownPlaceName(line) && !/^(remote|hybrid|onsite)$/i.test(line));
   const candidate = segments.find((line) => (
     line
     && /,/.test(line)
@@ -1331,6 +1337,10 @@ function inferLocation(lines = []) {
     && !isHeadingLine(line)
   ));
 
+  if (!candidate && knownPlace) {
+    const words = knownPlace.split(/\s+/);
+    return { location: knownPlace, currentCity: words.length > 1 ? words.slice(0, -1).join(' ') : knownPlace, currentState: null, currentCountry: null };
+  }
   if (!candidate) {
     return { location: null, currentCity: null, currentState: null, currentCountry: null };
   }
@@ -1912,6 +1922,16 @@ function classifySkills(skills = []) {
   return categories;
 }
 
+// "Data Engineer with 3+ years of experience ..." / "As a Data Engineer at IBM ..." -> the role the candidate describes
+// themselves with, for resumes that show no dated role (or a role without a title).
+function inferTitleFromSummaryText(text) {
+  const head = String(text || '').replace(/\s+/g, ' ').slice(0, 1800);
+  const withYears = head.match(/\b((?:[A-Z0-9][A-Za-z0-9.+#&/-]*\s+){0,4}(?:Engineer|Developer|Analyst|Architect|Administrator|Consultant|Manager|Lead|Designer|Specialist|Tester|Scientist|Programmer|Executive|Officer|Recruiter))\s+with\s+(?:over\s+|around\s+|more than\s+|nearly\s+)?\d/);
+  if (withYears) return withYears[1].replace(/^.*\b(?:summary|profile|linkedin|github|portfolio|objective|experience|skills)\b\s*/i, '').replace(/^(?:Results-driven|Dynamic|Experienced|Dedicated|Passionate|Motivated|Detail-oriented|Seasoned|Highly|Skilled)\s+/i, '').trim();
+  const asA = head.match(/\b[Aa]s\s+an?\s+((?:[A-Z0-9][A-Za-z0-9.+#&/-]*\s+){0,4}(?:Engineer|Developer|Analyst|Architect|Administrator|Consultant|Manager|Lead|Designer|Specialist|Tester|Scientist|Programmer|Executive|Officer|Recruiter))\b/);
+  return asA ? asA[1].trim() : null;
+}
+
 function acceptAnchoredCompany(value) {
   const normalized = normalizeWhitespace(value);
   if (!normalized || normalized.length > FIELD_MAX_LENGTHS.currentEmployer) return null;
@@ -1966,7 +1986,9 @@ export function buildDeterministicResumeParse(text, originalFilename) {
   const safeDesignation = sanitizeParsedCandidateField('currentDesignation', currentRole?.title);
   // Current title and current designation are the same thing: prefer the designation of the
   // current role and fall back to the resume header line.
-  const safeCurrentTitle = safeDesignation || sanitizeParsedCandidateField('currentTitle', currentTitle);
+  const safeCurrentTitle = safeDesignation
+    || sanitizeParsedCandidateField('currentTitle', /(summary|profile|linkedin|github|objective|experience|skills|portfolio)/i.test(currentTitle || '') ? null : currentTitle)
+    || sanitizeParsedCandidateField('currentTitle', inferTitleFromSummaryText(text));
   const safeLocation = sanitizeParsedCandidateField('location', locationData.location);
 
   return sanitizeResumeData({

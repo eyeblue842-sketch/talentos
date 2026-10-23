@@ -8,7 +8,7 @@
 
 const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?';
 const DATE_TOKEN = `(?:${MONTH}[\\s,'-]*\\d{2,4}|\\d{1,2}\\s*[/.-]\\s*\\d{4}|\\d{4}\\s*[/.-]\\s*\\d{1,2}|(?:19|20)\\d{2})`;
-const OPEN_END = '(?:present|current|currently|now|till\\s*date|till\\s*now|to\\s*date|until\\s*now|ongoing|date)';
+const OPEN_END = '(?:present|current|currently|now|still\\s*now|still\\s*working|till\\s*today|till\\s*date|till\\s*now|to\\s*date|until\\s*now|ongoing|date)';
 const RANGE_RE = new RegExp(`(${DATE_TOKEN})\\s*(?:-|–|—|‑|\\bto\\b|\\buntil\\b|\\btill\\b)\\s*(${OPEN_END}|${DATE_TOKEN})`, 'i');
 const SINCE_RE = new RegExp(`\\b(?:since|from)\\s+(${DATE_TOKEN})\\b(?!\\s*(?:-|–|—|to\\b))`, 'i');
 
@@ -68,7 +68,7 @@ function looksLikeCompany(text) {
   if (!value || value.length > 80) return false;
   if (/@|https?:|www\./i.test(value) || /\+?\d[\d\s()-]{7,}/.test(value)) return false;
   if (value.split(/\s+/).length > 9) return false;
-  if (/[.!?]$/.test(value) && value.split(/\s+/).length > 4) return false;
+  if (/[.!?]$/.test(value) && value.split(/\s+/).length > 4 && !/\b(ltd|inc|pvt|corp|co|llc|limited|pte|plc)\.$/i.test(value)) return false;
   // a sentence ("Mentored junior developers ..."), a labelled value ("From : 24") or a technology list is not a company
   if (/^[A-Z][a-z]+(?:ed|ing)\s+\w+\s+\w+/.test(value) && value.split(/\s+/).length >= 4) return false;
   if (/^(from|to|period|duration|since|till|date|role|project|client)\b\s*:?/i.test(value) && value.split(/\s+/).length <= 3) return false;
@@ -77,7 +77,19 @@ function looksLikeCompany(text) {
   return true;
 }
 
-const KNOWN_PLACES = new Set(['chennai','bangalore','bengaluru','hyderabad','pune','mumbai','delhi','new delhi','noida','gurgaon','gurugram','kolkata','ahmedabad','jaipur','kochi','cochin','coimbatore','madurai','trichy','tiruchirappalli','chandigarh','indore','bhopal','lucknow','nagpur','surat','vadodara','thane','navi mumbai','visakhapatnam','vizag','vijayawada','mysore','mysuru','mangalore','trivandrum','thiruvananthapuram','bhubaneswar','patna','ranchi','dehradun','ghaziabad','faridabad','nashik','remote','hybrid','onsite','london','dubai','singapore','sydney','melbourne','toronto','vancouver','berlin','munich','amsterdam','dublin','paris','warsaw','bucharest','lisbon','madrid','barcelona','new york','san francisco','seattle','austin','boston','chicago','atlanta','dallas','houston','lagos','nairobi','cairo','karachi','lahore','dhaka','colombo','kathmandu','manila','jakarta','kuala lumpur','bangkok','tokyo','india','usa','uk','germany','canada','australia','nigeria','poland','romania','singapore']);
+const KNOWN_PLACES = new Set(['chennai','bangalore','bengaluru','hyderabad','pune','mumbai','delhi','new delhi','noida','gurgaon','gurugram','kolkata','ahmedabad','jaipur','kochi','cochin','coimbatore','madurai','trichy','tiruchirappalli','chandigarh','indore','bhopal','lucknow','nagpur','surat','vadodara','thane','navi mumbai','visakhapatnam','vizag','vijayawada','mysore','mysuru','mangalore','trivandrum','thiruvananthapuram','bhubaneswar','patna','ranchi','dehradun','ghaziabad','faridabad','nashik','remote','hybrid','onsite','london','dubai','singapore','sydney','melbourne','toronto','vancouver','berlin','munich','amsterdam','dublin','paris','warsaw','bucharest','lisbon','madrid','barcelona','new york','san francisco','seattle','austin','boston','chicago','atlanta','dallas','houston','lagos','nairobi','cairo','karachi','lahore','dhaka','colombo','kathmandu','manila','jakarta','kuala lumpur','bangkok','tokyo','india','usa','uk','germany','canada','australia','nigeria','poland','romania','singapore','auckland','wellington','christchurch','new zealand','pakistan','islamabad','rawalpindi','columbus','denver','phoenix','charlotte','minneapolis','detroit','philadelphia','pittsburgh','san jose','san diego','los angeles','washington','miami','orlando','tampa','raleigh','plano','irving','frisco','whitefield','electronic city','hinjewadi','hinjawadi','gachibowli','hitech city','madhapur','sector 62','manyata','ocean city','cluj-napoca','krakow','prague','vienna','zurich','stockholm','oslo','helsinki','copenhagen','brussels','milan','rome','istanbul','riyadh','jeddah','doha','abu dhabi','muscat','manama','kuwait','johannesburg','cape town','accra','tel aviv','hong kong','shanghai','beijing','seoul','taipei','hanoi','ho chi minh','netherlands','france','spain','italy','ireland','sweden','norway','finland','denmark','belgium','switzerland','austria','portugal','uae','saudi arabia','qatar','south africa','china','japan','korea','vietnam','philippines','malaysia','indonesia','thailand','bangladesh','sri lanka','nepal','karnataka','maharashtra','tamil nadu','telangana','andhra pradesh','kerala','gujarat','rajasthan','uttar pradesh','madhya pradesh','west bengal','odisha','haryana','punjab','goa','texas','california','florida','ohio','virginia','georgia','illinois','michigan','new jersey','north carolina','washington dc','dc']);
+
+export function isKnownPlaceName(text) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!value) return false;
+  if (KNOWN_PLACES.has(value)) return true;
+  const words = value.split(' ');
+  // "Greater Noida India" / "Pune Maharashtra": every word-group is a known place
+  for (let split = 1; split < words.length; split += 1) {
+    if (KNOWN_PLACES.has(words.slice(split).join(' ')) && (KNOWN_PLACES.has(words.slice(0, split).join(' ')) || /^(greater|new|navi|old|south|north|east|west)$/i.test(words[0]))) return true;
+  }
+  return false;
+}
 
 function isKnownPlace(text) {
   return clean(text).toLowerCase().split(/\s*,\s*/).every((part) => KNOWN_PLACES.has(part) || part.length === 0);
@@ -130,7 +142,7 @@ function pickTitleCompany(candidateTexts) {
   for (const text of candidateTexts) {
     for (const rawPart of splitParts(text)) {
       let part = rawPart;
-      const labelled = part.match(/^(role|designation|position|title|job title|company|employer|organi[sz]ation|client|location)\s*:\s*(.+)$/i);
+      const labelled = part.match(/^(role|designation|position|title|job title|company|employer|organi[sz]ation|client|project|location)\s*:\s*-?\s*(.+)$/i);
       let label = null;
       if (labelled) {
         label = labelled[1].toLowerCase();
@@ -138,7 +150,8 @@ function pickTitleCompany(candidateTexts) {
       }
       if (!part || /^(full[\s-]?time|part[\s-]?time|contract|permanent|internship|freelance|remote|hybrid|onsite)$/i.test(part)) continue;
       if (label === 'location') { location = location || part; continue; }
-      if (label && /(company|employer|organi|client)/.test(label)) { if (!company && looksLikeCompany(part)) company = part; continue; }
+      if (label === 'client' || label === 'project') continue;
+      if (label && /(company|employer|organi)/.test(label)) { if (!company && looksLikeCompany(part)) company = part; continue; }
       if (label && /(role|designation|position|title)/.test(label)) { if (!title && looksLikeCompany(part)) title = part; continue; }
       const colon = part.match(/^([^:]{3,60}):\s*(.{2,60})$/);
       if (!label && colon && looksLikeTitle(colon[1]) && !looksLikeTitle(colon[2])) {
@@ -172,12 +185,14 @@ function pickTitleCompany(candidateTexts) {
       location = location || clean(trailing[2]);
     }
   }
-  // "Tata Consultancy Services, Kolkata, India" -> company plus its place
-  if (company) {
-    const tail = company.match(/^(.*?)\s*,\s*([A-Z][A-Za-z .]+(?:,\s*[A-Z][A-Za-z .]+)*)$/);
-    if (tail && clean(tail[1]) && isKnownPlace(tail[2].split(',')[0])) {
-      company = clean(tail[1]);
-      location = location || clean(tail[2]);
+  // "Tata Consultancy Services, Kolkata, India" / "Zapcom Solutions Pvt. Ltd., Whitefield, Bangalore" -> company plus its place
+  if (company && company.includes(',')) {
+    const [head, ...rest] = company.split(/\s*,\s*/);
+    const tail = rest.join(', ');
+    const placeLike = rest.length > 0 && rest.length <= 3 && rest.every((part) => /^[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,2}$/.test(part) && !COMPANY_WORD_RE.test(part) && !TITLE_WORD_RE.test(part));
+    if (clean(head) && placeLike && (isKnownPlace(rest[rest.length - 1]) || isKnownPlace(rest[0]) || rest.length >= 2)) {
+      company = clean(head);
+      location = location || clean(tail);
     }
   }
   return { title, company, location };
@@ -220,15 +235,20 @@ export function parseAnchoredExperience(lines = []) {
     const floor = previousAnchor ? previousAnchor.index + 1 : 0;
     let cursor = index - 1;
     let above = 0;
-    while (cursor >= floor && above < 2) {
+    let blanks = 0;
+    const aboveTexts = [];
+    while (cursor >= floor && above < 3 && blanks < 4) {
       const candidate = rows[cursor];
-      if (!candidate) { cursor -= 1; if (above) break; continue; }
+      if (!candidate) { cursor -= 1; blanks += 1; continue; }
       if (claimed.has(cursor) || !isHeaderCandidate(candidate) || findRange(candidate)) break;
-      headerTexts.push(candidate);
+      aboveTexts.unshift(candidate);
       headerLines.push(cursor);
       above += 1;
       cursor -= 1;
     }
+    // read the header top-down: lines above the date first, the date line's own text last
+    headerTexts.unshift(...aboveTexts);
+    if (headerTexts.length > aboveTexts.length) headerTexts.push(headerTexts.splice(aboveTexts.length, 1)[0]);
 
     let picked = pickTitleCompany(headerTexts);
 

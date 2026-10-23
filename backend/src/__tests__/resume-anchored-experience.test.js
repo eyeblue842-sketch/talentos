@@ -107,3 +107,41 @@ test('comma separated keywords are each matched as skills', () => {
   const variants = where.OR.find((clause) => clause.skills?.hasSome).skills.hasSome;
   assert.ok(variants.includes('Python') && variants.includes('Docker'));
 });
+
+test('company — title (dates) on one line, with a company that ends in "Ltd."', () => {
+  const [entry] = parseAnchoredExperience(['Cynosure Software Solutions Pvt Ltd. — Data Engineer (Jul 2025 – Present)', '• Engineered ETL pipelines.']);
+  assert.equal(entry.company, 'Cynosure Software Solutions Pvt Ltd.');
+  assert.equal(entry.title, 'Data Engineer');
+});
+
+test('a client and project on the header line are not the employer', () => {
+  const [entry] = parseAnchoredExperience(['ETL Developer | Tech Mahindra', 'Client: Ford Motor Company | Project: OWS | Dec 2021 – Present']);
+  assert.equal(entry.company, 'Tech Mahindra');
+  assert.equal(entry.title, 'ETL Developer');
+});
+
+test('label-per-line roles with blank lines between them', () => {
+  const [entry] = parseAnchoredExperience([
+    'Organization:- Stratogent Technology Services', '', 'Designation: -System Admin', '', 'Duration-Nov 2021—Still now',
+  ]);
+  assert.equal(entry.company, 'Stratogent Technology Services');
+  assert.equal(entry.title, 'System Admin');
+  assert.equal(entry.currentlyWorking, true);
+});
+
+test('company with a locality and city keeps only the company name', () => {
+  const [entry] = parseAnchoredExperience(['Software Engineer 1 Jan 2024 – Feb 2026', 'Zapcom Solutions Pvt. Ltd., Whitefield, Bangalore']);
+  assert.equal(entry.company, 'Zapcom Solutions Pvt. Ltd.');
+  assert.equal(entry.location, 'Whitefield, Bangalore');
+});
+
+test('title and location fall back to the summary line and a bare city in the header', () => {
+  const { candidate } = buildDeterministicResumeParse([
+    'VIKASH K',
+    '+91 9588492199 | Nagpur | vikash@example.com | LinkedIn',
+    'SUMMARY',
+    'Microsoft 365 Administrator with 5.6 years of experience administering Exchange Online.',
+  ].join('\n'), 'vikash.pdf');
+  assert.equal(candidate.currentTitle.value, 'Microsoft 365 Administrator');
+  assert.equal(candidate.location.value, 'Nagpur');
+});
